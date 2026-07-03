@@ -1,0 +1,22 @@
+{
+  "name": "ETH Scalper Cockpit v2.19.0 Android",
+  "short_name": "ETH Cockpit 2.19.0",
+  "description": "Scalping manuel ETH avec objectif et taille adaptatifs, suivi stabilisé, reprise arrière-plan.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d0f14",
+  "theme_color": "#0d0f14",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

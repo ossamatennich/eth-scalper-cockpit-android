@@ -1,0 +1,16 @@
+ETH Scalper Cockpit v2.18.4
+
+Objet : replay démo 48 h + recalibrage objectif marché.
+
+Corrections :
+- Objectif dynamique recalibré : la v2.18.3 verrouillait bien l'objectif, mais le seuil "fort" était trop élevé pour les cassures fraîches C1, dont la fenêtre autorisée est volontairement courte. Résultat : trop de signaux restaient mécaniquement proches de 3.00 $.
+- Nouveau score de marché séparé par famille : C1 cassure fraîche et C2 reprise après repli.
+- Cible verrouillée à la publication, toujours comprise entre 3.00 $ et 3.45 $ par ETH.
+- Ajout d'une pénalité anti-poursuite : après plage 120 s très large + activité forte, la cible n'est pas gonflée artificiellement.
+- Aucun changement sur la logique anti-clignotement GARDER / FERMER de v2.18.3.
+- Aucun changement sur la confirmation d'exécution de v2.18.2.
+- Aucun changement sur le cycle de vie des signaux de v2.18.1.
+
+Limite du replay :
+- Les données OHLCV Binance récentes permettent un replay démo des régimes et des zones.
+- Le carnet WebSocket diff, les bookTicker seconde par seconde et le tape complet ne sont pas reconstructibles parfaitement si l'application ne les a pas enregistrés localement.

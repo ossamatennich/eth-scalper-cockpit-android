@@ -1,0 +1,20 @@
+ETH Scalper Cockpit v2.19.0 Android
+
+Base : v2.18.5 Cloudflare / PWA.
+
+Ajouts Android :
+- Projet Android natif gratuit.
+- WebView locale avec le cockpit intégré.
+- Foreground service permanent.
+- Notification persistante ETH Scalper actif.
+- WebSocket Binance Futures natif en arrière-plan.
+- Reconnexion automatique si flux silencieux ou coupé.
+- WakeLock partiel pendant la surveillance.
+- Demande d'exclusion optimisation batterie.
+- Notification native de signal avec côté, score, quantité, entrée, TP et SL.
+- Redémarrage automatique après boot ou mise à jour APK.
+- Workflow GitHub Actions pour produire l'APK gratuitement.
+
+Notes :
+- Cette version prépare la migration native. Elle ne nécessite aucun serveur.
+- Le service natif contient un moteur Sentinel conservateur à perfectionner ensuite.

@@ -1,0 +1,25 @@
+Audit v2.18.5
+
+Demande utilisateur traitée :
+1. Ne plus limiter artificiellement le gain entre 3,00 et 3,45 USD/ETH.
+2. Ne pas utiliser une extension qui oblige à surveiller l’écran.
+3. Adapter la quantité au niveau de confiance du signal.
+4. Améliorer le comportement après retour depuis une autre application.
+
+Implémentation :
+- Cible = plancher économique + expansion de marché, verrouillée une seule fois à la publication.
+- Plancher économique calculé : frais + RR minimum * (stop + frais). Avec les réglages actuels, cela tourne autour de 3,00 USD/ETH, mais ce n’est plus un plafond fixe ; c’est le minimum économique lié aux frais et au risque.
+- Cap de cible dynamique : dépend de l’amplitude récente 120/300 s, de la tendance 120 s et du retour 30 s. Garde-fou de sécurité interne à 8,20 USD/ETH pour éviter les objectifs irréalistes en scalp.
+- Quantité : 3 ETH par défaut, puis 4/5/6/7 ETH seulement si score, potentiel, activité et flux sont cohérents et si le risque max reste respecté.
+- Les grosses impulsions verticales réduisent la taille et/ou la cible via anti-poursuite.
+- Au retour arrière-plan : reset chauffe causale, resync carnet local, forceReplace WebSocket, reconcile HTF, scheduleAnalysis(true).
+
+Tests exécutés :
+- Extraction des deux scripts HTML.
+- Validation syntaxique Node --check sur les deux scripts : OK.
+- Vérification statique des métadonnées version v2.18.5 : OK.
+- Vérification service worker cache v2.18.5 : OK.
+- Vérification manifest v2.18.5 : OK.
+
+Non testé intégralement ici :
+- Session live Android réelle en arrière-plan, car la suspension dépend de Chrome/Android et du mode économie batterie.

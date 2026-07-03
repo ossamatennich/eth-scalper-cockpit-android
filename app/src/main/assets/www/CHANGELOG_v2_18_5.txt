@@ -1,0 +1,23 @@
+ETH Scalper Cockpit v2.18.5
+
+Objectif : intégrer les remarques utilisateur avant déploiement v2.18.4.
+
+Changements fonctionnels :
+- Suppression du plafond fixe 3,00–3,45 USD/ETH pour le moteur causal live.
+- Remplacement par un objectif marché verrouillé à la publication, calculé avec : plancher économique frais + RR, retour 30 s, tendance 120 s, plage 120/300 s, activité, flux, alignement BTC, et pénalité anti-poursuite.
+- Pas d’extension dynamique après l’entrée : le plan publié est fait pour poser un LIMIT/TP/SL et pouvoir s’éloigner de l’écran.
+- Quantité adaptative 3/4/5/6/7 ETH selon qualité du signal, potentiel, activité, flux et plafond de risque.
+- Ajout de 4 ETH dans les quantités autorisées.
+- Reprise arrière-plan : au retour dans l’application, forçage reconnexion market/public/Kraken, resynchronisation carnet, relance analyse, catch-up REST des unités clôturées.
+- Wake Lock best effort quand une position est active, si Android/Chrome l’autorise.
+
+Inchangés :
+- Pas d’ordre automatique.
+- Confirmation prix Kraken réel obligatoire.
+- Sortie FERMER verrouillée après confirmation.
+- Signal actif / attente retour / archivage automatique conservés.
+- Ancien moteur T1-T5 toujours non autorisé à publier une entrée.
+
+Limites honnêtes :
+- Android/Chrome peut suspendre les WebSocket quand l’application est en arrière-plan ; la v2.18.5 force une reprise propre au retour, mais aucun site web ne peut garantir une connexion WebSocket permanente si l’OS suspend la page.
+- Les objectifs restent des plans de scalp, pas une garantie de mouvement.

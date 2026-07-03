@@ -1,0 +1,25 @@
+ETH SCALPER COCKPIT v2.18.3 — SUIVI STABLE ET OBJECTIF MARCHÉ VERROUILLÉ
+Date : 2 juillet 2026
+
+CORRECTIF 1 — FIN DU CLIGNOTEMENT GARDER / FERMER
+- Toute sortie confirmée devient irréversible dans l’application jusqu’à la déclaration de clôture.
+- L’objectif atteint sur un prix Kraken frais verrouille immédiatement FERMER.
+- Le plafond de risque atteint verrouille immédiatement FERMER.
+- Pivot, protection de gain et stagnation exigent plusieurs échantillons et une durée minimale avant FERMER.
+- Avant confirmation, l’état reste GARDER avec la mention SURVEILLANCE RENFORCÉE.
+- L’invalidation structurelle est également mémorisée et ne peut plus revenir à GARDER.
+
+CORRECTIF 2 — BON NIVEAU SELON LA SOURCE DE PRIX
+- Les prix Kraken sont comparés à la cible et au pivot Kraken.
+- En secours, les prix Binance sont comparés aux niveaux Binance, et non aux niveaux traduits Kraken.
+- Les anciennes positions v2.18.2 sont migrées par calcul de la base entrée Kraken / signal Binance.
+
+AMÉLIORATION 3 — OBJECTIF DÉTERMINÉ PAR LE MARCHÉ
+- La cible n’est plus inscrite aveuglément à 3,00 USD/ETH.
+- Le moteur calcule à la publication un objectif conservateur entre 3,00 et 3,45 USD/ETH selon le retour directionnel 30 s, la plage 120 s, l’activité et le flux.
+- L’objectif économique minimum tient compte des frais, du stop et du ratio net/risque configuré.
+- Si le potentiel de marché est inférieur au minimum économique, le signal n’est pas publié.
+- L’objectif est verrouillé au signal puis traduit au prix Kraken réel lors de la confirmation. Il ne bouge plus pendant la position.
+
+CONSERVÉ
+- Détection causale C1/C2, quantité 3 ETH, invalidation 0,63 USD/ETH, signal actif jusqu’à invalidation réelle/objectif/expiration, et archivage automatique des signaux terminés.

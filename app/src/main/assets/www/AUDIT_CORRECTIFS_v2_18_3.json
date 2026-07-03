@@ -1,0 +1,38 @@
+{
+  "version": "2.18.3",
+  "position_management": {
+    "close_decision_sticky": true,
+    "kraken_target_and_risk_immediate_latch": true,
+    "pivot_confirmation_ms": 1500,
+    "pivot_samples": 5,
+    "profit_protection_confirmation_ms": 1500,
+    "stagnation_confirmation_ms": 4000,
+    "fallback_binance_target_confirmation_ms": 750
+  },
+  "target_model": {
+    "mode": "CAUSAL_MARKET_LOCKED_2183",
+    "min_usd_per_eth": 3.0,
+    "max_usd_per_eth": 3.45,
+    "inputs": [
+      "directional_return_30s",
+      "range_120s",
+      "activity_ratio",
+      "directional_flow"
+    ],
+    "economic_floor": [
+      "fees",
+      "stop_distance",
+      "configured_min_reward_risk"
+    ],
+    "locked_after_publication": true,
+    "recomputed_during_position": false
+  },
+  "feed_level_mapping": {
+    "kraken_price": "kraken_target_and_pivot",
+    "binance_fallback": "binance_target_and_pivot"
+  },
+  "limitations": [
+    "Historical tests use the same four sessions that calibrated the causal detector; they are not independent out-of-sample proof.",
+    "No software can guarantee a profitable market outcome."
+  ]
+}

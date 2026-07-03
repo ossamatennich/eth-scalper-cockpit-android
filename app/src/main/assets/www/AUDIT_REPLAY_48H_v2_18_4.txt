@@ -1,0 +1,16 @@
+Audit replay démo 48 h — v2.18.4
+
+Données consultées :
+- ETHUSDT Binance Futures 5m sur environ 48 h.
+- ETHUSDT Binance Futures 1m récent disponible.
+- BTCUSDT Binance Futures 15m sur environ 48 h.
+- Snapshot carnet ETHUSDT + trades récents pour contrôle microstructure courant.
+
+Constats :
+1. Les 48 h contiennent plusieurs phases favorables au scalping ETH : extensions, reprises et compressions.
+2. Plusieurs bougies ETH 5m verticales dépassent largement l'objectif 3.00-3.45 $/ETH. Le moteur doit donc éviter de poursuivre après départ et préférer cassure fraîche ou retour propre.
+3. La v2.18.3 protège déjà contre le clignotement de position et contre l'invalidation trop rapide du signal.
+4. La v2.18.3 avait cependant un point faible : l'objectif dynamique pouvait rester trop souvent à 3.00 $, parce que le seuil fort demandait un retour 30 s >= 0.85 $, alors que la cassure fraîche C1 autorise ret30 entre 0.35 $ et 0.70 $.
+5. La v2.18.4 corrige ce décalage sans rendre l'objectif instable : il est recalculé seulement à la publication, puis verrouillé.
+
+Décision : v2.18.4 recommandée au lieu de v2.18.3.

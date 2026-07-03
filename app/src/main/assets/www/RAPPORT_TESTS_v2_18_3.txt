@@ -1,0 +1,52 @@
+ETH SCALPER COCKPIT v2.18.3 — RAPPORT DE TESTS
+Date : 2 juillet 2026
+
+RÉSULTAT GLOBAL : VALIDÉ POUR DÉPLOIEMENT TECHNIQUE
+
+1. INTÉGRITÉ JAVASCRIPT
+- Extraction des deux scripts intégrés à index.html.
+- Vérification Node.js --check : OK sur les deux scripts.
+- Chargement Chromium/Playwright : aucune erreur JavaScript détectée.
+
+2. STABILITÉ GARDER / FERMER
+- Prix normal : GARDER.
+- Objectif Kraken atteint : FERMER immédiat.
+- Retour du prix sous l'objectif après déclenchement : FERMER reste verrouillé.
+- Plafond de risque atteint : FERMER immédiat et verrouillé après rebond.
+- Franchissement pivot isolé : GARDER avec surveillance, pas de clignotement.
+- Franchissement pivot maintenu : FERMER après confirmation, puis verrouillage.
+- Invalidation structurelle : FERMER reste verrouillé.
+- Secours Binance : 3 observations restent GARDER, la confirmation suivante verrouille FERMER.
+
+3. OBJECTIF MARCHÉ VERROUILLÉ
+- Cas conservateur : objectif 3,00 USD/ETH.
+- Cas de continuation forte : objectif 3,30 USD/ETH dans le test déterministe.
+- Deux calculs identiques avec les mêmes données donnent exactement le même objectif.
+- Après publication et confirmation Kraken, cible, pivot, modèle et source sont enregistrés dans la position et ne sont plus recalculés.
+- Plage autorisée : 3,00 à 3,45 USD/ETH ; un signal est refusé si le minimum économique n'est pas couvert.
+
+4. NIVEAUX SELON LA SOURCE
+- Prix Kraken comparé aux niveaux Kraken.
+- Prix Binance de secours comparé aux niveaux Binance.
+- Migration des positions v2.18.2 par reconstruction de la base Kraken/Binance.
+
+5. TEST DE CONFIRMATION D'ENTRÉE
+- Signal causal à objectif renforcé : confirmation d'exécution acceptée.
+- Position active créée avec targetBinance, pivotBinance, base Kraken, source d'objectif et modèle verrouillé.
+- Suivi GARDER / FERMER activé sans perte du plan initial.
+
+6. RELECTURE HISTORIQUE DES 4 SESSIONS FOURNIES
+- Signaux étudiés : 8.
+- Objectif dynamique atteint avant invalidation : 8/8.
+- Invalidation avant objectif : 0.
+- Non résolus : 0.
+- Répartition des objectifs : {"3.00": 7, "3.45": 1} USD/ETH.
+- Détails : REPLAY_HISTORIQUE_OBJECTIFS_v2_18_3.json et .csv.
+
+7. AFFICHAGE MOBILE
+- Rendu mobile Chromium vérifié : en-tête v2.18.3, panneaux et commandes visibles sans erreur de chargement.
+
+LIMITES HONNÊTES
+- Les quatre sessions historiques ont servi à calibrer le détecteur : ce contrôle n'est pas une preuve indépendante hors échantillon.
+- Un signal de v2.16.8 est résolu par une bougie Binance 1 minute après la fin de l'enregistrement ; l'ordre exact à la seconde n'est pas disponible.
+- Aucun moteur ni test historique ne garantit un résultat bénéficiaire futur.
