@@ -1,0 +1,8 @@
+ETH Scalper Cockpit Android v2.19.4
+
+Correction UX :
+- Suppression des bannières flottantes haut/bas qui cachaient l’écran.
+- Ajout d’un bloc natif propre intégré dans la page.
+- Quand Android natif est connecté, l’ancienne interface web retardée est masquée.
+- Affichage clair : surveillance active, ETH/BID/ASK, dernier flux, aucun signal ou signal natif.
+- Objectif : ne plus afficher deux états contradictoires.
