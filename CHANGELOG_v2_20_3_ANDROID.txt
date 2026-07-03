@@ -1,0 +1,13 @@
+ETH Scalper Cockpit Android v2.20.3
+
+Stabilisation :
+- Suppression complète des scripts Android qui modifiaient le DOM du cockpit.
+- Correction de l'erreur Cannot set properties of null / textContent.
+- Retour au cockpit original sans maquillage CONNECTÉ/RECONNEXION.
+- Service Android natif conservé en arrière-plan.
+- Notifications fortes v2.20.2 conservées.
+- Rechargement propre de l'asset local index.html?v=2203 après mise à jour.
+
+Décision technique :
+- Le cockpit WebView ne doit plus être patché par JS.
+- La vraie architecture permanente sera v2.21.0 : moteur natif comme source principale + interface stable.

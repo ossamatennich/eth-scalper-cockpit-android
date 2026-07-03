@@ -66,7 +66,8 @@ public class MainActivity extends Activity {
         webView.setWebChromeClient(new WebChromeClient());
         webView.addJavascriptInterface(new NativeBridge(), "AndroidCockpit");
         setContentView(webView);
-        webView.loadUrl("file:///android_asset/www/index.html");
+        webView.clearCache(false);
+        webView.loadUrl("file:///android_asset/www/index.html?v=2203");
     }
 
     private void requestNotificationPermissionIfNeeded() {
@@ -117,9 +118,8 @@ public class MainActivity extends Activity {
     }
 
     private void injectNativeBanner() {
-        // v2.19.7 : aucune interface Android ajoutée dans la page.
-        // Le cockpit original reste l'affichage principal.
-        // Le service natif continue en arrière-plan pour les notifications.
+        // v2.20.3 : aucune modification DOM du cockpit.
+        // Le cockpit reste original. Le service Android natif travaille en arrière-plan.
     }
 
     private void startNativeWatch() {
@@ -162,6 +162,6 @@ public class MainActivity extends Activity {
     public class NativeBridge {
         @JavascriptInterface public void startPermanentWatch() { runOnUiThread(MainActivity.this::startNativeWatch); }
         @JavascriptInterface public void stopPermanentWatch() { runOnUiThread(MainActivity.this::stopNativeWatch); }
-        @JavascriptInterface public String getMode() { return "android-native-v2.20.2"; }
+        @JavascriptInterface public String getMode() { return "android-native-v2.20.3"; }
     }
 }
