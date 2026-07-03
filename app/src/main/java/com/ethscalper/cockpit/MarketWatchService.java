@@ -3,6 +3,7 @@ package com.ethscalper.cockpit;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
@@ -12,6 +13,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 
 import org.json.JSONObject;
 
@@ -37,7 +39,7 @@ public class MarketWatchService extends Service {
 
     private static final String CH_WATCH = "eth_scalper_watch";
     private static final String CH_SIGNAL = "eth_scalper_signals";
-    private static final int NOTIF_WATCH_ID = 2190;
+    private static final int NOTIF_WATCH_ID = 2191;
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/btcusdt@kline_1m/btcusdt@bookTicker";
 
@@ -79,13 +81,26 @@ public class MarketWatchService extends Service {
             return START_NOT_STICKY;
         }
         running = true;
-        startForeground(NOTIF_WATCH_ID, buildWatchNotification("Surveillance active — connexion Binance…"));
+        startForeground(NOTIF_WATCH_ID, buildWatchNotification("Surveillance native permanente — connexion Binance…"));
         if (ACTION_SYNC_NOW.equals(action)) {
-            broadcastStatus("sync", "Application ouverte — service natif actif");
+            broadcastStatus("sync", "Service natif actif même écran verrouillé");
         }
         connectIfNeeded();
         scheduleHealthCheck();
         return START_STICKY;
+    }
+
+    @Override public void onTaskRemoved(Intent rootIntent) {
+        if (running) {
+            try {
+                Intent restart = new Intent(getApplicationContext(), MarketWatchService.class);
+                restart.setAction(ACTION_START);
+                PendingIntent pi = PendingIntent.getService(getApplicationContext(), 2191, restart, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+                AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+                if (am != null) am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 5000, pi);
+            } catch (Exception ignored) {}
+        }
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override public void onDestroy() {
@@ -131,7 +146,7 @@ public class MarketWatchService extends Service {
             @Override public void onOpen(WebSocket webSocket, Response response) {
                 reconnectAttempt = 0;
                 lastMessageAt = System.currentTimeMillis();
-                updateWatch("Connecté — surveillance ETH/BTC active");
+                updateWatch("Connecté Binance — surveillance ETH/BTC active même écran verrouillé");
                 broadcastStatus("connected", "Flux Binance connecté");
             }
             @Override public void onMessage(WebSocket webSocket, String text) {
@@ -174,7 +189,7 @@ public class MarketWatchService extends Service {
                     updateWatch("Flux silencieux — reconnexion forcée…");
                     connectIfNeeded();
                 } else {
-                    updateWatch(String.format(Locale.US, "Actif — ETH %.2f | dernier flux %ds", ethLast, Math.max(0, age / 1000)));
+                    updateWatch(String.format(Locale.US, "Connecté Binance — ETH %.2f — dernier flux %ds — signaux écran verrouillé", ethLast, Math.max(0, age / 1000)));
                 }
                 handler.postDelayed(this, 30000);
             }
@@ -357,11 +372,12 @@ public class MarketWatchService extends Service {
         String title = "ETH " + side + " — score " + p.score + "/100";
         String body = String.format(Locale.US, "%s | qty %d ETH | entry %.2f | TP %.2f | SL %.2f", p.family, p.qty, p.entry, p.tp, p.sl);
         Notification n = new Notification.Builder(this, CH_SIGNAL)
-                .setSmallIcon(android.R.drawable.stat_notify_more)
+                .setSmallIcon(R.drawable.ic_stat_eth)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new Notification.BigTextStyle().bigText(body))
                 .setPriority(Notification.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_SOUND | Notification.DEFAULT_VIBRATE)
                 .setContentIntent(pi)
                 .setAutoCancel(true)
                 .build();
@@ -373,8 +389,8 @@ public class MarketWatchService extends Service {
         Intent open = new Intent(this, MainActivity.class);
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return new Notification.Builder(this, CH_WATCH)
-                .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("ETH Scalper actif")
+                .setSmallIcon(R.drawable.ic_stat_eth)
+                .setContentTitle("ETH Scalper actif — arrière-plan")
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setOngoing(true)
@@ -390,7 +406,10 @@ public class MarketWatchService extends Service {
     private void broadcastStatus(String type, String message) {
         try {
             JSONObject j = new JSONObject();
-            j.put("version", "2.19.0-android");
+            j.put("version", "2.19.1-android");
+            j.put("nativeActive", running);
+            j.put("connected", socket != null && lastMessageAt > 0 && System.currentTimeMillis() - lastMessageAt < 70000);
+            j.put("lastAgeSec", lastMessageAt == 0 ? -1 : Math.max(0, (System.currentTimeMillis() - lastMessageAt) / 1000));
             j.put("type", type);
             j.put("message", message);
             j.put("eth", ethLast);

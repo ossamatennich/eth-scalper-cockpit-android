@@ -1,0 +1,13 @@
+ETH Scalper Cockpit Android v2.19.1
+
+Correctifs :
+- Icône Android propre ETH Scalper.
+- Nom launcher raccourci : ETH Scalper.
+- Notification permanente plus claire : connecté Binance, dernier flux, écran verrouillé.
+- Service Android stopWithTask=false.
+- Foreground service specialUse pour surveillance continue utilisateur-visible.
+- Redémarrage programmé du service si Android retire la tâche.
+- Bandeau natif injecté dans l’interface : Surveillance Android active / reconnexion.
+- Notifications de signal avec son/vibration natifs.
+
+Note : l’interface web peut encore reconnecter ses propres flux quand elle revient à l’écran. Ce qui compte est la notification permanente : si elle reste active, le service natif continue de surveiller.

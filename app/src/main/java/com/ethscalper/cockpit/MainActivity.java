@@ -27,7 +27,7 @@ public class MainActivity extends Activity {
             if (payload == null || webView == null) return;
             String safe = payload.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n");
             webView.post(() -> webView.evaluateJavascript(
-                    "window.dispatchEvent(new CustomEvent('ethScalperNativeStatus',{detail:JSON.parse('" + safe + "')}));",
+                    "(function(p){if(window.ethScalperNativeStatusUpdate){window.ethScalperNativeStatusUpdate(p);}window.dispatchEvent(new CustomEvent('ethScalperNativeStatus',{detail:p}));})(JSON.parse('" + safe + "'));",
                     null
             ));
         }
@@ -56,7 +56,12 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             s.setSafeBrowsingEnabled(true);
         }
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView view, String url) {
+                injectNativeBanner();
+                syncNativeWatch();
+            }
+        });
         webView.setWebChromeClient(new WebChromeClient());
         webView.addJavascriptInterface(new NativeBridge(), "AndroidCockpit");
         setContentView(webView);
@@ -90,6 +95,25 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+
+    private void syncNativeWatch() {
+        Intent i = new Intent(this, MarketWatchService.class);
+        i.setAction(MarketWatchService.ACTION_SYNC_NOW);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i); else startService(i);
+    }
+
+    private void injectNativeBanner() {
+        if (webView == null) return;
+        String js = "(function(){" +
+                "if(window.__ethNativeBanner2191)return;window.__ethNativeBanner2191=true;" +
+                "var b=document.createElement('div');b.id='nativeWatchBanner2191';" +
+                "b.style.cssText='position:fixed;left:10px;right:10px;bottom:10px;z-index:999999;border:1px solid rgba(0,255,170,.45);background:rgba(2,12,16,.94);color:#e8fff7;border-radius:14px;padding:10px 12px;font:700 12px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35);letter-spacing:.3px';" +
+                "b.innerHTML='🟢 SURVEILLANCE ANDROID ACTIVE · service natif en attente du flux';document.body.appendChild(b);" +
+                "window.ethScalperNativeStatusUpdate=function(p){try{var ok=p&&(p.connected||p.type==='connected'||p.type==='live'||p.type==='signal');var age=p&&p.lastAgeSec!=null?(' · dernier flux '+p.lastAgeSec+'s'):'';var eth=p&&p.eth?(' · ETH '+Number(p.eth).toFixed(2)):'';var msg=p&&p.message?(' · '+p.message):'';b.style.borderColor=ok?'rgba(0,255,170,.55)':'rgba(255,170,0,.55)';b.innerHTML=(ok?'🟢':'🟠')+' SURVEILLANCE ANDROID '+(ok?'ACTIVE':'RECONNEXION')+eth+age+msg;}catch(e){}};" +
+                "})();";
+        webView.evaluateJavascript(js, null);
+    }
+
     private void startNativeWatch() {
         Intent i = new Intent(this, MarketWatchService.class);
         i.setAction(MarketWatchService.ACTION_START);
@@ -109,9 +133,7 @@ public class MainActivity extends Activity {
         } else {
             registerReceiver(statusReceiver, new IntentFilter(MarketWatchService.BROADCAST_STATUS));
         }
-        Intent i = new Intent(this, MarketWatchService.class);
-        i.setAction(MarketWatchService.ACTION_SYNC_NOW);
-        startService(i);
+        syncNativeWatch();
     }
 
     @Override protected void onPause() {
@@ -130,6 +152,6 @@ public class MainActivity extends Activity {
     public class NativeBridge {
         @JavascriptInterface public void startPermanentWatch() { runOnUiThread(MainActivity.this::startNativeWatch); }
         @JavascriptInterface public void stopPermanentWatch() { runOnUiThread(MainActivity.this::stopNativeWatch); }
-        @JavascriptInterface public String getMode() { return "android-native-v2.19.0"; }
+        @JavascriptInterface public String getMode() { return "android-native-v2.19.1"; }
     }
 }
