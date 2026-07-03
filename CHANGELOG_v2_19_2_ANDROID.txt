@@ -1,0 +1,9 @@
+ETH Scalper Cockpit Android v2.19.2
+
+Correctifs :
+- Le service Android mémorise maintenant son dernier état natif.
+- Au retour dans l’app, l’interface récupère immédiatement le dernier état du service.
+- Le bandeau Android distingue mieux interface en reconnexion et service natif connecté.
+- Le service envoie un statut live toutes les 5 secondes.
+- La notification permanente reste la source principale pour savoir si la surveillance continue écran verrouillé.
+- Artifact APK renommé v2.19.2.

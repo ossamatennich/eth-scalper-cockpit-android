@@ -39,7 +39,7 @@ public class MarketWatchService extends Service {
 
     private static final String CH_WATCH = "eth_scalper_watch";
     private static final String CH_SIGNAL = "eth_scalper_signals";
-    private static final int NOTIF_WATCH_ID = 2191;
+    private static final int NOTIF_WATCH_ID = 2192;
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/btcusdt@kline_1m/btcusdt@bookTicker";
 
@@ -60,6 +60,12 @@ public class MarketWatchService extends Service {
     private final Deque<Candle> btc = new ArrayDeque<>();
     private final Deque<TradeFlow> flows = new ArrayDeque<>();
     private SignalPlan lastPlan = null;
+    private boolean healthScheduled = false;
+    public static volatile String LAST_STATUS_JSON = "";
+
+    public static String getLastStatusJson() {
+        return LAST_STATUS_JSON == null ? "" : LAST_STATUS_JSON;
+    }
 
     @Override public void onCreate() {
         super.onCreate();
@@ -82,10 +88,11 @@ public class MarketWatchService extends Service {
         }
         running = true;
         startForeground(NOTIF_WATCH_ID, buildWatchNotification("Surveillance native permanente — connexion Binance…"));
-        if (ACTION_SYNC_NOW.equals(action)) {
-            broadcastStatus("sync", "Service natif actif même écran verrouillé");
-        }
         connectIfNeeded();
+        if (ACTION_SYNC_NOW.equals(action)) {
+            broadcastStatus("sync", "Service natif actif — état resynchronisé");
+            handler.postDelayed(() -> broadcastStatus("sync_late", "Service natif actif — surveillance indépendante de l’écran"), 800);
+        }
         scheduleHealthCheck();
         return START_STICKY;
     }
@@ -179,21 +186,25 @@ public class MarketWatchService extends Service {
     }
 
     private void scheduleHealthCheck() {
-        handler.removeCallbacksAndMessages(null);
+        if (healthScheduled) return;
+        healthScheduled = true;
         handler.postDelayed(new Runnable() {
             @Override public void run() {
-                if (!running) return;
+                if (!running) { healthScheduled = false; return; }
                 long age = System.currentTimeMillis() - lastMessageAt;
                 if (lastMessageAt == 0 || age > 65000) {
                     stopSocket();
                     updateWatch("Flux silencieux — reconnexion forcée…");
+                    broadcastStatus("reconnect", "Flux silencieux — reconnexion forcée");
                     connectIfNeeded();
                 } else {
-                    updateWatch(String.format(Locale.US, "Connecté Binance — ETH %.2f — dernier flux %ds — signaux écran verrouillé", ethLast, Math.max(0, age / 1000)));
+                    String msg = String.format(Locale.US, "Connecté Binance — ETH %.2f — dernier flux %ds — écran verrouillé OK", ethLast, Math.max(0, age / 1000));
+                    updateWatch(msg);
+                    broadcastStatus("live", msg);
                 }
-                handler.postDelayed(this, 30000);
+                handler.postDelayed(this, 5000);
             }
-        }, 30000);
+        }, 3000);
     }
 
     private void handleMessage(String text) {
@@ -207,7 +218,7 @@ public class MarketWatchService extends Service {
             else if (stream.contains("aggTrade")) handleAggTrade(data);
             evaluateSignal();
             long now = System.currentTimeMillis();
-            if (now - lastStatusAt > 7000) {
+            if (now - lastStatusAt > 3000) {
                 lastStatusAt = now;
                 broadcastStatus("live", String.format(Locale.US, "ETH %.2f bid %.2f ask %.2f", ethLast, ethBid, ethAsk));
             }
@@ -406,7 +417,7 @@ public class MarketWatchService extends Service {
     private void broadcastStatus(String type, String message) {
         try {
             JSONObject j = new JSONObject();
-            j.put("version", "2.19.1-android");
+            j.put("version", "2.19.2-android");
             j.put("nativeActive", running);
             j.put("connected", socket != null && lastMessageAt > 0 && System.currentTimeMillis() - lastMessageAt < 70000);
             j.put("lastAgeSec", lastMessageAt == 0 ? -1 : Math.max(0, (System.currentTimeMillis() - lastMessageAt) / 1000));
@@ -417,8 +428,10 @@ public class MarketWatchService extends Service {
             j.put("ask", ethAsk);
             j.put("candles", eth.size());
             if (lastPlan != null) j.put("lastPlan", lastPlan.toJsonObject());
+            String out = j.toString();
+            LAST_STATUS_JSON = out;
             Intent i = new Intent(BROADCAST_STATUS);
-            i.putExtra("payload", j.toString());
+            i.putExtra("payload", out);
             sendBroadcast(i);
         } catch (Exception ignored) {}
     }
