@@ -1,0 +1,8 @@
+ETH Scalper Cockpit Android v2.19.6
+
+Correction interface :
+- Interface équilibrée, pas ultra-simplifiée.
+- Ajout de volets ouvrables : Marché, Compte, Détails techniques.
+- Vue complète disponible par bouton.
+- Suppression du clignotement causé par l’ancien masquage en boucle.
+- Suppression des bannières flottantes gênantes.

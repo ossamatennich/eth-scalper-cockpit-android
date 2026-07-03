@@ -118,14 +118,7 @@ public class MainActivity extends Activity {
 
     private void injectNativeBanner() {
         if (webView == null) return;
-        String js = "(function(){" +
-                "if(window.__ethNativeBanner2192)return;window.__ethNativeBanner2192=true;" +
-                "var b=document.createElement('div');b.id='nativeWatchBanner2192';" +
-                "b.style.cssText='position:fixed;left:10px;right:10px;bottom:10px;z-index:999999;border:1px solid rgba(255,170,0,.55);background:rgba(2,12,16,.96);color:#e8fff7;border-radius:14px;padding:10px 12px;font:800 12px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35);letter-spacing:.3px';" +
-                "b.innerHTML='🟠 SURVEILLANCE ANDROID ACTIVE · attente statut natif';document.body.appendChild(b);" +
-                "window.ethScalperNativeStatusUpdate=function(p){try{var ok=p&&(p.connected||p.type==='connected'||p.type==='live'||p.type==='signal');var age=(p&&p.lastAgeSec!=null&&p.lastAgeSec>=0)?(' · dernier flux '+p.lastAgeSec+'s'):'';var eth=(p&&p.eth&&Number(p.eth)>0)?(' · ETH '+Number(p.eth).toFixed(2)):'';var msg=p&&p.message?(' · '+p.message):'';b.style.borderColor=ok?'rgba(0,255,170,.65)':'rgba(255,170,0,.65)';b.style.color=ok?'#e8fff7':'#ffe4b5';b.innerHTML=(ok?'🟢':'🟠')+' SURVEILLANCE ANDROID '+(ok?'CONNECTÉE':'ACTIVE')+eth+age+msg;}catch(e){}};" +
-                "})();";
-        webView.evaluateJavascript(js, null);
+        webView.evaluateJavascript("window.__nativeAndroidBridgeReady2196=true;", null);
     }
 
     private void startNativeWatch() {
@@ -168,6 +161,6 @@ public class MainActivity extends Activity {
     public class NativeBridge {
         @JavascriptInterface public void startPermanentWatch() { runOnUiThread(MainActivity.this::startNativeWatch); }
         @JavascriptInterface public void stopPermanentWatch() { runOnUiThread(MainActivity.this::stopNativeWatch); }
-        @JavascriptInterface public String getMode() { return "android-native-v2.19.2"; }
+        @JavascriptInterface public String getMode() { return "android-native-v2.19.6"; }
     }
 }
