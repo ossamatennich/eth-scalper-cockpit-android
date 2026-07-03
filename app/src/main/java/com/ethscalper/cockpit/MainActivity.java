@@ -104,6 +104,18 @@ public class MainActivity extends Activity {
         if (webView != null) webView.postDelayed(this::pushLastNativeStatusToWeb, 900);
     }
 
+
+    private void pushLastNativeStatusToWeb() {
+        if (webView == null) return;
+        String payload = MarketWatchService.getLastStatusJson();
+        if (payload == null || payload.length() == 0) return;
+        String safe = payload.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n");
+        webView.post(() -> webView.evaluateJavascript(
+                "(function(p){if(window.ethScalperNativeStatusUpdate){window.ethScalperNativeStatusUpdate(p);}window.dispatchEvent(new CustomEvent('ethScalperNativeStatus',{detail:p}));})(JSON.parse('" + safe + "'));",
+                null
+        ));
+    }
+
     private void injectNativeBanner() {
         if (webView == null) return;
         String js = "(function(){" +
