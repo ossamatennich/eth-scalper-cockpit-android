@@ -1,0 +1,9 @@
+ETH Scalper Cockpit Android v2.20.0
+
+Architecture :
+- Le service Android natif devient la source autoritaire de connexion.
+- Si le service natif est connecté, le cockpit ne doit plus afficher RECONNEXION.
+- Suppression des anciennes bannières / interfaces ajoutées.
+- Conservation de l’affichage original du cockpit.
+- Correction ciblée du retour arrière-plan : Android connecté = application connectée.
+- Le service natif continue de surveiller écran verrouillé et envoie les notifications.

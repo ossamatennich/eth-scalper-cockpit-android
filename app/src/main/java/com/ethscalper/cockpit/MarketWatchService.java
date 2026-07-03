@@ -202,7 +202,7 @@ public class MarketWatchService extends Service {
                     updateWatch(msg);
                     broadcastStatus("live", msg);
                 }
-                handler.postDelayed(this, 5000);
+                handler.postDelayed(this, 3000);
             }
         }, 3000);
     }
@@ -218,7 +218,7 @@ public class MarketWatchService extends Service {
             else if (stream.contains("aggTrade")) handleAggTrade(data);
             evaluateSignal();
             long now = System.currentTimeMillis();
-            if (now - lastStatusAt > 3000) {
+            if (now - lastStatusAt > 1500) {
                 lastStatusAt = now;
                 broadcastStatus("live", String.format(Locale.US, "ETH %.2f bid %.2f ask %.2f", ethLast, ethBid, ethAsk));
             }
@@ -417,7 +417,7 @@ public class MarketWatchService extends Service {
     private void broadcastStatus(String type, String message) {
         try {
             JSONObject j = new JSONObject();
-            j.put("version", "2.19.7-android");
+            j.put("version", "2.20.0-android");
             j.put("nativeActive", running);
             j.put("connected", socket != null && lastMessageAt > 0 && System.currentTimeMillis() - lastMessageAt < 70000);
             j.put("lastAgeSec", lastMessageAt == 0 ? -1 : Math.max(0, (System.currentTimeMillis() - lastMessageAt) / 1000));
