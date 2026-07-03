@@ -1,0 +1,9 @@
+ETH Scalper Cockpit Android v2.19.5
+
+Correction interface :
+- Nouveau mode cockpit mobile simple.
+- Suppression visuelle du gros bloc vert.
+- Suppression des écrans contradictoires quand Android natif est connecté.
+- Affichage principal : surveillance, décision, action, compte résumé.
+- Si signal natif : entrée, TP, SL, quantité, score.
+- Bouton Détails pour afficher l’ancien cockpit si besoin.
