@@ -1,0 +1,8 @@
+ETH Scalper Cockpit Android v2.21.0
+
+- Écran principal Android natif.
+- Le service Android devient la source principale de connexion.
+- WebView disponible uniquement via bouton Cockpit complet.
+- Retour app sans dépendre de la reconnexion WebView.
+- Permission superposition optionnelle.
+- Son d’alerte personnalisé fort.

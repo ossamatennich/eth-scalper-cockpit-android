@@ -41,8 +41,8 @@ public class MarketWatchService extends Service {
     public static final String BROADCAST_STATUS = "com.ethscalper.cockpit.STATUS";
 
     private static final String CH_WATCH = "eth_scalper_watch";
-    private static final String CH_SIGNAL = "eth_scalper_signals_strong_v2202";
-    private static final int NOTIF_WATCH_ID = 2192;
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v2210";
+    private static final int NOTIF_WATCH_ID = 2210;
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/btcusdt@kline_1m/btcusdt@bookTicker";
 
@@ -128,13 +128,12 @@ public class MarketWatchService extends Service {
         NotificationChannel watch = new NotificationChannel(CH_WATCH, "Surveillance permanente", NotificationManager.IMPORTANCE_LOW);
         watch.setDescription("Garde le moteur ETH Scalper actif en arrière-plan.");
         nm.createNotificationChannel(watch);
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH Scalper — son fort", NotificationManager.IMPORTANCE_HIGH);
-        signals.setDescription("Alertes fortes ETH : son + vibration lorsqu'un setup exploitable est détecté.");
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH Scalper — ALERTE FORTE", NotificationManager.IMPORTANCE_HIGH);
+        signals.setDescription("Signal trading ETH : son fort personnalisé + vibration longue.");
         signals.enableVibration(true);
-        signals.setVibrationPattern(new long[]{0, 450, 180, 450, 180, 900});
+        signals.setVibrationPattern(new long[]{0, 750, 180, 750, 180, 1200});
         try {
-            Uri sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-            if (sound == null) sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            Uri sound = Uri.parse("android.resource://" + c.getPackageName() + "/" + R.raw.eth_alert_loud);
             AudioAttributes attrs = new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ALARM)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -432,7 +431,7 @@ public class MarketWatchService extends Service {
     private void broadcastStatus(String type, String message) {
         try {
             JSONObject j = new JSONObject();
-            j.put("version", "2.20.3-android");
+            j.put("version", "2.21.0-android");
             j.put("nativeActive", running);
             j.put("connected", socket != null && lastMessageAt > 0 && System.currentTimeMillis() - lastMessageAt < 70000);
             j.put("lastAgeSec", lastMessageAt == 0 ? -1 : Math.max(0, (System.currentTimeMillis() - lastMessageAt) / 1000));
