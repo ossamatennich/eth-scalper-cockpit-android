@@ -1,0 +1,7 @@
+ETH Scalper Cockpit Android v2.19.3
+
+Correctif visuel important :
+- Quand le service Android natif est connecté, l’interface ne doit plus faire croire que tout est bloqué.
+- Ajout d’un bandeau haut : SURVEILLANCE ANDROID CONNECTÉE.
+- Masquage des anciens messages web DONNÉES RETARDÉES / ANALYSE BLOQUÉE quand le service natif est vert.
+- Le service Android reste la source principale pour la surveillance écran verrouillé.

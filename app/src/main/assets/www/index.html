@@ -10,7 +10,7 @@
 <meta content="yes" name="apple-mobile-web-app-capable"/>
 <link href="./manifest.webmanifest" rel="manifest"/>
 <link href="./icons/icon-192.png" rel="icon"/>
-<title>ETH Scalper Cockpit v2.19.2 Android</title>
+<title>ETH Scalper Cockpit v2.19.3 Android</title>
 <style>
 :root{color-scheme:dark;--bg:#0d0f14;--panel:#151a24;--panel2:#1b2230;--line:#2a3446;--text:#f2f5f9;--muted:#8995a8;--green:#28d17f;--red:#ff5f6d;--orange:#ffa032;--blue:#55a9ff;--cyan:#30cde7;--yellow:#f4ca50;--shadow:0 12px 30px rgba(0,0,0,.27);--radius:16px}
 *{box-sizing:border-box}html{background:var(--bg)}body{margin:0;min-height:100vh;background:radial-gradient(circle at 80% -10%,rgba(48,205,231,.10),transparent 32%),var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}button,input,select{font:inherit}button{touch-action:manipulation}.app{width:min(100%,960px);margin:auto;padding:max(12px,env(safe-area-inset-top)) 12px max(30px,env(safe-area-inset-bottom))}.topbar{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:10px}.brand h1{margin:0;font-size:clamp(18px,5vw,27px);letter-spacing:-.035em}.brand small{display:block;color:var(--muted);font-size:9px;margin-top:3px}.actions{display:flex;gap:7px;align-items:center}.pill,.btn{min-height:36px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 10px;font-size:9px;font-weight:850;white-space:nowrap}.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 0 4px rgba(255,95,109,.13)}.pill.ok{color:var(--green)}.pill.ok .dot{background:var(--green);box-shadow:0 0 0 4px rgba(40,209,127,.13)}.pill.warn{color:var(--orange)}.pill.warn .dot{background:var(--orange)}.btn{border-radius:11px;color:var(--text);cursor:pointer;background:linear-gradient(180deg,#242d3c,#171d28)}.btn.primary{border-color:rgba(48,205,231,.38);background:linear-gradient(135deg,#17455b,#182738)}.btn.danger{border-color:rgba(255,95,109,.42);background:rgba(255,95,109,.10)}.btn:disabled{opacity:.5;cursor:wait}.notice{display:none;padding:10px 12px;border-radius:12px;margin-bottom:10px;font-size:11px;line-height:1.45;border:1px solid rgba(255,160,50,.38);background:rgba(255,160,50,.10);color:#ffd6a7}.notice.show{display:block}.notice.error{border-color:rgba(255,95,109,.45);background:rgba(255,95,109,.10);color:#ffc3c9}.card{background:linear-gradient(180deg,rgba(25,31,43,.98),rgba(18,23,32,.98));border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;margin-bottom:10px}.card-title{margin:0 0 10px;color:var(--muted);font-size:10px;font-weight:900;letter-spacing:.10em;text-transform:uppercase}.decision{position:relative;overflow:hidden;text-align:center;padding:19px 14px 15px}.decision:before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--orange)}.decision.enter-long:before{background:var(--green)}.decision.confirming:before{background:var(--cyan)}.decision.enter-short:before,.decision.error:before{background:var(--red)}.decision h2{margin:0;font-size:clamp(27px,8vw,45px);letter-spacing:-.045em;color:var(--orange);line-height:1}.decision.enter-long h2{color:var(--green)}.decision.confirming h2{color:var(--cyan)}.decision.enter-short h2,.decision.error h2{color:var(--red)}.decision p{margin:8px auto 0;max-width:760px;color:#cbd3df;font-size:12px;line-height:1.5}.signal-grid{display:none;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:13px}.signal-grid.show{display:grid}.signal-cell{padding:9px 5px;border:1px solid rgba(40,209,127,.25);border-radius:11px;background:rgba(40,209,127,.08)}.signal-cell span{display:block;color:var(--muted);font-size:8px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}.signal-cell b{display:block;margin-top:4px;font-size:13px}.practical-card{border-color:rgba(48,205,231,.28);background:linear-gradient(180deg,rgba(18,34,45,.98),rgba(15,23,32,.98))}.practical-head{display:flex;justify-content:space-between;gap:10px}.practical-kicker{color:var(--muted);font-size:9px;font-weight:900;letter-spacing:.11em;text-transform:uppercase}.practical-action{margin-top:5px;font-size:clamp(24px,7vw,38px);font-weight:950;line-height:1.02;letter-spacing:-.04em}.practical-action.enter-long{color:var(--green)}.practical-action.enter-short{color:var(--red)}.practical-action.wait{color:var(--orange)}.practical-action.armed{color:var(--blue)}.practical-action.confirming{color:var(--cyan)}.practical-action.blocked{color:var(--red)}.practical-code{padding:5px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:9px;font-weight:900;height:max-content}.practical-help{margin:9px 0 0;color:#d7dee8;font-size:12px;line-height:1.45}.quick-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:12px}.quick-cell{padding:9px 7px;border:1px solid var(--line);border-radius:11px;background:#10151e;text-align:center;min-width:0}.quick-cell span{display:block;color:var(--muted);font-size:8px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.quick-cell b{display:block;margin-top:4px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.prices{display:grid;grid-template-columns:1fr 1fr;gap:8px}.price{padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}.price .sym{font-size:9px;color:var(--muted);font-weight:900;letter-spacing:.08em}.price .mid{font-size:clamp(21px,7vw,31px);font-weight:950;letter-spacing:-.04em;margin-top:4px}.bidask{display:flex;justify-content:space-between;gap:5px;margin-top:7px;font-size:9px;color:var(--muted)}.bidask b{color:#dce3ee}.grid2{display:grid;grid-template-columns:1fr;gap:10px}.gates{display:grid;grid-template-columns:1fr 1fr;gap:7px}.gate{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:54px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.gate b{display:block;font-size:11px}.gate small{display:block;margin-top:3px;color:var(--muted);font-size:8px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:250px}.gate-icon{display:grid;place-items:center;width:28px;height:28px;flex:0 0 auto;border-radius:50%;font-weight:950;color:var(--red);background:rgba(255,95,109,.12)}.gate.pass{border-color:rgba(40,209,127,.28)}.gate.pass .gate-icon{color:var(--green);background:rgba(40,209,127,.12)}.score-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}.score{font-size:35px;font-weight:950;letter-spacing:-.05em}.score small{font-size:12px;color:var(--muted)}.progress{height:11px;margin-top:9px;border:1px solid #293243;border-radius:999px;overflow:hidden;background:#0b0e14}.progress>div{height:100%;width:0;border-radius:inherit;background:var(--red)}.parts{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:10px}.part{display:flex;justify-content:space-between;font-size:9px;color:var(--muted)}.part b{color:var(--text)}.metrics{display:grid}.row{display:grid;grid-template-columns:minmax(115px,.85fr) minmax(0,1.45fr);gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(42,52,70,.65)}.row:last-child{border-bottom:0}.row span{color:var(--muted);font-size:10px}.row b{text-align:right;font-size:11px;overflow-wrap:anywhere}.space{margin-top:11px}.space-label{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:10px}.space-label b{color:var(--text);text-align:right}.track{height:9px;margin-top:5px;border:1px solid #293243;border-radius:999px;overflow:hidden;background:#0b0e14}.track>div{height:100%;width:0;background:var(--red)}.requirements{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:10px}.req{padding:7px 3px;text-align:center;border:1px solid var(--line);border-radius:9px;background:#10151e}.req span{display:block;color:var(--muted);font-size:8px}.req b{display:block;margin-top:3px;font-size:10px}.warning-box{padding:10px 12px;border:1px solid rgba(255,160,50,.38);border-radius:11px;background:rgba(255,160,50,.08);color:#ffd6a7;font-size:10px;margin-top:9px}.warning-box[hidden]{display:none}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:grid;gap:4px}.field label{color:var(--muted);font-size:9px;font-weight:800}.field input,.field select{width:100%;min-height:38px;border:1px solid var(--line);border-radius:9px;background:#0f141d;color:var(--text);padding:7px 9px}.form-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.summary{font-size:11px;line-height:1.55;color:#d5dce7}.chart{height:230px;border:1px solid var(--line);border-radius:13px;background:#0b0e14;overflow:hidden}.chart canvas{width:100%;height:100%;display:block}.settings{display:grid;grid-template-columns:1fr 1fr;gap:7px}.toggle{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:11px;background:var(--panel)}.toggle input{width:17px;height:17px;accent-color:var(--cyan)}.toggle span{font-size:10px;font-weight:800}.journal{display:grid;gap:7px}.journal-item{display:grid;grid-template-columns:60px minmax(0,1fr) auto;gap:7px;align-items:center;padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-size:9px}.journal-item time{color:var(--muted)}.journal-item b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.journal-item span{color:var(--muted);text-align:right}.empty{text-align:center;color:var(--muted);font-size:10px;padding:12px 0}.details-toggle-wrap{display:flex;justify-content:center;margin:2px 0 10px}.advanced-section{display:none!important}body.show-details .advanced-section.card,body.show-details .grid2.advanced-section{display:block!important}body.show-details .grid2.advanced-section{display:grid!important}.footer{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:8px;line-height:1.45;margin:3px 2px 0}.mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.pos{color:var(--green)!important}.neg{color:var(--red)!important}.warnc{color:var(--orange)!important}.neutral{color:var(--blue)!important}@keyframes flash{0%,100%{filter:none}25%,75%{filter:brightness(1.75)}50%{filter:none}}.flash{animation:flash .55s ease 2}
@@ -43,7 +43,7 @@
 </head>
 <body>
 <main class="app">
-<header class="topbar"><div class="brand"><h1>ETH SCALPER COCKPIT</h1><small>v2.19.2 Android · objectif + quantité adaptatifs · reprise arrière-plan</small></div><div class="actions"><div class="pill" id="globalStatus"><span class="dot"></span><span id="globalStatusText">HORS LIGNE</span></div><button class="btn" id="refreshBtn" type="button">↻</button></div></header>
+<header class="topbar"><div class="brand"><h1>ETH SCALPER COCKPIT</h1><small>v2.19.3 Android · objectif + quantité adaptatifs · reprise arrière-plan</small></div><div class="actions"><div class="pill" id="globalStatus"><span class="dot"></span><span id="globalStatusText">HORS LIGNE</span></div><button class="btn" id="refreshBtn" type="button">↻</button></div></header>
 <div class="notice" id="notice" role="status"></div>
 <section class="card decision" id="decisionCard"><div class="card-title">Décision unique</div><h2 id="decisionLabel">INITIALISATION</h2><p id="decisionReason">Chargement des données Futures réelles…</p><div class="signal-grid" id="signalGrid"><div class="signal-cell"><span>Sens</span><b id="sigSide">—</b></div><div class="signal-cell"><span>Quantité</span><b id="sigQty">—</b></div><div class="signal-cell"><span>Levier</span><b id="sigLeverage">x5</b></div><div class="signal-cell"><span>Prix signal Binance</span><b id="sigBinance">—</b></div><div class="signal-cell"><span>Exécution Kraken</span><b id="sigKraken">À CONFIRMER</b></div><div class="signal-cell"><span>Objectif indicatif</span><b id="sigTp">—</b></div><div class="signal-cell"><span>Net provisoire</span><b id="sigNet">—</b></div><div class="signal-cell"><span>Limite Kraken acceptable</span><b id="sigKrakenLimit">—</b></div><div class="signal-cell"><span>Régime</span><b id="sigRegime">—</b></div></div></section>
 <section class="card practical-card"><div class="practical-head"><div><div class="practical-kicker">Action immédiate</div><div class="practical-action wait" id="actionNow">ATTENDRE</div></div><div class="practical-code" id="actionCode">INITIALISATION</div></div><p class="practical-help" id="actionHelp">Aucun ordre tant que les flux ne sont pas complets.</p><div class="quick-grid"><div class="quick-cell"><span id="quick1Label">Prix ETH</span><b class="mono" id="quick1Value">—</b></div><div class="quick-cell"><span id="quick2Label">Niveau surveillé</span><b id="quick2Value">—</b></div><div class="quick-cell"><span id="quick3Label">Données</span><b id="quick3Value">EN ATTENTE</b></div></div></section>
@@ -155,26 +155,26 @@
 <section class="card advanced-section"><div class="card-title">ETH · 20 bougies 1m</div><div class="chart"><canvas id="candleChart"></canvas></div></section>
 <section class="card advanced-section"><div class="card-title">Microstructure professionnelle / validation locale</div><div class="metrics"><div class="row"><span>Régime actuel</span><b id="regimeValue">—</b></div><div class="row"><span>Carnet local séquencé</span><b id="localBookValue">—</b></div><div class="row"><span>MLOFI 20 niveaux reconstruits</span><b id="mlofiValue">—</b></div><div class="row"><span>Vitesse du tape</span><b id="tapeSpeedValue">—</b></div><div class="row"><span>Consensus microstructure</span><b id="flowConsensusValue">—</b></div><div class="row"><span>Microstructure</span><b id="microstructureValue">—</b></div><div class="row"><span>Cycle d’absorption</span><b id="absorptionValue">—</b></div><div class="row"><span>Résilience de cassure</span><b id="resilienceValue">—</b></div><div class="row"><span>Confirmation finale avant alerte</span><b id="entryConfirmationValue">AUCUNE</b></div><div class="row"><span>Référence publique Kraken</span><b id="krakenReferenceValue">—</b></div><div class="row"><span>Objectif dynamique</span><b id="dynamicTargetValue">—</b></div><div class="row"><span>Calibration locale</span><b id="calibrationValue">MODE OMBRE</b></div><div class="row"><span>Observations suivies</span><b id="observationCount">0</b></div></div><p class="source-note">Binance Futures pilote le signal via un carnet local séquencé. Kraken public sert uniquement de contrôle indicatif d’exécution ; le prix Kraken réellement exécuté reste obligatoire.</p><div class="journal" id="observationJournal"><div class="empty">Aucune observation.</div></div></section>
 
-<section class="card advanced-section" id="telemetryCard"><div class="card-title">Enregistrement réel / moteur live v2.19.2 Android / replay historique</div>
+<section class="card advanced-section" id="telemetryCard"><div class="card-title">Enregistrement réel / moteur live v2.19.3 Android / replay historique</div>
 <div id="captureAlert" class="notice error show">VÉRIFICATION DU STOCKAGE INDEXEDDB…</div>
-<div class="metrics"><div class="row"><span>Enregistrement automatique</span><b id="captureStatusValue">INITIALISATION</b></div><div class="row"><span>Couverture rejouable</span><b id="replayCoverageValue">EN ATTENTE DE L’HISTORIQUE</b></div><div class="row"><span>Replay historique v2.15 / v2.16.5 figé</span><b id="shadowStatusValue">INITIALISATION</b></div><div class="row"><span>Égalité des événements injectés</span><b id="eventParityValue">NON VÉRIFIÉE</b></div><div class="row"><span>Dernier replay intégral</span><b id="replayStatusValue">AUCUN</b></div><div class="row"><span>Candidat actif v2.19.2 Android</span><b id="candidateTelemetryValue">AUCUN</b></div><div class="row"><span>Premier veto mesuré</span><b id="candidateVetoValue">—</b></div></div>
+<div class="metrics"><div class="row"><span>Enregistrement automatique</span><b id="captureStatusValue">INITIALISATION</b></div><div class="row"><span>Couverture rejouable</span><b id="replayCoverageValue">EN ATTENTE DE L’HISTORIQUE</b></div><div class="row"><span>Replay historique v2.15 / v2.16.5 figé</span><b id="shadowStatusValue">INITIALISATION</b></div><div class="row"><span>Égalité des événements injectés</span><b id="eventParityValue">NON VÉRIFIÉE</b></div><div class="row"><span>Dernier replay intégral</span><b id="replayStatusValue">AUCUN</b></div><div class="row"><span>Candidat actif v2.19.3 Android</span><b id="candidateTelemetryValue">AUCUN</b></div><div class="row"><span>Premier veto mesuré</span><b id="candidateVetoValue">—</b></div></div>
 <div id="simpleSessionInfo" class="notice capture-ok show">SESSION EN COURS · démarrage…</div><div class="export-session-picker" style="display:none"><label for="exportSessionSelect">Session</label><select id="exportSessionSelect"><option value="">SESSION ACTUELLE</option></select><button class="btn" id="refreshExportSessionsBtn" type="button">ACTUALISER</button></div><div class="form-actions"><button class="btn primary" id="exportSessionBtn" type="button">ARRÊTER ET EXPORTER</button><button class="btn" id="importSessionBtn" type="button">IMPORTER ET REJOUER UNE SESSION</button><input id="importSessionFile" type="file" accept=".json,.jsonl,.gz,application/gzip,application/json" hidden><button class="btn" id="replayLatestBtn" type="button">REJOUER LA SESSION COURANTE</button><button class="btn danger" id="clearCaptureBtn" type="button">DÉMARRER UNE NOUVELLE SESSION</button></div><div id="exportSessionStatus" class="notice export-status" role="status" aria-live="polite"></div><div id="exportReadyActions" class="form-actions export-actions" hidden><a class="btn primary" id="exportReadyLink" href="#" download>TÉLÉCHARGER LE FICHIER COMPRESSÉ</a><button class="btn" id="shareReadyBtn" type="button" hidden>PARTAGER / ENREGISTRER</button></div>
-<p class="source-note">La capture brute du moteur live v2.19.2 Android reste exacte. Le replay intégré compare uniquement les moteurs historiques figés v2.15 et v2.16.5 sur les mêmes événements acceptés. Les événements retardés restent enregistrés mais sont mis en quarantaine et exclus des décisions.</p>
+<p class="source-note">La capture brute du moteur live v2.19.3 Android reste exacte. Le replay intégré compare uniquement les moteurs historiques figés v2.15 et v2.16.5 sur les mêmes événements acceptés. Les événements retardés restent enregistrés mais sont mis en quarantaine et exclus des décisions.</p>
 <div class="table-scroll"><table class="candidate-table"><thead><tr><th>Moteur</th><th>Candidat</th><th>États / durées</th><th>Veto</th><th>Entrée / pivot / cible</th><th>Qté</th><th>MFE / MAE</th><th>Issue</th><th>Net théorique</th></tr></thead><tbody id="candidateComparisonBody"><tr><td colspan="9" class="empty">Aucun replay intégral.</td></tr></tbody></table></div>
 <div class="journal" id="candidateTelemetryJournal"><div class="empty">Aucun candidat tracé.</div></div></section>
 <section class="card"><div class="card-title">Alertes / PWA</div><div class="settings"><label class="toggle"><input id="soundEnabled" type="checkbox"/><span>Son</span></label><label class="toggle"><input id="vibrateEnabled" type="checkbox"/><span>Vibreur</span></label><label class="toggle"><input id="systemNotifyEnabled" type="checkbox"/><span>Notification système</span></label><label class="toggle"><input id="wakeLockEnabled" type="checkbox"/><span>Maintenir l’écran actif</span></label></div><div class="form-actions"><button class="btn" id="testAlertBtn" type="button">TEST ALERTE</button><button class="btn primary" hidden="" id="installBtn" type="button">INSTALLER LA PWA</button><button class="btn" id="exportBtn" type="button">EXPORTER LES JOURNAUX CSV</button></div></section>
 <div class="grid2"><section class="card"><div class="card-title">Journal des changements de scénario</div><div class="journal" id="scenarioJournal"><div class="empty">Aucun changement.</div></div></section><section class="card"><div class="card-title">Journal des trades confirmés</div><div class="journal" id="tradeJournal"><div class="empty">Aucun trade confirmé.</div></div></section></div>
-<footer class="footer"><span id="lastUpdate">Dernier calcul : —</span><span>Aucun ordre envoyé · signal Binance · contrôle Kraken public indicatif · confirmation d’exécution obligatoire · enregistrement brut / double replay local v2.19.2 Android.</span></footer>
+<footer class="footer"><span id="lastUpdate">Dernier calcul : —</span><span>Aucun ordre envoyé · signal Binance · contrôle Kraken public indicatif · confirmation d’exécution obligatoire · enregistrement brut / double replay local v2.19.3 Android.</span></footer>
 </main>
-<script data-engine-core="v2.19.2 Android">(function(root,factory){
+<script data-engine-core="v2.19.3 Android">(function(root,factory){
   const api=factory();
   if(typeof module==='object'&&module.exports) module.exports=api;
   else root.ETHCore=api;
 })(typeof self!=='undefined'?self:this,function(){
   'use strict';
 
-  const VERSION='2.19.2';
-  const ENGINE='ETH-PROP-OSSAMA-2.19.2';
+  const VERSION='2.19.3';
+  const ENGINE='ETH-PROP-OSSAMA-2.19.3';
   const BASE_FEE_PER_ETH=1.33;
   const DEFAULT_ACCOUNT=Object.freeze({
     equity:5000,
@@ -1365,7 +1365,7 @@
 <script>'use strict';
 
 const CONFIG=Object.freeze({
-  VERSION:'2.19.2',ENGINE:'ETH-PROP-OSSAMA-2.19.2',REST_BASE:'https://fapi.binance.com',
+  VERSION:'2.19.3',ENGINE:'ETH-PROP-OSSAMA-2.19.3',REST_BASE:'https://fapi.binance.com',
   MARKET_WS:'wss://fstream.binance.com/market/stream?streams='+[
     'ethusdt@kline_1m','btcusdt@kline_1m','ethusdt@kline_5m','btcusdt@kline_5m','ethusdt@kline_15m','btcusdt@kline_15m','ethusdt@aggTrade','btcusdt@aggTrade'
   ].join('/'),
@@ -3468,7 +3468,7 @@ const CausalLive2180=(function(core){
     const tpBinance=side==='LONG'?entry+plan.targetMove:entry-plan.targetMove,pivotBinance=side==='LONG'?entry-plan.stopDistance:entry+plan.stopDistance;
     const kr=ETHCore.krakenReferenceQuality({book:state.kraken.book,side,binancePrice:entry,maxAgeMs:CONFIG.KRAKEN_STALE_MS,maxDrift:state.account.maxKrakenDrift}),hasBasis=!!(kr.available&&kr.fresh),basis=hasBasis?kr.reference-entry:0,ref=hasBasis?kr.reference:entry,tpKraken=tpBinance+basis,pivotKraken=pivotBinance+basis,maxEntryDrift=Math.min(P.maxChase,Number(state.account.maxKrakenDrift)||P.maxChase),krakenLimit=side==='LONG'?ref+maxEntryDrift:ref-maxEntryDrift,signature=`C2180|${p.family}|${side}|${p.signalAt}`;
     const targetSource=plan.source,regime=p.family==='BREAKOUT'?'CAUSAL_BREAKOUT':'CAUSAL_PULLBACK_LONG';
-    return{label:`ENTRER ${side}`,decision:'ENTRER',code:null,reason:`${p.code} ${p.family==='BREAKOUT'?'cassure fraîche':'reprise après repli'} · validation causale ETH + flux exécuté + carnet + BTC · ${qty} ETH · objectif verrouillé ${plan.targetMove.toFixed(2)} $/ETH · stop ${plan.stopDistance.toFixed(2)} $ · plan sans extension à surveiller.`,enter:true,trade:{side,qty,leverage:CONFIG.LEVERAGE,binanceSignal:entry,krakenEntry:null,krakenLimit,tpBinance,tpKraken,targetMove:plan.targetMove,net:econ.net,trigger:p.code,triggerMode:'CAUSAL_1S',triggerLevel:p.reference,signature,obstacle:tpKraken,obstacleBinance:tpBinance,rawSpace:plan.targetMove,usableSpace:plan.targetMove,executionReserve:0,reserveRequired:0,spread:Math.max(0,Number(state.eth.book?.ask)-Number(state.eth.book?.bid)),slippage:0,safety:plan.stopDistance,score:p.quality,anchorId:`C2180-${Math.round(p.reference*100)}`,pivot:pivotKraken,pivotBinance,regime,regimePriority:100,medianRange:state.analysis?.s?.medRange||0,krakenPublicReference:kr,krakenBasis:basis,translateOnExecution:true,referenceBasisAvailable:hasBasis,entryBand:maxEntryDrift,economicsValidatedAtPublish:true,engineVersion:'2.19.2',minRewardRisk:state.account.minRewardRisk,rewardRisk:econ.rewardRisk,totalRisk:econ.totalRisk,targetModel:'CAUSAL_ATTENTION_FREE_ADAPTIVE_2185',targetSource,targetReason:plan.reason,targetReachability:plan.strong?.72:.84,targetMarketScore:plan.marketScore,targetAntiChasePenalty:plan.antiChasePenalty,driftModel:{band:maxEntryDrift,antiChaseCap:maxEntryDrift,source:'CAUSAL_2185'},obstacleDynamic:true,obstacleSource:'OBJECTIF_MARCHE_VERROUILLE_SANS_EXTENSION',targetLockedAt:now,calibration:{mode:'MULTI_SESSION_ROBUST_2180_PLUS_OBJECTIF_QTY_ADAPTATIFS_2185',wins:8,losses:0,sessions:4},consensusTier:'A',createdAt:now,causal2180:true,causalFamily:p.family,causalMetrics:cloneJSON(p.metrics),causalTargetPlan:cloneJSON(plan)}};
+    return{label:`ENTRER ${side}`,decision:'ENTRER',code:null,reason:`${p.code} ${p.family==='BREAKOUT'?'cassure fraîche':'reprise après repli'} · validation causale ETH + flux exécuté + carnet + BTC · ${qty} ETH · objectif verrouillé ${plan.targetMove.toFixed(2)} $/ETH · stop ${plan.stopDistance.toFixed(2)} $ · plan sans extension à surveiller.`,enter:true,trade:{side,qty,leverage:CONFIG.LEVERAGE,binanceSignal:entry,krakenEntry:null,krakenLimit,tpBinance,tpKraken,targetMove:plan.targetMove,net:econ.net,trigger:p.code,triggerMode:'CAUSAL_1S',triggerLevel:p.reference,signature,obstacle:tpKraken,obstacleBinance:tpBinance,rawSpace:plan.targetMove,usableSpace:plan.targetMove,executionReserve:0,reserveRequired:0,spread:Math.max(0,Number(state.eth.book?.ask)-Number(state.eth.book?.bid)),slippage:0,safety:plan.stopDistance,score:p.quality,anchorId:`C2180-${Math.round(p.reference*100)}`,pivot:pivotKraken,pivotBinance,regime,regimePriority:100,medianRange:state.analysis?.s?.medRange||0,krakenPublicReference:kr,krakenBasis:basis,translateOnExecution:true,referenceBasisAvailable:hasBasis,entryBand:maxEntryDrift,economicsValidatedAtPublish:true,engineVersion:'2.19.3',minRewardRisk:state.account.minRewardRisk,rewardRisk:econ.rewardRisk,totalRisk:econ.totalRisk,targetModel:'CAUSAL_ATTENTION_FREE_ADAPTIVE_2185',targetSource,targetReason:plan.reason,targetReachability:plan.strong?.72:.84,targetMarketScore:plan.marketScore,targetAntiChasePenalty:plan.antiChasePenalty,driftModel:{band:maxEntryDrift,antiChaseCap:maxEntryDrift,source:'CAUSAL_2185'},obstacleDynamic:true,obstacleSource:'OBJECTIF_MARCHE_VERROUILLE_SANS_EXTENSION',targetLockedAt:now,calibration:{mode:'MULTI_SESSION_ROBUST_2180_PLUS_OBJECTIF_QTY_ADAPTATIFS_2185',wins:8,losses:0,sessions:4},consensusTier:'A',createdAt:now,causal2180:true,causalFamily:p.family,causalMetrics:cloneJSON(p.metrics),causalTargetPlan:cloneJSON(plan)}};
   }
   function tryPublish(now=Date.now()){
     const p=runtime.pending;if(!p)return false;now=Number(now)||Date.now();
@@ -3489,7 +3489,7 @@ const CausalLive2180=(function(core){
   function waitDecision(){
     const elapsed=Math.max(0,Date.now()-(Number(state.captureSessionStartedAt)||Date.now())),warm=Math.max(0,P.startupWarmupMs-elapsed);
     if(warm>0||runtime.rows.length<121)return{label:'ATTENDRE [D]',decision:'ATTENDRE',code:'D',reason:`MOTEUR CAUSAL EN CHAUFFE : ${Math.max(Math.ceil(warm/1000),121-runtime.rows.length)} s environ avant toute entrée.`,enter:false};
-    return{label:'ATTENDRE [A]',decision:'ATTENDRE',code:'A',reason:`Moteur causal v2.19.2 Android : ${runtime.status}.`,enter:false};
+    return{label:'ATTENDRE [A]',decision:'ATTENDRE',code:'A',reason:`Moteur causal v2.19.3 Android : ${runtime.status}.`,enter:false};
   }
   function syntheticScenario(trade){
     if(!trade?.causal2180)return null;const side=trade.side,move=Number(trade.targetMove)||P.targetMove,detail={qty:trade.qty,usable:move,expectedNet:trade.net,rewardRisk:trade.rewardRisk,risk:{total:trade.totalRisk},targetPlan:{target:trade.tpBinance,move,source:trade.targetSource,reason:trade.targetReason}};
@@ -3782,13 +3782,13 @@ const putCaptureMetaBefore2183=putCaptureMeta;
 putCaptureMeta=async function(metaPatch={}){return putCaptureMetaBefore2183({version:'2.19.0',positionDecisionLatch2183:true,positionExitEvidence2183:true,marketTargetLocked2183:true,targetNoFixedRange2185:true,adaptiveQty2185:true,backgroundResume2185:true,targetNeverRecomputedAfterPublication:true,...metaPatch});};
 window.__V2183_TEST__={policy:V2183_POSITION_POLICY,assessLivePosition:ETHCore.assessLivePosition,managePosition:ETHCore.managePosition,targetPlan:CausalLive2180.marketTargetPlan,makeDecision:CausalLive2180.makeDecision,version:'2.19.0'};
 window.__V2185_TEST__={targetPlan:CausalLive2180.marketTargetPlan,causal:CausalCore2180,version:'2.19.0'};
-// ===== v2.19.2 Android : objectif marché recalibré après replay 48h =====
+// ===== v2.19.3 Android : objectif marché recalibré après replay 48h =====
 // La cible dynamique reste verrouillée mais n’utilise plus un seuil incompatible avec les cassures fraîches C1.
-// ===== fin v2.19.2 Android =====
+// ===== fin v2.19.3 Android =====
 
 
 
-// ===== v2.19.2 Android : plan attention-free + reprise arrière-plan =====
+// ===== v2.19.3 Android : plan attention-free + reprise arrière-plan =====
 const V2185_RESUME_POLICY=Object.freeze({
   STALE_AFTER_BACKGROUND_MS:4500,
   HARD_RESYNC_AFTER_MS:12000,
@@ -3843,7 +3843,7 @@ prepareStreamExport=async function(sessionId){const out=await prepareStreamExpor
 const putCaptureMetaBefore2185=putCaptureMeta;
 putCaptureMeta=async function(metaPatch={}){return putCaptureMetaBefore2185({version:'2.19.0',attentionFreePlan2185:true,noFixedTargetRange2185:true,adaptiveQty2185:true,backgroundResume2185:true,wakeLockBestEffort2185:true,targetNeverRecomputedAfterPublication:true,...metaPatch});};
 window.__V2185_TEST__={policy:V2185_RESUME_POLICY,targetPlan:CausalLive2180.marketTargetPlan,makeDecision:CausalLive2180.makeDecision,resume:resumeConnections2185,version:'2.19.0'};
-// ===== fin v2.19.2 Android =====
+// ===== fin v2.19.3 Android =====
 
 
 init();
@@ -3861,5 +3861,105 @@ init();
   });
 })();
 </script>
+
+<script id="native-ui-sync-2193">
+(function(){
+  if (window.__nativeUiSync2193) return;
+  window.__nativeUiSync2193 = true;
+  let lastPayload = null;
+
+  function okNative(p){
+    if(!p) return false;
+    const fresh = p.lastAgeSec == null || Number(p.lastAgeSec) < 20;
+    return fresh && (p.connected || p.type === "connected" || p.type === "live" || p.type === "signal");
+  }
+
+  function ensureTopBanner(){
+    let b = document.getElementById("nativeTopBanner2193");
+    if(!b){
+      b = document.createElement("div");
+      b.id = "nativeTopBanner2193";
+      b.style.cssText =
+        "position:fixed;left:10px;right:10px;top:8px;z-index:1000000;" +
+        "border-radius:14px;padding:10px 12px;font:900 12px system-ui;" +
+        "letter-spacing:.3px;box-shadow:0 10px 35px rgba(0,0,0,.35);" +
+        "background:rgba(1,18,14,.96);color:#eafff7;border:1px solid rgba(0,255,170,.70)";
+      document.body.appendChild(b);
+    }
+    return b;
+  }
+
+  function textOf(el){
+    return (el && el.innerText ? el.innerText : "").replace(/\s+/g," ").trim();
+  }
+
+  function suppressWebReconnect(ok){
+    const nodes = Array.from(document.querySelectorAll("div,section,article"));
+    if(!ok){
+      nodes.forEach(el => {
+        if(el.getAttribute("data-native-hidden-2193") === "1"){
+          el.style.display = el.getAttribute("data-native-old-display-2193") || "";
+          el.removeAttribute("data-native-hidden-2193");
+        }
+      });
+      return;
+    }
+
+    nodes.forEach(el => {
+      const t = textOf(el);
+      if(!t) return;
+
+      const isDelayed =
+        t.includes("DONNÉES RETARDÉES") && t.includes("ANALYSE BLOQUÉE");
+
+      const isReturnWarning =
+        t.includes("Retour application") && t.includes("bandeau temps réel");
+
+      if((isDelayed || isReturnWarning) && el.offsetHeight < 260){
+        if(el.getAttribute("data-native-hidden-2193") !== "1"){
+          el.setAttribute("data-native-old-display-2193", el.style.display || "");
+          el.setAttribute("data-native-hidden-2193", "1");
+          el.style.display = "none";
+        }
+      }
+    });
+  }
+
+  function applyNative(p){
+    lastPayload = p || lastPayload;
+    const ok = okNative(lastPayload);
+    const b = ensureTopBanner();
+
+    const eth = lastPayload && Number(lastPayload.eth) > 0 ? " · ETH " + Number(lastPayload.eth).toFixed(2) : "";
+    const age = lastPayload && lastPayload.lastAgeSec != null && Number(lastPayload.lastAgeSec) >= 0
+      ? " · dernier flux " + lastPayload.lastAgeSec + "s"
+      : "";
+    const msg = lastPayload && lastPayload.message ? " · " + lastPayload.message : "";
+
+    if(ok){
+      b.style.background = "rgba(1,18,14,.96)";
+      b.style.borderColor = "rgba(0,255,170,.75)";
+      b.style.color = "#eafff7";
+      b.innerHTML = "🟢 SURVEILLANCE ANDROID CONNECTÉE" + eth + age + " · tu peux quitter ou verrouiller l’écran";
+    } else {
+      b.style.background = "rgba(28,18,4,.96)";
+      b.style.borderColor = "rgba(255,170,0,.75)";
+      b.style.color = "#ffe6bd";
+      b.innerHTML = "🟠 SURVEILLANCE ANDROID ACTIVE · attente flux natif" + msg;
+    }
+
+    suppressWebReconnect(ok);
+  }
+
+  window.addEventListener("ethScalperNativeStatus", function(e){
+    applyNative(e.detail || {});
+  });
+
+  setInterval(function(){
+    if(lastPayload) applyNative(lastPayload);
+  }, 1000);
+})();
+</script>
+
 </body>
 </html>
