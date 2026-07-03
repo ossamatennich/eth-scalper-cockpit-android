@@ -417,7 +417,7 @@ public class MarketWatchService extends Service {
     private void broadcastStatus(String type, String message) {
         try {
             JSONObject j = new JSONObject();
-            j.put("version", "2.19.6-android");
+            j.put("version", "2.19.7-android");
             j.put("nativeActive", running);
             j.put("connected", socket != null && lastMessageAt > 0 && System.currentTimeMillis() - lastMessageAt < 70000);
             j.put("lastAgeSec", lastMessageAt == 0 ? -1 : Math.max(0, (System.currentTimeMillis() - lastMessageAt) / 1000));

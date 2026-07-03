@@ -1,0 +1,9 @@
+ETH Scalper Cockpit Android v2.19.7
+
+Correction demandée :
+- Suppression de l’interface Android ajoutée v2.19.5/v2.19.6.
+- Retour au cockpit original complet.
+- Suppression des blocs Marché/Compte/Détails dupliqués.
+- Suppression du clignotement causé par le masquage/réaffichage.
+- Le service Android natif reste actif en arrière-plan pour les notifications écran verrouillé.
+- L’état Android reste surtout visible via la notification permanente.

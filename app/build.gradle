@@ -8,8 +8,8 @@ android {
         applicationId 'com.ethscalper.cockpit'
         minSdk 26
         targetSdk 35
-        versionCode 21906
-        versionName '2.19.6'
+        versionCode 21907
+        versionName '2.19.7'
     }
 
     buildTypes {

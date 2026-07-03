@@ -117,8 +117,9 @@ public class MainActivity extends Activity {
     }
 
     private void injectNativeBanner() {
-        if (webView == null) return;
-        webView.evaluateJavascript("window.__nativeAndroidBridgeReady2196=true;", null);
+        // v2.19.7 : aucune interface Android ajoutée dans la page.
+        // Le cockpit original reste l'affichage principal.
+        // Le service natif continue en arrière-plan pour les notifications.
     }
 
     private void startNativeWatch() {
@@ -161,6 +162,6 @@ public class MainActivity extends Activity {
     public class NativeBridge {
         @JavascriptInterface public void startPermanentWatch() { runOnUiThread(MainActivity.this::startNativeWatch); }
         @JavascriptInterface public void stopPermanentWatch() { runOnUiThread(MainActivity.this::stopNativeWatch); }
-        @JavascriptInterface public String getMode() { return "android-native-v2.19.6"; }
+        @JavascriptInterface public String getMode() { return "android-native-v2.19.7"; }
     }
 }
