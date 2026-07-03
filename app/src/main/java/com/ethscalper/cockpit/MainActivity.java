@@ -162,6 +162,6 @@ public class MainActivity extends Activity {
     public class NativeBridge {
         @JavascriptInterface public void startPermanentWatch() { runOnUiThread(MainActivity.this::startNativeWatch); }
         @JavascriptInterface public void stopPermanentWatch() { runOnUiThread(MainActivity.this::stopNativeWatch); }
-        @JavascriptInterface public String getMode() { return "android-native-v2.20.0"; }
+        @JavascriptInterface public String getMode() { return "android-native-v2.20.2"; }
     }
 }

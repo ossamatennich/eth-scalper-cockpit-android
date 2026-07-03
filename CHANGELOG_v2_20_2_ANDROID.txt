@@ -1,0 +1,13 @@
+ETH Scalper Cockpit Android v2.20.2
+
+Décision :
+- Pas de bulle flottante obligatoire.
+- Pas d'affichage par-dessus les autres applications pour l'instant, car ce n'est pas nécessaire au fonctionnement arrière-plan.
+- Le fonctionnement principal reste le service Android au premier plan + notification permanente.
+
+Correctifs :
+- Canal de notification signal recréé avec un nouveau nom interne.
+- Son d'alerte plus fort : type alarme Android si disponible.
+- Vibration renforcée.
+- Notification de signal en priorité maximale.
+- Titre plus visible : SIGNAL ETH LONG/SHORT.

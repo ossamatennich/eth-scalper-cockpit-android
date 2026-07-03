@@ -8,6 +8,9 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -38,7 +41,7 @@ public class MarketWatchService extends Service {
     public static final String BROADCAST_STATUS = "com.ethscalper.cockpit.STATUS";
 
     private static final String CH_WATCH = "eth_scalper_watch";
-    private static final String CH_SIGNAL = "eth_scalper_signals";
+    private static final String CH_SIGNAL = "eth_scalper_signals_strong_v2202";
     private static final int NOTIF_WATCH_ID = 2192;
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/btcusdt@kline_1m/btcusdt@bookTicker";
@@ -125,9 +128,19 @@ public class MarketWatchService extends Service {
         NotificationChannel watch = new NotificationChannel(CH_WATCH, "Surveillance permanente", NotificationManager.IMPORTANCE_LOW);
         watch.setDescription("Garde le moteur ETH Scalper actif en arrière-plan.");
         nm.createNotificationChannel(watch);
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH Scalper", NotificationManager.IMPORTANCE_HIGH);
-        signals.setDescription("Alertes trading ETH lorsque le moteur détecte un setup exploitable.");
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH Scalper — son fort", NotificationManager.IMPORTANCE_HIGH);
+        signals.setDescription("Alertes fortes ETH : son + vibration lorsqu'un setup exploitable est détecté.");
         signals.enableVibration(true);
+        signals.setVibrationPattern(new long[]{0, 450, 180, 450, 180, 900});
+        try {
+            Uri sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (sound == null) sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            AudioAttributes attrs = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build();
+            signals.setSound(sound, attrs);
+        } catch (Exception ignored) {}
         nm.createNotificationChannel(signals);
     }
 
@@ -380,16 +393,18 @@ public class MarketWatchService extends Service {
         Intent open = new Intent(this, MainActivity.class);
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         String side = p.side > 0 ? "LONG" : "SHORT";
-        String title = "ETH " + side + " — score " + p.score + "/100";
+        String title = "🚨 SIGNAL ETH " + side + " — score " + p.score + "/100";
         String body = String.format(Locale.US, "%s | qty %d ETH | entry %.2f | TP %.2f | SL %.2f", p.family, p.qty, p.entry, p.tp, p.sl);
         Notification n = new Notification.Builder(this, CH_SIGNAL)
                 .setSmallIcon(R.drawable.ic_stat_eth)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new Notification.BigTextStyle().bigText(body))
-                .setPriority(Notification.PRIORITY_HIGH)
+                .setPriority(Notification.PRIORITY_MAX)
                 .setDefaults(Notification.DEFAULT_SOUND | Notification.DEFAULT_VIBRATE)
                 .setContentIntent(pi)
+                .setCategory(Notification.CATEGORY_ALARM)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
                 .build();
         nm.notify(signalId++, n);
@@ -417,7 +432,7 @@ public class MarketWatchService extends Service {
     private void broadcastStatus(String type, String message) {
         try {
             JSONObject j = new JSONObject();
-            j.put("version", "2.20.0-android");
+            j.put("version", "2.20.2-android");
             j.put("nativeActive", running);
             j.put("connected", socket != null && lastMessageAt > 0 && System.currentTimeMillis() - lastMessageAt < 70000);
             j.put("lastAgeSec", lastMessageAt == 0 ? -1 : Math.max(0, (System.currentTimeMillis() - lastMessageAt) / 1000));
