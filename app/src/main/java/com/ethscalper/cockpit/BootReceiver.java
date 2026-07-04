@@ -3,7 +3,6 @@ package com.ethscalper.cockpit;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.os.Build;
 
 public class BootReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context, Intent intent) {
@@ -11,7 +10,7 @@ public class BootReceiver extends BroadcastReceiver {
         if (Intent.ACTION_BOOT_COMPLETED.equals(action) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             Intent svc = new Intent(context, MarketWatchService.class);
             svc.setAction(MarketWatchService.ACTION_START);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(svc); else context.startService(svc);
+            context.startForegroundService(svc);
         }
     }
 }
