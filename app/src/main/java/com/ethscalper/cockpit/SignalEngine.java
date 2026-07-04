@@ -64,12 +64,15 @@ public final class SignalEngine {
 
         double recentRange = Math.max(0, s.recentHigh - s.recentLow);
         double target = computeTarget(s.avgRange20, recentRange, volumeRatio, Math.abs(s.flowNorm), score);
-        double stop = computeStop(s.avgRange20, recentRange, score);
-        int quantity = computeQuantity(score, stop, target, false);
-        if (quantity < 3)
-            return reject(s, "SCORE_TOO_LOW", "Ratio rendement/risque insuffisant", score, movement);
         double entry = side > 0 ? (positive(s.ethAsk) ? s.ethAsk : s.ethLast)
                 : (positive(s.ethBid) ? s.ethBid : s.ethLast);
+        double stop = computeStop(s.avgRange20, recentRange, score);
+        stop = computeStructureStop(stop, side, entry, s.recentHigh, s.recentLow, s.avgRange20);
+
+        int quantity = computeQuantity(score, stop, target, false);
+        if (quantity < 3)
+            return reject(s, "SCORE_TOO_LOW", "Ratio rendement/risque insuffisant après stop structurel", score, movement);
+
         double tp = entry + side * target;
         double sl = entry - side * stop;
         String sideName = side > 0 ? "LONG" : "SHORT";
@@ -105,9 +108,29 @@ public final class SignalEngine {
     }
 
     public static double computeStop(double avgRange, double recentRange, int score) {
-        double stop = Math.max(0.78, avgRange * 0.92) + Math.min(0.8, recentRange * 0.06);
-        if (score >= 82) stop *= 0.92;
-        return round2(Math.max(0.78, Math.min(2.35, stop)));
+        double volatilityStop = Math.max(1.35, avgRange * 1.12);
+        double noiseBuffer = Math.min(0.90, Math.max(0.22, recentRange * 0.10));
+        double stop = volatilityStop + noiseBuffer;
+
+        if (score >= 82) {
+            stop = Math.max(stop, avgRange * 1.25 + 0.25);
+        }
+
+        return round2(Math.max(1.35, Math.min(3.40, stop)));
+    }
+
+    public static double computeStructureStop(double baseStop, int side, double entry,
+                                              double recentHigh, double recentLow, double avgRange) {
+        double buffer = Math.max(0.22, Math.min(0.55, avgRange * 0.25));
+        double stop = baseStop;
+
+        if (side > 0 && positive(recentLow) && positive(entry) && recentLow < entry) {
+            stop = Math.max(stop, (entry - recentLow) + buffer);
+        } else if (side < 0 && positive(recentHigh) && positive(entry) && recentHigh > entry) {
+            stop = Math.max(stop, (recentHigh - entry) + buffer);
+        }
+
+        return round2(Math.max(1.35, Math.min(3.40, stop)));
     }
 
     public static int computeQuantity(int score, double stop, double target, boolean consumed) {

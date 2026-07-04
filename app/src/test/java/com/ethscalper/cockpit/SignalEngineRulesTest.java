@@ -53,4 +53,19 @@ public class SignalEngineRulesTest {
     @Test public void quantityRejectsBadRiskReward() {
         assertEquals(0, SignalEngine.computeQuantity(90, 5.0, 1.0, false));
     }
+    @Test public void stopUsesNoiseBufferInsteadOfTinyStop() {
+        double stop = SignalEngine.computeStop(1.0, 2.8, 87);
+        assertTrue("Stop should not be tiny on active ETH movement", stop >= 1.55);
+    }
+
+    @Test public void longStructureStopCoversRecentSwingLow() {
+        double stop = SignalEngine.computeStructureStop(1.50, 1, 1796.02, 1796.31, 1793.99, 1.0);
+        assertTrue("Long stop should cover recent swing low plus buffer", stop >= 2.20);
+    }
+
+    @Test public void shortStructureStopCoversRecentSwingHigh() {
+        double stop = SignalEngine.computeStructureStop(1.50, -1, 1791.30, 1792.45, 1790.80, 1.0);
+        assertTrue("Short stop should cover recent swing high plus buffer", stop >= 1.37);
+    }
 }
+

@@ -1,0 +1,10 @@
+ETH Scalper Cockpit Android v2.23.7
+
+Correction calibration stop :
+- Stop minimum plus réaliste pour ETH scalp.
+- Stop basé sur volatilité + bruit normal + structure récente.
+- Pour LONG : le stop couvre le dernier swing low + buffer.
+- Pour SHORT : le stop couvre le dernier swing high + buffer.
+- Le score élevé ne réduit plus artificiellement le stop.
+- Si le stop devient trop large, la quantité baisse ou le signal est rejeté par le ratio rendement/risque.
+- Aucun ordre automatique.
