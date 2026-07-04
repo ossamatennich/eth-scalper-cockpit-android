@@ -28,8 +28,11 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
+import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
+import okhttp3.Call;
+import okhttp3.Callback;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -47,11 +50,11 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v2221";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v2221";
+    private static final String CH_WATCH = "eth_scalper_watch_v2222";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v2222";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 2221;
+    private static final int NOTIF_WATCH_ID = 2222;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
@@ -74,6 +77,7 @@ public class MarketWatchService extends Service {
     private long lastEvaluationAt;
     private long lastWatchNotificationAt;
     private int reconnectAttempt;
+    private boolean historyPrefillRequested;
     private int signalNotificationId = 3000;
 
     private double ethBid, ethAsk, ethLast;
@@ -128,6 +132,7 @@ public class MarketWatchService extends Service {
             broadcastStatus("sync", "État du service natif resynchronisé");
         }
         connectIfNeeded();
+        prefillHistoricalCandlesIfNeeded();
         scheduleHealthCheck();
         return START_STICKY;
     }
@@ -168,7 +173,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.22.1",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.22.2.2",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -269,6 +274,69 @@ public class MarketWatchService extends Service {
                 handler.postDelayed(this, 3000);
             }
         }, 3000);
+    }
+
+
+    private void prefillHistoricalCandlesIfNeeded() {
+        if (historyPrefillRequested || client == null) return;
+        historyPrefillRequested = true;
+        fetchHistoricalKlines("ETHUSDT", true);
+        fetchHistoricalKlines("BTCUSDT", false);
+    }
+
+    private void fetchHistoricalKlines(String symbol, boolean isEth) {
+        Request request = new Request.Builder()
+                .url("https://fapi.binance.com/fapi/v1/klines?symbol=" + symbol + "&interval=1m&limit=180")
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override public void onFailure(Call call, IOException error) {
+                handler.post(() -> broadcastStatus("warmup_failed", "Préchargement " + symbol + " impossible"));
+            }
+
+            @Override public void onResponse(Call call, Response response) {
+                try {
+                    String raw = response.body() == null ? "" : response.body().string();
+                    JSONArray rows = new JSONArray(raw);
+                    List<Candle> loaded = new ArrayList<>();
+
+                    for (int i = 0; i < rows.length(); i++) {
+                        JSONArray row = rows.optJSONArray(i);
+                        if (row == null || row.length() < 6) continue;
+                        loaded.add(new Candle(
+                                row.optLong(0),
+                                row.optDouble(1),
+                                row.optDouble(2),
+                                row.optDouble(3),
+                                row.optDouble(4),
+                                row.optDouble(5)
+                        ));
+                    }
+
+                    handler.post(() -> {
+                        Deque<Candle> target = isEth ? ethCandles : btcCandles;
+                        target.clear();
+                        for (Candle candle : loaded) upsert(target, candle, 180);
+
+                        if (!loaded.isEmpty()) {
+                            Candle last = loaded.get(loaded.size() - 1);
+                            if (isEth) {
+                                if (ethLast <= 0) ethLast = last.close;
+                            } else {
+                                if (btcLast <= 0) btcLast = last.close;
+                            }
+                        }
+
+                        evaluateSignal(System.currentTimeMillis());
+                        broadcastStatus("warmup", "Historique " + symbol + " chargé : " + loaded.size() + " bougies");
+                    });
+                } catch (Exception ignored) {
+                    handler.post(() -> broadcastStatus("warmup_failed", "Erreur préchargement " + symbol));
+                } finally {
+                    try { response.close(); } catch (Exception ignored) {}
+                }
+            }
+        });
     }
 
     private void handleMessage(String text) {
@@ -402,7 +470,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.22.1 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.22.2 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -472,7 +540,7 @@ public class MarketWatchService extends Service {
             boolean connected = socket != null && age >= 0 && age < 70;
             SignalDecision decision = lastDecision;
             JSONObject state = new JSONObject();
-            state.put("version", "2.22.1-android");
+            state.put("version", "2.22.2-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);

@@ -1,0 +1,11 @@
+ETH Scalper Cockpit Android v2.22.2
+
+Correctif moteur :
+- Ajout du préchargement automatique des 180 dernières bougies ETHUSDT et BTCUSDT via Binance Futures REST.
+- Le moteur n’attend plus 30 minutes pour atteindre ETH 30/30 et BTC 10/10.
+- Les prix temps réel restent alimentés par WebSocket natif.
+- Diagnostic moteur plus compact.
+- Nouveau canal notification v2222.
+
+Aucune WebView en écran principal.
+Aucun ordre automatique.

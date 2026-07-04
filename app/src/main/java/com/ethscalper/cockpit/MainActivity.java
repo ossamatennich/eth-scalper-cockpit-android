@@ -135,7 +135,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.22.1 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.22.2 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -201,7 +201,7 @@ public class MainActivity extends Activity {
 
     private void buildDiagnosticCard() {
         LinearLayout card = card("DIAGNOSTIC MOTEUR", ORANGE);
-        diagnosticValue = text("• NO_DATA · Initialisation", 13, TEXT, false);
+        diagnosticValue = text("• NO_DATA · Initialisation", 12, TEXT, false);
         diagnosticValue.setTypeface(Typeface.MONOSPACE);
         diagnosticValue.setLineSpacing(dp(3), 1f);
         card.addView(diagnosticValue);
@@ -426,7 +426,7 @@ public class MainActivity extends Activity {
         SimpleDateFormat clock = new SimpleDateFormat("HH:mm:ss", Locale.FRANCE);
         StringBuilder lines = new StringBuilder();
         int shown = 0;
-        for (int i=diagnostics.length()-1; i>=0 && shown<8; i--, shown++) {
+        for (int i=diagnostics.length()-1; i>=0 && shown<5; i--, shown++) {
             JSONObject item = diagnostics.optJSONObject(i);
             if (item == null) continue;
             if (lines.length() > 0) lines.append('\n');
