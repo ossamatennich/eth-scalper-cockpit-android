@@ -24,34 +24,41 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.core.content.ContextCompat;
+
 import org.json.JSONObject;
 
 import java.util.Locale;
 
 public class MainActivity extends Activity {
     private LinearLayout root;
-    private TextView status, price, decision, action, signal, info;
-    private boolean legacy = false;
+    private TextView status;
+    private TextView price;
+    private TextView decision;
+    private TextView action;
+    private TextView signal;
+    private TextView info;
+    private boolean showingLegacyCockpit;
+    private boolean receiverRegistered;
 
-    private final BroadcastReceiver receiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context c, Intent i) {
-            String p = i.getStringExtra("payload");
-            if (p != null) render(p);
+    private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            String payload = intent.getStringExtra("payload");
+            if (payload != null) render(payload);
         }
     };
 
-    @Override protected void onCreate(Bundle b) {
-        super.onCreate(b);
+    @Override protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
         MarketWatchService.ensureChannels(this);
-        requestNotif();
-        startWatch();
         buildNativeScreen();
-        askBatteryOnce();
-        askOverlayOnce();
+        requestNotificationPermission();
+        startWatchService();
+        askBatteryOptimizationOnce();
     }
 
     private void buildNativeScreen() {
-        legacy = false;
+        showingLegacyCockpit = false;
         ScrollView scroll = new ScrollView(this);
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -60,126 +67,152 @@ public class MainActivity extends Activity {
         scroll.addView(root);
         setContentView(scroll);
 
-        TextView title = text("ETH SCALPER COCKPIT", 30, Color.WHITE, true);
-        TextView sub = text("v2.21.0 Android natif · surveillance permanente", 14, Color.rgb(158,170,184), false);
-        Button full = new Button(this);
-        full.setText("Cockpit complet");
-        full.setAllCaps(false);
-        full.setOnClickListener(v -> showLegacy());
+        root.addView(text("ETH SCALPER COCKPIT", 30, Color.WHITE, true));
+        root.addView(text("v2.21.0 Android natif · surveillance permanente", 14, Color.rgb(158, 170, 184), false));
 
-        root.addView(title);
-        root.addView(sub);
-        root.addView(full);
+        Button fullCockpit = new Button(this);
+        fullCockpit.setText("Cockpit complet");
+        fullCockpit.setAllCaps(false);
+        fullCockpit.setOnClickListener(view -> showLegacyCockpit());
+        root.addView(fullCockpit);
 
-        status = card("SURVEILLANCE", "🟠 Connexion native Binance…", Color.rgb(255,190,120), 18);
-        price = card("PRIX", "ETH — · BTC — · flux —", Color.WHITE, 20);
-        decision = card("DÉCISION UNIQUE", "ATTENDRE", Color.rgb(255,159,45), 38);
-        action = card("ACTION IMMÉDIATE", "NE PAS ENTRER", Color.WHITE, 32);
-        signal = card("SIGNAL", "Aucun signal natif pour le moment.", Color.rgb(220,230,240), 18);
-        info = card("INFO", "Tu peux quitter ou verrouiller l’écran. Le service Android continue derrière.", Color.rgb(200,212,224), 16);
+        status = card("STATUT", "🟠 Service actif · reconnexion native", Color.rgb(255, 190, 120), 18);
+        price = card("PRIX ETH", "ETH — · BID — · ASK —", Color.WHITE, 20);
+        decision = card("DÉCISION", "ATTENDRE", Color.rgb(255, 159, 45), 38);
+        action = card("ACTION", "NE PAS ENTRER", Color.WHITE, 32);
+        signal = card("SIGNAL NATIF", "Aucun signal natif pour le moment.", Color.rgb(220, 230, 240), 18);
+        info = card("INFO", "Source : service Android natif.", Color.rgb(200, 212, 224), 16);
 
-        String last = MarketWatchService.getLastStatusJson();
-        if (last != null && last.length() > 0) render(last);
+        String lastState = MarketWatchService.getLastStatusJson();
+        if (!lastState.isEmpty()) render(lastState);
     }
 
-    private TextView text(String s, int size, int color, boolean bold) {
-        TextView t = new TextView(this);
-        t.setText(s);
-        t.setTextSize(size);
-        t.setTextColor(color);
-        t.setPadding(0, 6, 0, 6);
-        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return t;
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        view.setPadding(0, 6, 0, 6);
+        if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return view;
     }
 
     private TextView card(String label, String value, int color, int size) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(26, 22, 26, 22);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, 16, 0, 0);
-        box.setLayoutParams(lp);
+        layout.setMargins(0, 16, 0, 0);
+        box.setLayoutParams(layout);
         box.setBackgroundColor(Color.rgb(17, 23, 35));
 
-        TextView l = text(label, 12, Color.rgb(150,160,176), true);
-        TextView v = text(value, size, color, true);
-        box.addView(l);
-        box.addView(v);
+        box.addView(text(label, 12, Color.rgb(150, 160, 176), true));
+        TextView content = text(value, size, color, true);
+        box.addView(content);
         root.addView(box);
-        return v;
+        return content;
     }
 
-    private String fmt(double v) {
-        return v > 0 ? String.format(Locale.US, "%.2f", v) : "—";
+    private String formatPrice(double value) {
+        return value > 0 ? String.format(Locale.US, "%.2f", value) : "—";
     }
 
     private void render(String payload) {
         try {
-            JSONObject j = new JSONObject(payload);
-            boolean connected = j.optBoolean("connected", false);
-            int age = j.optInt("lastAgeSec", -1);
-            double eth = j.optDouble("eth", 0);
-            double bid = j.optDouble("bid", 0);
-            double ask = j.optDouble("ask", 0);
-            int candles = j.optInt("candles", 0);
-            String msg = j.optString("message", "");
+            JSONObject state = new JSONObject(payload);
+            boolean connected = state.optBoolean("connected", false);
+            int ageSeconds = state.optInt("lastAgeSec", -1);
+            double eth = state.optDouble("eth", 0);
+            double bid = state.optDouble("bid", 0);
+            double ask = state.optDouble("ask", 0);
+            int candles = state.optInt("candles", 0);
+            String message = state.optString("message", "");
+            boolean justDetected = "signal".equals(state.optString("type", ""));
+            JSONObject plan = state.optJSONObject("lastPlan");
 
             runOnUiThread(() -> {
-                status.setText(connected ? "🟢 Android natif connecté · flux " + Math.max(0, age) + "s" : "🟠 Service actif · reconnexion native");
-                status.setTextColor(connected ? Color.rgb(125,255,217) : Color.rgb(255,190,120));
-                price.setText("ETH " + fmt(eth) + " · BID " + fmt(bid) + " · ASK " + fmt(ask));
-                decision.setText("ATTENDRE");
-                action.setText("NE PAS ENTRER");
-                signal.setText("Aucun signal natif pour le moment.");
-                info.setText("Bougies natives : " + candles + "\nMessage : " + (msg.length() > 0 ? msg : "surveillance active") + "\nSource : service Android natif.");
+                if (status == null || price == null) return;
+                status.setText(connected
+                        ? "🟢 Android natif connecté · flux " + Math.max(0, ageSeconds) + "s"
+                        : "🟠 Service actif · reconnexion native");
+                status.setTextColor(connected ? Color.rgb(125, 255, 217) : Color.rgb(255, 190, 120));
+                price.setText("ETH " + formatPrice(eth) + " · BID " + formatPrice(bid) + " · ASK " + formatPrice(ask));
+
+                if (plan != null) {
+                    String side = plan.optString("side", "—");
+                    decision.setText(justDetected ? "SIGNAL " + side : "ATTENDRE");
+                    action.setText(justDetected ? "SIGNAL NATIF DÉTECTÉ" : "NE PAS ENTRER");
+                    signal.setText(String.format(Locale.US,
+                            "%s%s · score %d/100 · quantité %d ETH\nEntrée %.2f · TP %.2f · SL %.2f\n%s",
+                            justDetected ? "" : "Dernier signal · ",
+                            side,
+                            plan.optInt("score", 0),
+                            plan.optInt("qty", 0),
+                            plan.optDouble("entry", 0),
+                            plan.optDouble("tp", 0),
+                            plan.optDouble("sl", 0),
+                            plan.optString("family", "Signal natif")));
+                } else {
+                    decision.setText("ATTENDRE");
+                    action.setText("NE PAS ENTRER");
+                    signal.setText("Aucun signal natif pour le moment.");
+                }
+
+                info.setText("Source : service Android natif.\nBougies natives : " + candles
+                        + "\nÉtat : " + (message.isEmpty() ? "surveillance active" : message));
             });
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+            // Conserver le dernier état lisible si un payload incomplet est reçu.
+        }
     }
 
-    private void showLegacy() {
-        legacy = true;
-        WebView w = new WebView(this);
-        WebSettings s = w.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setDatabaseEnabled(true);
-        s.setAllowFileAccess(true);
-        s.setAllowContentAccess(true);
-        s.setMediaPlaybackRequiresUserGesture(false);
-        w.setWebViewClient(new WebViewClient());
-        w.setWebChromeClient(new WebChromeClient());
-        setContentView(w);
-        w.loadUrl("file:///android_asset/www/index.html?v=2210");
+    private void showLegacyCockpit() {
+        showingLegacyCockpit = true;
+        WebView webView = new WebView(this);
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
+        webView.setWebViewClient(new WebViewClient());
+        webView.setWebChromeClient(new WebChromeClient());
+        setContentView(webView);
+        webView.loadUrl("file:///android_asset/www/index.html?v=2210");
     }
 
-    private void startWatch() {
-        Intent i = new Intent(this, MarketWatchService.class);
-        i.setAction(MarketWatchService.ACTION_START);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
-        else startService(i);
+    private void startWatchService() {
+        Intent intent = new Intent(this, MarketWatchService.class);
+        intent.setAction(MarketWatchService.ACTION_START);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
+        else startService(intent);
     }
 
-    private void requestNotif() {
-        if (Build.VERSION.SDK_INT >= 33) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2210);
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != getPackageManager().PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2210);
+        }
     }
 
-    private void askBatteryOnce() {
+    private void askBatteryOptimizationOnce() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
-        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-        if (pm != null && pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        if (powerManager != null && powerManager.isIgnoringBatteryOptimizations(getPackageName())) return;
         if (getPreferences(MODE_PRIVATE).getBoolean("batteryAsked2210", false)) return;
         getPreferences(MODE_PRIVATE).edit().putBoolean("batteryAsked2210", true).apply();
         new AlertDialog.Builder(this)
                 .setTitle("Surveillance permanente")
                 .setMessage("Autorise ETH Scalper à rester actif en arrière-plan.")
-                .setPositiveButton("Ouvrir", (d,w) -> {
+                .setPositiveButton("Ouvrir", (dialog, which) -> {
                     try {
-                        Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                        i.setData(Uri.parse("package:" + getPackageName()));
-                        startActivity(i);
-                    } catch(Exception e) {
+                        Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                    } catch (Exception error) {
                         startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
                     }
                 })
@@ -187,42 +220,30 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private void askOverlayOnce() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
-        if (Settings.canDrawOverlays(this)) return;
-        if (getPreferences(MODE_PRIVATE).getBoolean("overlayAsked2210", false)) return;
-        getPreferences(MODE_PRIVATE).edit().putBoolean("overlayAsked2210", true).apply();
-        new AlertDialog.Builder(this)
-                .setTitle("Superposition optionnelle")
-                .setMessage("Tu peux autoriser l’affichage par-dessus les autres applications. Ce n’est pas obligatoire pour la surveillance.")
-                .setPositiveButton("Ouvrir", (d,w) -> {
-                    Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
-                    i.setData(Uri.parse("package:" + getPackageName()));
-                    startActivity(i);
-                })
-                .setNegativeButton("Ignorer", null)
-                .show();
-    }
-
     @Override protected void onResume() {
         super.onResume();
-        if (Build.VERSION.SDK_INT >= 33)
-            registerReceiver(receiver, new IntentFilter(MarketWatchService.BROADCAST_STATUS), Context.RECEIVER_NOT_EXPORTED);
-        else
-            registerReceiver(receiver, new IntentFilter(MarketWatchService.BROADCAST_STATUS));
-
-        startWatch();
-        String last = MarketWatchService.getLastStatusJson();
-        if (last != null && last.length() > 0) render(last);
+        if (!receiverRegistered) {
+            IntentFilter filter = new IntentFilter(MarketWatchService.BROADCAST_STATUS);
+            ContextCompat.registerReceiver(this, statusReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+            receiverRegistered = true;
+        }
+        startWatchService();
+        if (!showingLegacyCockpit) {
+            String lastState = MarketWatchService.getLastStatusJson();
+            if (!lastState.isEmpty()) render(lastState);
+        }
     }
 
     @Override protected void onPause() {
-        try { unregisterReceiver(receiver); } catch(Exception ignored) {}
+        if (receiverRegistered) {
+            try { unregisterReceiver(statusReceiver); } catch (Exception ignored) {}
+            receiverRegistered = false;
+        }
         super.onPause();
     }
 
     @Override public void onBackPressed() {
-        if (legacy) buildNativeScreen();
+        if (showingLegacyCockpit) buildNativeScreen();
         else super.onBackPressed();
     }
 }
