@@ -1,0 +1,8 @@
+ETH Scalper Cockpit Android v2.24.3
+
+Correctif observation :
+- Corrige le signal actif fantôme.
+- Si le journal a invalidé le dernier signal, le statut principal ne peut plus le remettre ACTIVE.
+- Conserve le journal multi-signaux.
+- Mode observation uniquement.
+- Aucun trade réel conseillé.
