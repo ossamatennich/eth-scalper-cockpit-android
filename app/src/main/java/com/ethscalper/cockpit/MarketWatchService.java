@@ -50,11 +50,11 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22303";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22303";
+    private static final String CH_WATCH = "eth_scalper_watch_v22304";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22304";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 22303;
+    private static final int NOTIF_WATCH_ID = 22304;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
@@ -82,6 +82,13 @@ public class MarketWatchService extends Service {
     private long lastBookTickerAt;
     private long lastKlineAt;
     private long lastAggTradeAt;
+    private long restKlineRefreshes;
+    private long restTradeRefreshes;
+    private long lastRestKlineRefreshAt;
+    private long lastRestTradeRefreshAt;
+    private long lastRestKlineOkAt;
+    private long lastRestTradeOkAt;
+    private long lastRestAggTradeId = -1;
     private int reconnectAttempt;
     private boolean historyPrefillRequested;
     private int signalNotificationId = 3000;
@@ -179,7 +186,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.23.3",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.23.4",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -266,7 +273,9 @@ public class MarketWatchService extends Service {
             @Override public void run() {
                 if (!running) { healthScheduled = false; return; }
                 acquireWakeLock();
-                long age = lastMessageAt == 0 ? Long.MAX_VALUE : System.currentTimeMillis() - lastMessageAt;
+                long now = System.currentTimeMillis();
+                maybeRefreshRestFallback(now);
+                long age = lastMessageAt == 0 ? Long.MAX_VALUE : now - lastMessageAt;
                 if (age > 65_000L) {
                     stopSocket();
                     updateWatch("Flux retardé · reconnexion forcée", true);
@@ -282,6 +291,151 @@ public class MarketWatchService extends Service {
         }, 3000);
     }
 
+
+
+    private void maybeRefreshRestFallback(long now) {
+        if (client == null) return;
+
+        long liveKlineAge = ageSeconds(now, lastKlineAt);
+        boolean needKlines = lastRestKlineRefreshAt == 0
+                || now - lastRestKlineRefreshAt >= 15_000L
+                || ethCandles.size() < 30
+                || btcCandles.size() < 10
+                || liveKlineAge < 0
+                || liveKlineAge > 120;
+
+        if (needKlines) {
+            lastRestKlineRefreshAt = now;
+            fetchRestKlines("ETHUSDT", true);
+            fetchRestKlines("BTCUSDT", false);
+        }
+
+        long liveTradeAge = ageSeconds(now, lastAggTradeAt);
+        boolean needTrades = lastRestTradeRefreshAt == 0
+                || now - lastRestTradeRefreshAt >= 7_000L
+                || flows.isEmpty()
+                || liveTradeAge < 0
+                || liveTradeAge > 120;
+
+        if (needTrades) {
+            lastRestTradeRefreshAt = now;
+            fetchRestAggTrades("ETHUSDT");
+        }
+    }
+
+    private void fetchRestKlines(String symbol, boolean isEth) {
+        Request request = new Request.Builder()
+                .url("https://fapi.binance.com/fapi/v1/klines?symbol=" + symbol + "&interval=1m&limit=60")
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override public void onFailure(Call call, IOException error) {
+                handler.post(() -> broadcastStatus("rest_kline_failed", "Fallback bougies " + symbol + " impossible"));
+            }
+
+            @Override public void onResponse(Call call, Response response) {
+                try {
+                    String raw = response.body() == null ? "" : response.body().string();
+                    JSONArray rows = new JSONArray(raw);
+                    List<Candle> loaded = new ArrayList<>();
+
+                    for (int i = 0; i < rows.length(); i++) {
+                        JSONArray row = rows.optJSONArray(i);
+                        if (row == null || row.length() < 6) continue;
+                        loaded.add(new Candle(
+                                row.optLong(0),
+                                row.optDouble(1),
+                                row.optDouble(2),
+                                row.optDouble(3),
+                                row.optDouble(4),
+                                row.optDouble(5)
+                        ));
+                    }
+
+                    handler.post(() -> {
+                        Deque<Candle> target = isEth ? ethCandles : btcCandles;
+                        for (Candle candle : loaded) upsert(target, candle, 180);
+
+                        if (!loaded.isEmpty()) {
+                            Candle last = loaded.get(loaded.size() - 1);
+                            if (isEth && ethLast <= 0) ethLast = last.close;
+                            if (!isEth && btcLast <= 0) btcLast = last.close;
+                            restKlineRefreshes++;
+                            lastRestKlineOkAt = System.currentTimeMillis();
+                        }
+
+                        evaluateSignal(System.currentTimeMillis());
+                    });
+                } catch (Exception ignored) {
+                    handler.post(() -> broadcastStatus("rest_kline_failed", "Erreur fallback bougies " + symbol));
+                } finally {
+                    try { response.close(); } catch (Exception ignored) {}
+                }
+            }
+        });
+    }
+
+    private void fetchRestAggTrades(String symbol) {
+        Request request = new Request.Builder()
+                .url("https://fapi.binance.com/fapi/v1/aggTrades?symbol=" + symbol + "&limit=500")
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override public void onFailure(Call call, IOException error) {
+                handler.post(() -> broadcastStatus("rest_trade_failed", "Fallback trades ETH impossible"));
+            }
+
+            @Override public void onResponse(Call call, Response response) {
+                try {
+                    String raw = response.body() == null ? "" : response.body().string();
+
+                    handler.post(() -> {
+                        try {
+                            JSONArray rows = new JSONArray(raw);
+                            int added = 0;
+                            long maxId = lastRestAggTradeId;
+
+                            for (int i = 0; i < rows.length(); i++) {
+                                JSONObject row = rows.optJSONObject(i);
+                                if (row == null) continue;
+
+                                long id = row.optLong("a", -1);
+                                if (id >= 0 && id <= lastRestAggTradeId) continue;
+
+                                long time = row.optLong("T", System.currentTimeMillis());
+                                double quantity = row.optDouble("q", 0);
+                                boolean maker = row.optBoolean("m", false);
+
+                                if (quantity > 0) {
+                                    flows.addLast(new TradeFlow(time, maker ? -quantity : quantity));
+                                    added++;
+                                }
+
+                                if (id > maxId) maxId = id;
+                            }
+
+                            if (maxId > lastRestAggTradeId) lastRestAggTradeId = maxId;
+
+                            if (added > 0) {
+                                restTradeRefreshes++;
+                                lastRestTradeOkAt = System.currentTimeMillis();
+                                lastAggTradeAt = lastRestTradeOkAt;
+                                pruneFlows(lastRestTradeOkAt);
+                                evaluateSignal(lastRestTradeOkAt);
+                                broadcastStatus("rest_trade", "Fallback trades ETH ajouté : " + added);
+                            }
+                        } catch (Exception ignored) {
+                            broadcastStatus("rest_trade_failed", "Erreur analyse fallback trades ETH");
+                        }
+                    });
+                } catch (Exception ignored) {
+                    handler.post(() -> broadcastStatus("rest_trade_failed", "Erreur fallback trades ETH"));
+                } finally {
+                    try { response.close(); } catch (Exception ignored) {}
+                }
+            }
+        });
+    }
 
     private void prefillHistoricalCandlesIfNeeded() {
         if (historyPrefillRequested || client == null) return;
@@ -401,6 +555,8 @@ public class MarketWatchService extends Service {
     private void handleAggTrade(JSONObject data) {
         aggTradeMessages++;
         lastAggTradeAt = System.currentTimeMillis();
+        long tradeId = data.optLong("a", -1);
+        if (tradeId > lastRestAggTradeId) lastRestAggTradeId = tradeId;
         long time = data.optLong("T", System.currentTimeMillis());
         double quantity = data.optDouble("q", 0);
         flows.addLast(new TradeFlow(time, data.optBoolean("m", false) ? -quantity : quantity));
@@ -483,7 +639,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.23.3 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.23.4 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -553,7 +709,7 @@ public class MarketWatchService extends Service {
             boolean connected = socket != null && age >= 0 && age < 70;
             SignalDecision decision = lastDecision;
             JSONObject state = new JSONObject();
-            state.put("version", "2.23.3-android");
+            state.put("version", "2.23.4-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -568,9 +724,13 @@ public class MarketWatchService extends Service {
             state.put("bookTickerMessages", bookTickerMessages);
             state.put("klineMessages", klineMessages);
             state.put("aggTradeMessages", aggTradeMessages);
+            state.put("restKlineRefreshes", restKlineRefreshes);
+            state.put("restTradeRefreshes", restTradeRefreshes);
             state.put("lastBookTickerAgeSec", ageSeconds(now, lastBookTickerAt));
             state.put("lastKlineAgeSec", ageSeconds(now, lastKlineAt));
             state.put("lastAggTradeAgeSec", ageSeconds(now, lastAggTradeAt));
+            state.put("lastRestKlineAgeSec", ageSeconds(now, lastRestKlineOkAt));
+            state.put("lastRestTradeAgeSec", ageSeconds(now, lastRestTradeOkAt));
             state.put("lastEvaluationAgeSec", lastEvaluationAt == 0 ? -1 : Math.max(0, (now - lastEvaluationAt) / 1000));
             MarketSnapshot snapshot = buildSnapshot(now);
             state.put("engineMetrics", engineMetricsJson(snapshot, decision));
@@ -654,17 +814,28 @@ public class MarketWatchService extends Service {
         m.put("c2Short", c2Short);
         m.put("setupCandidate", candidate);
         long aggAge = ageSeconds(s.now, lastAggTradeAt);
+        long restTradeAge = ageSeconds(s.now, lastRestTradeOkAt);
+        long restKlineAge = ageSeconds(s.now, lastRestKlineOkAt);
+        boolean wsFlowOk = aggTradeMessages > 0 && !flows.isEmpty() && aggAge >= 0 && aggAge <= 120;
+        boolean restFlowOk = restTradeRefreshes > 0 && !flows.isEmpty() && restTradeAge >= 0 && restTradeAge <= 120;
+
         m.put("flowSamples", flows.size());
         m.put("bookTickerMessages", bookTickerMessages);
         m.put("klineMessages", klineMessages);
         m.put("aggTradeMessages", aggTradeMessages);
+        m.put("restKlineRefreshes", restKlineRefreshes);
+        m.put("restTradeRefreshes", restTradeRefreshes);
         m.put("lastBookTickerAgeSec", ageSeconds(s.now, lastBookTickerAt));
         m.put("lastKlineAgeSec", ageSeconds(s.now, lastKlineAt));
         m.put("lastAggTradeAgeSec", aggAge);
-        m.put("flowDataOk", aggTradeMessages > 0 && !flows.isEmpty() && aggAge >= 0 && aggAge <= 120);
+        m.put("lastRestKlineAgeSec", restKlineAge);
+        m.put("lastRestTradeAgeSec", restTradeAge);
+        m.put("flowDataOk", wsFlowOk || restFlowOk);
+        m.put("flowSource", wsFlowOk ? "WEBSOCKET" : restFlowOk ? "REST_FALLBACK" : "NONE");
+        m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.23.3");
+        m.put("rulesProfile", "ETH Scalper sessions v2.23.4");
 
         return m;
     }

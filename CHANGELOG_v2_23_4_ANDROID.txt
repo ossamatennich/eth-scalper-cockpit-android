@@ -1,0 +1,10 @@
+ETH Scalper Cockpit Android v2.23.4
+
+Correction moteur / données :
+- Ajout fallback REST automatique pour bougies ETHUSDT/BTCUSDT 1m.
+- Ajout fallback REST automatique pour trades ETHUSDT.
+- Les flux WebSocket restent prioritaires quand ils fonctionnent.
+- Si WebSocket kline/aggTrade ne remonte pas, le moteur reste alimenté par REST.
+- ZIP diagnostic enrichi : restKlineRefreshes, restTradeRefreshes, flowSource, klineSource.
+- Health check accepte maintenant WEBSOCKET ou REST_FALLBACK.
+- Aucun ordre automatique.

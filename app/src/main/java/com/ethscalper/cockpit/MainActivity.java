@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.23.3 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.23.4 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -464,7 +464,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_23_3_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_23_4_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -508,7 +508,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.23.3 Android natif\n");
+        b.append("Version app: v2.23.4 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n\n");
 
         b.append("STATUT\n");
@@ -528,8 +528,12 @@ public class MainActivity extends Activity {
         b.append("- bookTickerMessages: ").append(s.optLong("bookTickerMessages", 0)).append("\n");
         b.append("- klineMessages: ").append(s.optLong("klineMessages", 0)).append("\n");
         b.append("- aggTradeMessages: ").append(s.optLong("aggTradeMessages", 0)).append("\n");
+        b.append("- restKlineRefreshes: ").append(s.optLong("restKlineRefreshes", 0)).append("\n");
+        b.append("- restTradeRefreshes: ").append(s.optLong("restTradeRefreshes", 0)).append("\n");
         b.append("- tradeFlowSamples: ").append(s.optInt("tradeFlowSamples", 0)).append("\n");
-        b.append("- lastAggTradeAgeSec: ").append(s.optInt("lastAggTradeAgeSec", -1)).append("\n\n");
+        b.append("- lastAggTradeAgeSec: ").append(s.optInt("lastAggTradeAgeSec", -1)).append("\n");
+        b.append("- lastRestKlineAgeSec: ").append(s.optInt("lastRestKlineAgeSec", -1)).append("\n");
+        b.append("- lastRestTradeAgeSec: ").append(s.optInt("lastRestTradeAgeSec", -1)).append("\n\n");
 
         b.append("MOTEUR\n");
         b.append("- decision: ").append(s.optString("decision", "—")).append("\n");
@@ -597,15 +601,20 @@ public class MainActivity extends Activity {
         int evalAge = s.optInt("lastEvaluationAgeSec", -1);
         int tradeFlowSamples = s.optInt("tradeFlowSamples", -1);
         long aggTradeMessages = s.optLong("aggTradeMessages", -1);
+        long restTradeRefreshes = s.optLong("restTradeRefreshes", 0);
         int aggTradeAge = s.optInt("lastAggTradeAgeSec", -1);
+        int restTradeAge = s.optInt("lastRestTradeAgeSec", -1);
         boolean metricsOk = metrics != null;
         boolean evalOk = evalAge >= 0 && evalAge <= 5;
-        boolean tradesOk = tradeFlowSamples > 0 && aggTradeMessages > 0 && aggTradeAge >= 0 && aggTradeAge <= 120;
+        boolean wsTradesOk = tradeFlowSamples > 0 && aggTradeMessages > 0 && aggTradeAge >= 0 && aggTradeAge <= 120;
+        boolean restTradesOk = tradeFlowSamples > 0 && restTradeRefreshes > 0 && restTradeAge >= 0 && restTradeAge <= 120;
+        boolean metricFlowOk = metrics != null && metrics.optBoolean("flowDataOk", false);
+        boolean tradesOk = wsTradesOk || restTradesOk || metricFlowOk;
 
         b.append(line(candlesOk, "Bougies suffisantes ETH " + ethCandles + "/30 · BTC " + btcCandles + "/10"));
         b.append(line(!"NO_DATA".equals(reason), "Moteur sorti de NO_DATA, raison actuelle " + reason));
         b.append(line(evalOk, "Dernière évaluation moteur récente : " + evalAge + "s"));
-        b.append(line(tradesOk, "Trades/flow ETH reçus : samples=" + tradeFlowSamples + ", messages=" + aggTradeMessages + ", âge=" + aggTradeAge + "s"));
+        b.append(line(tradesOk, "Trades/flow ETH reçus : samples=" + tradeFlowSamples + ", wsMessages=" + aggTradeMessages + ", restRefreshes=" + restTradeRefreshes + ", wsAge=" + aggTradeAge + "s, restAge=" + restTradeAge + "s"));
         b.append(line(metricsOk, "Métriques expertes incluses dans le ZIP"));
         if (metrics != null) {
             b.append(line(metrics.optBoolean("volumeDataOk", false), "Volume moyen disponible"));
@@ -635,7 +644,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.23.3\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.23.4\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -660,9 +669,15 @@ public class MainActivity extends Activity {
         b.append("bookTickerMessages=").append(m.optString("bookTickerMessages", "—")).append("\n");
         b.append("klineMessages=").append(m.optString("klineMessages", "—")).append("\n");
         b.append("aggTradeMessages=").append(m.optString("aggTradeMessages", "—")).append("\n");
+        b.append("restKlineRefreshes=").append(m.optString("restKlineRefreshes", "—")).append("\n");
+        b.append("restTradeRefreshes=").append(m.optString("restTradeRefreshes", "—")).append("\n");
         b.append("flowSamples=").append(m.optString("flowSamples", "—")).append("\n");
         b.append("lastAggTradeAgeSec=").append(m.optString("lastAggTradeAgeSec", "—")).append("\n");
-        b.append("flowDataOk=").append(m.optBoolean("flowDataOk", false)).append("\n\n");
+        b.append("lastRestKlineAgeSec=").append(m.optString("lastRestKlineAgeSec", "—")).append("\n");
+        b.append("lastRestTradeAgeSec=").append(m.optString("lastRestTradeAgeSec", "—")).append("\n");
+        b.append("flowDataOk=").append(m.optBoolean("flowDataOk", false)).append("\n");
+        b.append("flowSource=").append(m.optString("flowSource", "—")).append("\n");
+        b.append("klineSource=").append(m.optString("klineSource", "—")).append("\n\n");
 
         b.append("FLAGS\n");
         b.append("c1Long=").append(m.optBoolean("c1Long", false)).append("\n");
