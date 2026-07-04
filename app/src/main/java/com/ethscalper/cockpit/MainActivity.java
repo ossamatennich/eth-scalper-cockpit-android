@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.24.1 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.24.2 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -516,15 +516,19 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_24_1_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_24_2_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
             try (ZipOutputStream zip = new ZipOutputStream(memory)) {
                 JSONObject metrics = state.optJSONObject("engineMetrics");
+                JSONArray observed = state.optJSONArray("observedSignals");
                 addZipText(zip, "status.json", state.toString(2));
                 addZipText(zip, "engine_metrics.json", metrics == null ? "{}" : metrics.toString(2));
                 addZipText(zip, "engine_metrics.txt", buildEngineMetricsText(state));
+                addZipText(zip, "observation_journal.json", observed == null ? "[]" : observed.toString(2));
+                addZipText(zip, "observation_journal.csv", buildObservationJournalCsv(observed));
+                addZipText(zip, "observation_summary.txt", buildObservationSummaryText(state));
                 addZipText(zip, "summary.txt", buildDiagnosticSummary(state));
                 addZipText(zip, "health_check.txt", buildHealthCheck(state));
                 addZipText(zip, "diagnostics.csv", buildDiagnosticsCsv(state.optJSONArray("diagnostics")));
@@ -560,7 +564,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.24.1 Android natif\n");
+        b.append("Version app: v2.24.2 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
         b.append("Mode: OBSERVATION_ONLY — signaux non exécutables en réel\n\n");
 
@@ -697,7 +701,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.24.1\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.24.2\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -742,6 +746,68 @@ public class MainActivity extends Activity {
         b.append("flowLongOk=").append(m.optBoolean("flowLongOk", false)).append("\n");
         b.append("flowShortOk=").append(m.optBoolean("flowShortOk", false)).append("\n");
 
+        return b.toString();
+    }
+
+
+    private String buildObservationSummaryText(JSONObject s) {
+        JSONObject summary = s.optJSONObject("observationSummary");
+        JSONArray observed = s.optJSONArray("observedSignals");
+        StringBuilder b = new StringBuilder();
+        b.append("OBSERVATION JOURNAL — ETH SCALPER v2.24.2\n\n");
+        if (summary != null) {
+            b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
+            b.append("active=").append(summary.optInt("active", 0)).append("\n");
+            b.append("tpTouched=").append(summary.optInt("tpTouched", 0)).append("\n");
+            b.append("slTouched=").append(summary.optInt("slTouched", 0)).append("\n");
+            b.append("invalidated=").append(summary.optInt("invalidated", 0)).append("\n\n");
+        }
+        if (observed == null || observed.length() == 0) {
+            b.append("Aucun signal observé dans ce lancement.\n");
+            return b.toString();
+        }
+        for (int i = 0; i < observed.length(); i++) {
+            JSONObject o = observed.optJSONObject(i);
+            if (o == null) continue;
+            b.append("#").append(o.optLong("id", i + 1))
+                    .append(" ").append(o.optString("side", "—"))
+                    .append(" ").append(o.optString("family", "—"))
+                    .append(" status=").append(o.optString("status", "—"))
+                    .append(" score=").append(o.optInt("score", 0))
+                    .append(" entry=").append(o.optString("entry", "—"))
+                    .append(" tp=").append(o.optString("tp", "—"))
+                    .append(" sl=").append(o.optString("sl", "—"))
+                    .append(" mfe=").append(o.optString("mfe", "—"))
+                    .append(" mae=").append(o.optString("mae", "—"))
+                    .append("\n");
+        }
+        return b.toString();
+    }
+
+    private String buildObservationJournalCsv(JSONArray arr) {
+        StringBuilder b = new StringBuilder("id,side,family,status,score,qty,entry,tp,sl,lastPrice,maxPrice,minPrice,mfe,mae,unrealizedMove,ageSec,updates\n");
+        if (arr == null) return b.toString();
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject o = arr.optJSONObject(i);
+            if (o == null) continue;
+            b.append(o.optLong("id", 0)).append(',')
+                    .append(csv(o.optString("side", ""))).append(',')
+                    .append(csv(o.optString("family", ""))).append(',')
+                    .append(csv(o.optString("status", ""))).append(',')
+                    .append(o.optInt("score", 0)).append(',')
+                    .append(o.optInt("qty", 0)).append(',')
+                    .append(o.optString("entry", "")).append(',')
+                    .append(o.optString("tp", "")).append(',')
+                    .append(o.optString("sl", "")).append(',')
+                    .append(o.optString("lastPrice", "")).append(',')
+                    .append(o.optString("maxPrice", "")).append(',')
+                    .append(o.optString("minPrice", "")).append(',')
+                    .append(o.optString("mfe", "")).append(',')
+                    .append(o.optString("mae", "")).append(',')
+                    .append(o.optString("unrealizedMove", "")).append(',')
+                    .append(o.optLong("ageSec", 0)).append(',')
+                    .append(o.optInt("updates", 0)).append('\n');
+        }
         return b.toString();
     }
 

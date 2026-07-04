@@ -1,0 +1,9 @@
+ETH Scalper Cockpit Android v2.24.2
+
+Observation améliorée :
+- Ajout d’un journal multi-signaux.
+- Le ZIP ne contient plus seulement le dernier signal.
+- Chaque signal observé garde : entrée, TP, SL, score, quantité, maxPrice, minPrice, MFE, MAE, statut.
+- Ajout dans le ZIP : observation_journal.json, observation_journal.csv, observation_summary.txt.
+- Objectif : recalibrage sérieux après plusieurs signaux observés.
+- Mode observation uniquement, aucun trade réel conseillé.
