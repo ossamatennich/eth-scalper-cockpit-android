@@ -1,9 +1,9 @@
 package com.ethscalper.cockpit;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
@@ -16,13 +16,16 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -37,43 +40,52 @@ public class MarketWatchService extends Service {
     public static final String ACTION_START = "com.ethscalper.cockpit.START";
     public static final String ACTION_STOP = "com.ethscalper.cockpit.STOP";
     public static final String ACTION_SYNC_NOW = "com.ethscalper.cockpit.SYNC_NOW";
+    public static final String ACTION_TEST_ALERT = "com.ethscalper.cockpit.TEST_ALERT";
+    public static final String ACTION_TEST_VIBRATION = "com.ethscalper.cockpit.TEST_VIBRATION";
+    public static final String ACTION_RESET_DIAGNOSTICS = "com.ethscalper.cockpit.RESET_DIAGNOSTICS";
     public static final String BROADCAST_STATUS = "com.ethscalper.cockpit.STATUS";
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v2210";
+    private static final String CH_WATCH = "eth_scalper_watch_v2220";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v2220";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 2210;
+    private static final int NOTIF_WATCH_ID = 2220;
+    private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
-            "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/btcusdt@kline_1m/btcusdt@bookTicker";
+            "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
+            "btcusdt@kline_1m/btcusdt@bookTicker";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Deque<Candle> ethCandles = new ArrayDeque<>();
+    private final Deque<Candle> btcCandles = new ArrayDeque<>();
+    private final Deque<TradeFlow> flows = new ArrayDeque<>();
+    private final SignalEngine signalEngine = new SignalEngine();
+
     private OkHttpClient client;
     private WebSocket socket;
     private PowerManager.WakeLock wakeLock;
-    private boolean running = false;
-    private long lastMessageAt = 0;
-    private long lastSignalAt = 0;
-    private long lastStatusAt = 0;
-    private int reconnectAttempt = 0;
-    private int signalId = 3000;
+    private boolean running;
+    private boolean healthScheduled;
+    private long lastMessageAt;
+    private long lastSignalAt;
+    private long lastStatusAt;
+    private long lastEvaluationAt;
+    private long lastWatchNotificationAt;
+    private int reconnectAttempt;
+    private int signalNotificationId = 3000;
 
-    private double ethBid = 0, ethAsk = 0, ethLast = 0;
-    private double btcLast = 0;
-    private final Deque<Candle> eth = new ArrayDeque<>();
-    private final Deque<Candle> btc = new ArrayDeque<>();
-    private final Deque<TradeFlow> flows = new ArrayDeque<>();
-    private SignalPlan lastPlan = null;
-    private boolean healthScheduled = false;
+    private double ethBid, ethAsk, ethLast;
+    private double btcBid, btcAsk, btcLast;
+    private SignalDecision lastDecision;
+    private SignalDecision lastSignal;
     public static volatile String LAST_STATUS_JSON = "";
 
     public static String getLastStatusJson(Context context) {
-        String memoryState = LAST_STATUS_JSON == null ? "" : LAST_STATUS_JSON;
-        if (!memoryState.isEmpty()) return memoryState;
-        return context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
-                .getString(STATE_JSON, "");
+        String memory = LAST_STATUS_JSON == null ? "" : LAST_STATUS_JSON;
+        if (!memory.isEmpty()) return memory;
+        return context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).getString(STATE_JSON, "");
     }
 
     public static String getLastStatusJson() {
@@ -91,7 +103,7 @@ public class MarketWatchService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = intent == null ? ACTION_START : intent.getAction();
+        String action = intent == null || intent.getAction() == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
             running = false;
             stopSocket();
@@ -99,13 +111,23 @@ public class MarketWatchService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+
         running = true;
-        startForeground(NOTIF_WATCH_ID, buildWatchNotification("Surveillance native permanente — connexion Binance…"));
-        connectIfNeeded();
-        if (ACTION_SYNC_NOW.equals(action)) {
-            broadcastStatus("sync", "Service natif actif — état resynchronisé");
-            handler.postDelayed(() -> broadcastStatus("sync_late", "Service natif actif — surveillance indépendante de l’écran"), 800);
+        startForeground(NOTIF_WATCH_ID, buildWatchNotification("Initialisation du moteur natif…"));
+        if (ACTION_TEST_ALERT.equals(action)) {
+            notifyTestAlert();
+            broadcastStatus("test_alert", "Alerte forte de test envoyée");
+        } else if (ACTION_TEST_VIBRATION.equals(action)) {
+            vibrateAlert();
+            broadcastStatus("test_vibration", "Vibration longue testée");
+        } else if (ACTION_RESET_DIAGNOSTICS.equals(action)) {
+            signalEngine.clearDiagnostics();
+            lastDecision = null;
+            broadcastStatus("diagnostics_reset", "Diagnostic moteur réinitialisé");
+        } else if (ACTION_SYNC_NOW.equals(action)) {
+            broadcastStatus("sync", "État du service natif resynchronisé");
         }
+        connectIfNeeded();
         scheduleHealthCheck();
         return START_STICKY;
     }
@@ -115,83 +137,98 @@ public class MarketWatchService extends Service {
             try {
                 Intent restart = new Intent(getApplicationContext(), MarketWatchService.class);
                 restart.setAction(ACTION_START);
-                PendingIntent pi = PendingIntent.getService(getApplicationContext(), 2191, restart, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-                AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
-                if (am != null) am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 5000, pi);
+                PendingIntent pending = PendingIntent.getService(getApplicationContext(), 2220, restart,
+                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+                AlarmManager alarm = (AlarmManager) getSystemService(ALARM_SERVICE);
+                if (alarm != null) alarm.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        SystemClock.elapsedRealtime() + 5000, pending);
             } catch (Exception ignored) {}
         }
         super.onTaskRemoved(rootIntent);
     }
 
     @Override public void onDestroy() {
+        running = false;
+        handler.removeCallbacksAndMessages(null);
         stopSocket();
         releaseWakeLock();
+        if (client != null) client.dispatcher().executorService().shutdown();
         super.onDestroy();
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
 
-    public static void ensureChannels(Context c) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationManager nm = (NotificationManager) c.getSystemService(NOTIFICATION_SERVICE);
-        if (nm == null) return;
-        NotificationChannel watch = new NotificationChannel(CH_WATCH, "Surveillance permanente", NotificationManager.IMPORTANCE_LOW);
-        watch.setDescription("Garde le moteur ETH Scalper actif en arrière-plan.");
-        nm.createNotificationChannel(watch);
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH Scalper — ALERTE FORTE", NotificationManager.IMPORTANCE_HIGH);
-        signals.setDescription("Signal trading ETH : son fort personnalisé + vibration longue.");
+    public static void ensureChannels(Context context) {
+        NotificationManager manager = (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
+        if (manager == null) return;
+
+        NotificationChannel watch = new NotificationChannel(CH_WATCH, "Moteur ETH permanent",
+                NotificationManager.IMPORTANCE_LOW);
+        watch.setDescription("Maintient la surveillance ETH/BTC native en arrière-plan.");
+        watch.setShowBadge(false);
+        manager.createNotificationChannel(watch);
+
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.22",
+                NotificationManager.IMPORTANCE_HIGH);
+        signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
-        signals.setVibrationPattern(new long[]{0, 750, 180, 750, 180, 1200});
+        signals.setVibrationPattern(ALERT_VIBRATION);
         signals.enableLights(true);
-        signals.setLightColor(0xffff3030);
+        signals.setLightColor(0xffff315f);
         signals.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-        try {
-            Uri sound = Uri.parse("android.resource://" + c.getPackageName() + "/" + R.raw.eth_alert_loud);
-            AudioAttributes attrs = new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build();
-            signals.setSound(sound, attrs);
-        } catch (Exception ignored) {}
-        nm.createNotificationChannel(signals);
+        Uri sound = Uri.parse("android.resource://" + context.getPackageName() + "/" + R.raw.eth_alert_loud);
+        AudioAttributes audio = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+        signals.setSound(sound, audio);
+        manager.createNotificationChannel(signals);
     }
 
     private void acquireWakeLock() {
         try {
-            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-            if (pm != null) {
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ETHScalper:MarketWatch");
+            PowerManager manager = (PowerManager) getSystemService(POWER_SERVICE);
+            if (manager != null && (wakeLock == null || !wakeLock.isHeld())) {
+                wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ETHScalper:MarketWatch");
                 wakeLock.setReferenceCounted(false);
-                wakeLock.acquire();
+                wakeLock.acquire(10 * 60 * 1000L);
             }
         } catch (Exception ignored) {}
     }
 
     private void releaseWakeLock() {
         try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); } catch (Exception ignored) {}
+        wakeLock = null;
     }
 
     private void connectIfNeeded() {
-        if (!running || socket != null) return;
+        if (!running || socket != null || client == null) return;
         Request request = new Request.Builder().url(BINANCE_STREAM).build();
         socket = client.newWebSocket(request, new WebSocketListener() {
             @Override public void onOpen(WebSocket webSocket, Response response) {
+                if (socket != webSocket) return;
                 reconnectAttempt = 0;
                 lastMessageAt = System.currentTimeMillis();
-                updateWatch("Connecté Binance — surveillance ETH/BTC active même écran verrouillé");
-                broadcastStatus("connected", "Flux Binance connecté");
+                updateWatch("Connecté · surveillance ETH/BTC active", true);
+                broadcastStatus("connected", "Flux Binance Futures connecté");
             }
+
             @Override public void onMessage(WebSocket webSocket, String text) {
+                if (socket != webSocket) return;
                 lastMessageAt = System.currentTimeMillis();
                 handleMessage(text);
             }
-            @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+
+            @Override public void onFailure(WebSocket webSocket, Throwable error, Response response) {
+                if (socket != webSocket) return;
                 socket = null;
-                updateWatch("Flux coupé — reconnexion automatique…");
-                broadcastStatus("reconnect", "Flux coupé, reconnexion automatique");
+                updateWatch("Flux interrompu · reconnexion native", true);
+                broadcastStatus("reconnect", "Reconnexion native en cours");
                 scheduleReconnect();
             }
+
             @Override public void onClosed(WebSocket webSocket, int code, String reason) {
+                if (socket != webSocket) return;
                 socket = null;
                 if (running) scheduleReconnect();
             }
@@ -199,14 +236,15 @@ public class MarketWatchService extends Service {
     }
 
     private void stopSocket() {
-        try { if (socket != null) socket.close(1000, "stop"); } catch (Exception ignored) {}
+        WebSocket current = socket;
         socket = null;
+        try { if (current != null) current.close(1000, "service stop"); } catch (Exception ignored) {}
     }
 
     private void scheduleReconnect() {
         if (!running) return;
-        reconnectAttempt++;
-        long delay = Math.min(30000, 1000L * reconnectAttempt * reconnectAttempt);
+        reconnectAttempt = Math.min(reconnectAttempt + 1, 6);
+        long delay = Math.min(30_000L, 1000L << Math.max(0, reconnectAttempt - 1));
         handler.postDelayed(this::connectIfNeeded, delay);
     }
 
@@ -216,16 +254,17 @@ public class MarketWatchService extends Service {
         handler.postDelayed(new Runnable() {
             @Override public void run() {
                 if (!running) { healthScheduled = false; return; }
-                long age = System.currentTimeMillis() - lastMessageAt;
-                if (lastMessageAt == 0 || age > 65000) {
+                acquireWakeLock();
+                long age = lastMessageAt == 0 ? Long.MAX_VALUE : System.currentTimeMillis() - lastMessageAt;
+                if (age > 65_000L) {
                     stopSocket();
-                    updateWatch("Flux silencieux — reconnexion forcée…");
-                    broadcastStatus("reconnect", "Flux silencieux — reconnexion forcée");
+                    updateWatch("Flux retardé · reconnexion forcée", true);
+                    broadcastStatus("reconnect", "Flux retardé, reconnexion forcée");
                     connectIfNeeded();
                 } else {
-                    String msg = String.format(Locale.US, "Connecté Binance — ETH %.2f — dernier flux %ds — écran verrouillé OK", ethLast, Math.max(0, age / 1000));
-                    updateWatch(msg);
-                    broadcastStatus("live", msg);
+                    updateWatch(String.format(Locale.US, "Connecté · ETH %.2f · flux %ds",
+                            ethLast, Math.max(0, age / 1000)), false);
+                    broadcastStatus("live", "Moteur natif actif");
                 }
                 handler.postDelayed(this, 3000);
             }
@@ -241,11 +280,15 @@ public class MarketWatchService extends Service {
             if (stream.contains("bookTicker")) handleBookTicker(stream, data);
             else if (stream.contains("kline_1m")) handleKline(stream, data);
             else if (stream.contains("aggTrade")) handleAggTrade(data);
-            evaluateSignal();
+
             long now = System.currentTimeMillis();
-            if (now - lastStatusAt > 1500) {
+            if (now - lastEvaluationAt >= 1000) {
+                lastEvaluationAt = now;
+                evaluateSignal(now);
+            }
+            if (now - lastStatusAt >= 1500) {
                 lastStatusAt = now;
-                broadcastStatus("live", String.format(Locale.US, "ETH %.2f bid %.2f ask %.2f", ethLast, ethBid, ethAsk));
+                broadcastStatus("live", "Prix natifs actualisés");
             }
         } catch (Exception ignored) {}
     }
@@ -256,283 +299,279 @@ public class MarketWatchService extends Service {
             ethAsk = data.optDouble("a", ethAsk);
             if (ethBid > 0 && ethAsk > 0) ethLast = (ethBid + ethAsk) / 2.0;
         } else if (stream.startsWith("btcusdt")) {
-            double bid = data.optDouble("b", 0);
-            double ask = data.optDouble("a", 0);
-            if (bid > 0 && ask > 0) btcLast = (bid + ask) / 2.0;
+            btcBid = data.optDouble("b", btcBid);
+            btcAsk = data.optDouble("a", btcAsk);
+            if (btcBid > 0 && btcAsk > 0) btcLast = (btcBid + btcAsk) / 2.0;
         }
     }
 
     private void handleKline(String stream, JSONObject data) {
-        JSONObject k = data.optJSONObject("k");
-        if (k == null) return;
-        Candle c = new Candle(
-                k.optLong("t"),
-                k.optDouble("o"),
-                k.optDouble("h"),
-                k.optDouble("l"),
-                k.optDouble("c"),
-                k.optDouble("v")
-        );
+        JSONObject kline = data.optJSONObject("k");
+        if (kline == null) return;
+        Candle candle = new Candle(kline.optLong("t"), kline.optDouble("o"), kline.optDouble("h"),
+                kline.optDouble("l"), kline.optDouble("c"), kline.optDouble("v"));
         if (stream.startsWith("ethusdt")) {
-            ethLast = c.close;
-            upsert(eth, c, 180);
+            ethLast = candle.close;
+            upsert(ethCandles, candle, 180);
         } else if (stream.startsWith("btcusdt")) {
-            btcLast = c.close;
-            upsert(btc, c, 180);
+            btcLast = candle.close;
+            upsert(btcCandles, candle, 180);
         }
     }
 
     private void handleAggTrade(JSONObject data) {
-        long t = data.optLong("T", System.currentTimeMillis());
-        double q = data.optDouble("q", 0);
-        boolean buyerMaker = data.optBoolean("m", false);
-        double signed = buyerMaker ? -q : q;
-        flows.addLast(new TradeFlow(t, signed));
+        long time = data.optLong("T", System.currentTimeMillis());
+        double quantity = data.optDouble("q", 0);
+        flows.addLast(new TradeFlow(time, data.optBoolean("m", false) ? -quantity : quantity));
         pruneFlows(System.currentTimeMillis());
     }
 
-    private void upsert(Deque<Candle> d, Candle c, int max) {
-        if (!d.isEmpty() && d.peekLast().openTime == c.openTime) d.removeLast();
-        d.addLast(c);
-        while (d.size() > max) d.removeFirst();
+    private void evaluateSignal(long now) {
+        SignalDecision decision = signalEngine.evaluate(buildSnapshot(now));
+        lastDecision = decision;
+        if (decision.isSignal()) {
+            lastSignal = decision;
+            lastSignalAt = now;
+            notifySignal(decision);
+            broadcastStatus("signal", decision.reasonCode);
+        }
+    }
+
+    private MarketSnapshot buildSnapshot(long now) {
+        List<Candle> ethList = new ArrayList<>(ethCandles);
+        List<Candle> btcList = new ArrayList<>(btcCandles);
+        double averageRange = avgRange(ethList, 20);
+        double averageVolume = avgVolume(ethList, 20);
+        double move1 = 0, move3 = 0, move8 = 0, lastVolume = 0, recentHigh = 0, recentLow = 0;
+        if (!ethList.isEmpty()) lastVolume = ethList.get(ethList.size() - 1).volume;
+        if (ethList.size() >= 9) {
+            Candle last = ethList.get(ethList.size() - 1);
+            move1 = last.close - ethList.get(ethList.size() - 2).close;
+            move3 = last.close - ethList.get(ethList.size() - 4).close;
+            move8 = last.close - ethList.get(ethList.size() - 9).close;
+            recentHigh = high(ethList, 8);
+            recentLow = low(ethList, 8);
+        }
+        double btcMove5 = 0;
+        if (btcList.size() >= 6) {
+            double previous = btcList.get(btcList.size() - 6).close;
+            if (previous > 0) btcMove5 = (btcList.get(btcList.size() - 1).close - previous) / previous;
+        }
+        double flowNorm = averageVolume > 0 ? signedFlow(now, 60_000) / averageVolume : 0;
+        return MarketSnapshot.builder(now)
+                .lastSignalAt(lastSignalAt)
+                .eth(ethLast, ethBid, ethAsk)
+                .btc(btcLast, btcBid, btcAsk)
+                .candleCounts(ethList.size(), btcList.size())
+                .averages(averageRange, averageVolume)
+                .movement(move1, move3, move8, recentHigh, recentLow)
+                .flow(flowNorm, lastVolume)
+                .btcMove5(btcMove5)
+                .build();
+    }
+
+    private void upsert(Deque<Candle> candles, Candle candle, int max) {
+        if (!candles.isEmpty() && candles.peekLast().openTime == candle.openTime) candles.removeLast();
+        candles.addLast(candle);
+        while (candles.size() > max) candles.removeFirst();
     }
 
     private void pruneFlows(long now) {
-        while (!flows.isEmpty() && now - flows.peekFirst().time > 120000) flows.removeFirst();
+        while (!flows.isEmpty() && now - flows.peekFirst().time > 120_000) flows.removeFirst();
     }
 
-    private void evaluateSignal() {
-        long now = System.currentTimeMillis();
-        if (now - lastSignalAt < 8 * 60 * 1000L) return;
-        if (eth.size() < 30 || btc.size() < 10 || ethLast <= 0) return;
-
-        List<Candle> e = new ArrayList<>(eth);
-        List<Candle> b = new ArrayList<>(btc);
-        Candle last = e.get(e.size() - 1);
-        Candle prev1 = e.get(e.size() - 2);
-        Candle prev3 = e.get(e.size() - 4);
-        Candle prev8 = e.get(e.size() - 9);
-        double avgRange20 = avgRange(e, 20);
-        double avgVol20 = avgVol(e, 20);
-        double move1 = last.close - prev1.close;
-        double move3 = last.close - prev3.close;
-        double move8 = last.close - prev8.close;
-        double volumeRatio = avgVol20 > 0 ? last.volume / avgVol20 : 1.0;
-        double flow60 = signedFlow(now, 60000);
-        double flowNorm = avgVol20 > 0 ? flow60 / avgVol20 : 0;
-        double btcMove5 = (b.get(b.size() - 1).close - b.get(Math.max(0, b.size() - 6)).close) / Math.max(1, b.get(Math.max(0, b.size() - 6)).close);
-        double recentRange = high(e, 8) - low(e, 8);
-        double vertical = Math.abs(move8) / Math.max(0.35, avgRange20);
-
-        int side = 0;
-        String family = "";
-        double freshThreshold = Math.max(0.75, avgRange20 * 0.55);
-        if (move1 > freshThreshold && move3 > freshThreshold * 1.15 && flowNorm > 0.08 && btcMove5 > -0.0012) {
-            side = 1; family = "C1 cassure fraîche";
-        } else if (move1 < -freshThreshold && move3 < -freshThreshold * 1.15 && flowNorm < -0.08 && btcMove5 < 0.0012) {
-            side = -1; family = "C1 cassure fraîche";
-        } else if (move3 > freshThreshold * 1.35 && move1 > -avgRange20 * 0.25 && flowNorm > -0.05 && btcMove5 > -0.0015) {
-            side = 1; family = "C2 reprise contrôlée";
-        } else if (move3 < -freshThreshold * 1.35 && move1 < avgRange20 * 0.25 && flowNorm < 0.05 && btcMove5 < 0.0015) {
-            side = -1; family = "C2 reprise contrôlée";
-        }
-        if (side == 0) return;
-
-        double chase = Math.abs(last.close - prev1.close);
-        boolean tooVertical = vertical > 5.8 || recentRange > avgRange20 * 7.5;
-        if (tooVertical && chase > avgRange20 * 1.1) return;
-
-        int score = 52;
-        score += clampInt((int)Math.round(Math.abs(move3) / Math.max(0.35, avgRange20) * 7), 0, 18);
-        score += clampInt((int)Math.round((volumeRatio - 1.0) * 10), 0, 12);
-        score += clampInt((int)Math.round(Math.abs(flowNorm) * 18), 0, 12);
-        if ((side == 1 && btcMove5 > 0) || (side == -1 && btcMove5 < 0)) score += 8;
-        if (family.startsWith("C2")) score -= 3;
-        if (tooVertical) score -= 12;
-        score = clampInt(score, 0, 94);
-        if (score < 62) return;
-
-        double target = computeTarget(avgRange20, recentRange, volumeRatio, Math.abs(flowNorm), score, tooVertical);
-        double stop = computeStop(avgRange20, recentRange, score);
-        int qty = computeQty(score, stop, target, tooVertical);
-        if (qty < 3) return;
-        double entry = side == 1 ? (ethBid > 0 ? ethBid : last.close) : (ethAsk > 0 ? ethAsk : last.close);
-        double tp = entry + side * target;
-        double sl = entry - side * stop;
-
-        SignalPlan plan = new SignalPlan(side, family, score, qty, entry, tp, sl, target, stop);
-        lastPlan = plan;
-        lastSignalAt = now;
-        notifySignal(plan);
-        broadcastStatus("signal", plan.toJson());
+    private double signedFlow(long now, long window) {
+        pruneFlows(now);
+        double total = 0;
+        for (TradeFlow flow : flows) if (now - flow.time <= window) total += flow.signedQuantity;
+        return total;
     }
 
-    private double computeTarget(double avgRange, double recentRange, double volumeRatio, double flowPower, int score, boolean tooVertical) {
-        double base = Math.max(2.85, avgRange * 1.95);
-        base += Math.min(2.4, recentRange * 0.18);
-        base += Math.min(1.2, Math.max(0, volumeRatio - 1.0) * 0.45);
-        base += Math.min(1.0, flowPower * 0.75);
-        if (score >= 82) base += 0.8;
-        if (score >= 88) base += 0.8;
-        if (tooVertical) base *= 0.72;
-        return round2(Math.max(2.80, Math.min(8.80, base)));
+    private void notifySignal(SignalDecision decision) {
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        String title = "🚨 SIGNAL ETH " + decision.side;
+        String body = String.format(Locale.US,
+                "%s · score %d/100 · LIMIT %.2f · TP %.2f · SL %.2f · %d ETH",
+                decision.family, decision.score, decision.entry, decision.takeProfit,
+                decision.stopLoss, decision.quantity);
+        manager.notify(signalNotificationId++, buildSignalNotification(title, body));
+        updateWatch("Dernier signal : " + title, true);
     }
 
-    private double computeStop(double avgRange, double recentRange, int score) {
-        double stop = Math.max(0.78, avgRange * 0.92);
-        stop += Math.min(0.8, recentRange * 0.06);
-        if (score >= 82) stop *= 0.92;
-        return round2(Math.max(0.78, Math.min(2.35, stop)));
+    private void notifyTestAlert() {
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
+                "🚨 TEST ALERTE ETH", "Test sonore v2.22.0 · aucun ordre n’est envoyé"));
     }
 
-    private int computeQty(int score, double stop, double target, boolean tooVertical) {
-        double feeRoundTrip = 1.33;
-        double riskPerEth = stop + feeRoundTrip;
-        double netPerEth = target - feeRoundTrip;
-        if (netPerEth <= 0 || netPerEth / riskPerEth < 0.72) return 0;
-        int qty = 3;
-        if (score >= 70) qty = 4;
-        if (score >= 78) qty = 5;
-        if (score >= 85 && netPerEth / riskPerEth >= 1.05) qty = 6;
-        if (score >= 90 && netPerEth / riskPerEth >= 1.20) qty = 7;
-        if (tooVertical) qty = Math.min(qty, 4);
-        return qty;
-    }
-
-    private void notifySignal(SignalPlan p) {
-        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (nm == null) return;
+    private Notification buildSignalNotification(String title, String body) {
         Intent open = new Intent(this, MainActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        String side = p.side > 0 ? "LONG" : "SHORT";
-        String title = "🚨 SIGNAL ETH " + side;
-        String body = String.format(Locale.US, "%s | score %d/100 | qty %d ETH | entry %.2f | TP %.2f | SL %.2f", p.family, p.score, p.qty, p.entry, p.tp, p.sl);
+        PendingIntent pending = PendingIntent.getActivity(this, 0, open,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Uri sound = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.eth_alert_loud);
-        AudioAttributes audio = new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build();
-        Notification n = new Notification.Builder(this, CH_SIGNAL)
+        AudioAttributes audio = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
+        return new Notification.Builder(this, CH_SIGNAL)
                 .setSmallIcon(R.drawable.ic_stat_eth)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new Notification.BigTextStyle().bigText(body))
                 .setPriority(Notification.PRIORITY_MAX)
                 .setSound(sound, audio)
-                .setVibrate(new long[]{0, 750, 180, 750, 180, 1200})
-                .setLights(0xffff3030, 1000, 500)
-                .setContentIntent(pi)
+                .setVibrate(ALERT_VIBRATION)
+                .setLights(0xffff315f, 1000, 500)
+                .setContentIntent(pending)
                 .setCategory(Notification.CATEGORY_ALARM)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
                 .build();
-        nm.notify(signalId++, n);
-        updateWatch("Dernier signal : " + title);
+    }
+
+    private void vibrateAlert() {
+        try {
+            Vibrator vibrator;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                VibratorManager manager = (VibratorManager) getSystemService(VIBRATOR_MANAGER_SERVICE);
+                vibrator = manager == null ? null : manager.getDefaultVibrator();
+            } else {
+                vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            }
+            if (vibrator != null && vibrator.hasVibrator())
+                vibrator.vibrate(VibrationEffect.createWaveform(ALERT_VIBRATION, -1));
+        } catch (Exception ignored) {}
     }
 
     private Notification buildWatchNotification(String text) {
         Intent open = new Intent(this, MainActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent pending = PendingIntent.getActivity(this, 0, open,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return new Notification.Builder(this, CH_WATCH)
                 .setSmallIcon(R.drawable.ic_stat_eth)
-                .setContentTitle("ETH Scalper actif — arrière-plan")
+                .setContentTitle("ETH Scalper · moteur natif actif")
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setOngoing(true)
-                .setContentIntent(pi)
+                .setOnlyAlertOnce(true)
+                .setContentIntent(pending)
                 .build();
     }
 
-    private void updateWatch(String text) {
-        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (nm != null) nm.notify(NOTIF_WATCH_ID, buildWatchNotification(text));
+    private void updateWatch(String text, boolean force) {
+        long now = System.currentTimeMillis();
+        if (!force && now - lastWatchNotificationAt < 15_000) return;
+        lastWatchNotificationAt = now;
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager != null) manager.notify(NOTIF_WATCH_ID, buildWatchNotification(text));
     }
 
     private void broadcastStatus(String type, String message) {
         try {
-            JSONObject j = new JSONObject();
-            j.put("version", "2.21.0-android");
-            j.put("nativeActive", running);
-            j.put("connected", socket != null && lastMessageAt > 0 && System.currentTimeMillis() - lastMessageAt < 70000);
-            j.put("lastAgeSec", lastMessageAt == 0 ? -1 : Math.max(0, (System.currentTimeMillis() - lastMessageAt) / 1000));
-            j.put("type", type);
-            j.put("message", message);
-            j.put("eth", ethLast);
-            j.put("bid", ethBid);
-            j.put("ask", ethAsk);
-            j.put("candles", eth.size());
-            j.put("lastSignalAt", lastSignalAt);
-            if (lastPlan != null) j.put("lastPlan", lastPlan.toJsonObject());
-            String out = j.toString();
-            LAST_STATUS_JSON = out;
-            getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
-                    .edit()
-                    .putString(STATE_JSON, out)
-                    .apply();
-            Intent i = new Intent(BROADCAST_STATUS);
-            i.setPackage(getPackageName());
-            i.putExtra(EXTRA_PAYLOAD, out);
-            sendBroadcast(i);
+            long now = System.currentTimeMillis();
+            long age = lastMessageAt == 0 ? -1 : Math.max(0, (now - lastMessageAt) / 1000);
+            boolean connected = socket != null && age >= 0 && age < 70;
+            SignalDecision decision = lastDecision;
+            JSONObject state = new JSONObject();
+            state.put("version", "2.22.0-android");
+            state.put("nativeActive", running);
+            state.put("connected", connected);
+            state.put("lastAgeSec", age);
+            state.put("type", type);
+            state.put("message", message);
+            putPrice(state, "eth", ethLast); putPrice(state, "bid", ethBid); putPrice(state, "ask", ethAsk);
+            putPrice(state, "btc", btcLast); putPrice(state, "btcBid", btcBid); putPrice(state, "btcAsk", btcAsk);
+            state.put("ethCandles", ethCandles.size());
+            state.put("btcCandles", btcCandles.size());
+            state.put("candles", ethCandles.size());
+            state.put("lastSignalAt", lastSignalAt);
+            state.put("decision", decision == null ? "ATTENDRE" : decision.decision);
+            state.put("decisionReason", decision == null ? "Initialisation du moteur" : decision.reasonText);
+            state.put("engineReason", decision == null ? "NO_DATA" : decision.reasonCode);
+            state.put("score", decision == null ? 0 : decision.score);
+            state.put("action", decision != null && decision.isSignal()
+                    ? "ENTRER " + decision.side + " LIMIT" : "NE PAS ENTRER");
+            if (decision != null) state.put("movement", movementJson(decision));
+            if (lastSignal != null) {
+                JSONObject signal = signalJson(lastSignal);
+                state.put("lastSignal", signal);
+                state.put("lastPlan", signal);
+            }
+            JSONArray recent = new JSONArray();
+            for (DiagnosticEntry entry : signalEngine.recentDiagnostics(8)) {
+                JSONObject item = new JSONObject();
+                item.put("at", entry.timestamp); item.put("code", entry.code); item.put("message", entry.message);
+                recent.put(item);
+            }
+            state.put("diagnostics", recent);
+            String output = state.toString();
+            LAST_STATUS_JSON = output;
+            getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().putString(STATE_JSON, output).apply();
+            Intent broadcast = new Intent(BROADCAST_STATUS).setPackage(getPackageName());
+            broadcast.putExtra(EXTRA_PAYLOAD, output);
+            sendBroadcast(broadcast);
         } catch (Exception ignored) {}
     }
 
-    private static double avgRange(List<Candle> v, int n) {
-        int start = Math.max(0, v.size() - n);
-        double sum = 0; int c = 0;
-        for (int i = start; i < v.size(); i++) { sum += Math.abs(v.get(i).high - v.get(i).low); c++; }
-        return c == 0 ? 0 : sum / c;
+    private static void putPrice(JSONObject object, String key, double value) throws Exception {
+        object.put(key, Double.isFinite(value) && value > 0 ? value : JSONObject.NULL);
     }
 
-    private static double avgVol(List<Candle> v, int n) {
-        int start = Math.max(0, v.size() - n);
-        double sum = 0; int c = 0;
-        for (int i = start; i < v.size(); i++) { sum += v.get(i).volume; c++; }
-        return c == 0 ? 0 : sum / c;
+    private static JSONObject movementJson(SignalDecision decision) throws Exception {
+        JSONObject movement = new JSONObject();
+        movement.put("impulse", decision.impulse);
+        movement.put("reset", decision.resetConfirmed);
+        movement.put("origin", finiteOrNull(decision.movementOrigin));
+        movement.put("extreme", finiteOrNull(decision.movementExtreme));
+        movement.put("distance", finiteOrNull(decision.movementDistance));
+        movement.put("consumed", decision.movementConsumed);
+        return movement;
     }
 
-    private static double high(List<Candle> v, int n) {
-        int start = Math.max(0, v.size() - n); double h = -1;
-        for (int i = start; i < v.size(); i++) h = Math.max(h, v.get(i).high);
-        return h;
-    }
-    private static double low(List<Candle> v, int n) {
-        int start = Math.max(0, v.size() - n); double l = Double.MAX_VALUE;
-        for (int i = start; i < v.size(); i++) l = Math.min(l, v.get(i).low);
-        return l == Double.MAX_VALUE ? 0 : l;
-    }
-
-    private double signedFlow(long now, long window) {
-        pruneFlows(now);
-        double s = 0;
-        for (TradeFlow f : flows) if (now - f.time <= window) s += f.signedQty;
-        return s;
+    private static JSONObject signalJson(SignalDecision decision) throws Exception {
+        JSONObject signal = new JSONObject();
+        signal.put("side", decision.side); signal.put("family", decision.family);
+        signal.put("score", decision.score); signal.put("qty", decision.quantity);
+        signal.put("entry", decision.entry); signal.put("tp", decision.takeProfit);
+        signal.put("sl", decision.stopLoss); signal.put("targetMove", decision.targetMove);
+        signal.put("stopDistance", decision.stopDistance); signal.put("reason", decision.reasonText);
+        return signal;
     }
 
-    private static int clampInt(int v, int a, int b) { return Math.max(a, Math.min(b, v)); }
-    private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+    private static Object finiteOrNull(double value) { return Double.isFinite(value) ? value : JSONObject.NULL; }
 
-    static class Candle {
-        long openTime; double open, high, low, close, volume;
-        Candle(long t, double o, double h, double l, double c, double v) { openTime=t; open=o; high=h; low=l; close=c; volume=v; }
+    private static double avgRange(List<Candle> candles, int count) {
+        int start = Math.max(0, candles.size() - count); double total = 0; int samples = 0;
+        for (int i=start; i<candles.size(); i++) { total += Math.abs(candles.get(i).high-candles.get(i).low); samples++; }
+        return samples == 0 ? 0 : total / samples;
     }
-    static class TradeFlow {
-        long time; double signedQty;
-        TradeFlow(long t, double q) { time=t; signedQty=q; }
+
+    private static double avgVolume(List<Candle> candles, int count) {
+        int start = Math.max(0, candles.size() - count); double total = 0; int samples = 0;
+        for (int i=start; i<candles.size(); i++) { total += candles.get(i).volume; samples++; }
+        return samples == 0 ? 0 : total / samples;
     }
-    static class SignalPlan {
-        int side, score, qty; String family; double entry, tp, sl, target, stop;
-        SignalPlan(int side, String family, int score, int qty, double entry, double tp, double sl, double target, double stop) {
-            this.side=side; this.family=family; this.score=score; this.qty=qty; this.entry=entry; this.tp=tp; this.sl=sl; this.target=target; this.stop=stop;
+
+    private static double high(List<Candle> candles, int count) {
+        int start = Math.max(0, candles.size() - count); double value = 0;
+        for (int i=start; i<candles.size(); i++) value = Math.max(value, candles.get(i).high);
+        return value;
+    }
+
+    private static double low(List<Candle> candles, int count) {
+        int start = Math.max(0, candles.size() - count); double value = Double.MAX_VALUE;
+        for (int i=start; i<candles.size(); i++) value = Math.min(value, candles.get(i).low);
+        return value == Double.MAX_VALUE ? 0 : value;
+    }
+
+    static final class Candle {
+        final long openTime; final double open, high, low, close, volume;
+        Candle(long openTime, double open, double high, double low, double close, double volume) {
+            this.openTime=openTime; this.open=open; this.high=high; this.low=low; this.close=close; this.volume=volume;
         }
-        JSONObject toJsonObject() throws Exception {
-            JSONObject j = new JSONObject();
-            j.put("side", side > 0 ? "LONG" : "SHORT");
-            j.put("family", family); j.put("score", score); j.put("qty", qty);
-            j.put("entry", entry); j.put("tp", tp); j.put("sl", sl); j.put("targetMove", target); j.put("stopDistance", stop);
-            return j;
-        }
-        String toJson() {
-            try { return toJsonObject().toString(); } catch (Exception e) { return "{}"; }
-        }
+    }
+
+    static final class TradeFlow {
+        final long time; final double signedQuantity;
+        TradeFlow(long time, double signedQuantity) { this.time=time; this.signedQuantity=signedQuantity; }
     }
 }
