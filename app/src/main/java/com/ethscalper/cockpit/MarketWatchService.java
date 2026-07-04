@@ -9,7 +9,6 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioAttributes;
-import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -39,9 +38,13 @@ public class MarketWatchService extends Service {
     public static final String ACTION_STOP = "com.ethscalper.cockpit.STOP";
     public static final String ACTION_SYNC_NOW = "com.ethscalper.cockpit.SYNC_NOW";
     public static final String BROADCAST_STATUS = "com.ethscalper.cockpit.STATUS";
+    public static final String EXTRA_PAYLOAD = "payload";
+    public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
     private static final String CH_WATCH = "eth_scalper_watch";
     private static final String CH_SIGNAL = "eth_scalper_signal_loud_v2210";
+    private static final String STATE_PREFERENCES = "market_watch_state";
+    private static final String STATE_JSON = "last_status_json";
     private static final int NOTIF_WATCH_ID = 2210;
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/btcusdt@kline_1m/btcusdt@bookTicker";
@@ -65,6 +68,13 @@ public class MarketWatchService extends Service {
     private SignalPlan lastPlan = null;
     private boolean healthScheduled = false;
     public static volatile String LAST_STATUS_JSON = "";
+
+    public static String getLastStatusJson(Context context) {
+        String memoryState = LAST_STATUS_JSON == null ? "" : LAST_STATUS_JSON;
+        if (!memoryState.isEmpty()) return memoryState;
+        return context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
+                .getString(STATE_JSON, "");
+    }
 
     public static String getLastStatusJson() {
         return LAST_STATUS_JSON == null ? "" : LAST_STATUS_JSON;
@@ -132,6 +142,9 @@ public class MarketWatchService extends Service {
         signals.setDescription("Signal trading ETH : son fort personnalisé + vibration longue.");
         signals.enableVibration(true);
         signals.setVibrationPattern(new long[]{0, 750, 180, 750, 180, 1200});
+        signals.enableLights(true);
+        signals.setLightColor(0xffff3030);
+        signals.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         try {
             Uri sound = Uri.parse("android.resource://" + c.getPackageName() + "/" + R.raw.eth_alert_loud);
             AudioAttributes attrs = new AudioAttributes.Builder()
@@ -392,15 +405,22 @@ public class MarketWatchService extends Service {
         Intent open = new Intent(this, MainActivity.class);
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         String side = p.side > 0 ? "LONG" : "SHORT";
-        String title = "🚨 SIGNAL ETH " + side + " — score " + p.score + "/100";
-        String body = String.format(Locale.US, "%s | qty %d ETH | entry %.2f | TP %.2f | SL %.2f", p.family, p.qty, p.entry, p.tp, p.sl);
+        String title = "🚨 SIGNAL ETH " + side;
+        String body = String.format(Locale.US, "%s | score %d/100 | qty %d ETH | entry %.2f | TP %.2f | SL %.2f", p.family, p.score, p.qty, p.entry, p.tp, p.sl);
+        Uri sound = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.eth_alert_loud);
+        AudioAttributes audio = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
         Notification n = new Notification.Builder(this, CH_SIGNAL)
                 .setSmallIcon(R.drawable.ic_stat_eth)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new Notification.BigTextStyle().bigText(body))
                 .setPriority(Notification.PRIORITY_MAX)
-                .setDefaults(Notification.DEFAULT_SOUND | Notification.DEFAULT_VIBRATE)
+                .setSound(sound, audio)
+                .setVibrate(new long[]{0, 750, 180, 750, 180, 1200})
+                .setLights(0xffff3030, 1000, 500)
                 .setContentIntent(pi)
                 .setCategory(Notification.CATEGORY_ALARM)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -441,11 +461,17 @@ public class MarketWatchService extends Service {
             j.put("bid", ethBid);
             j.put("ask", ethAsk);
             j.put("candles", eth.size());
+            j.put("lastSignalAt", lastSignalAt);
             if (lastPlan != null) j.put("lastPlan", lastPlan.toJsonObject());
             String out = j.toString();
             LAST_STATUS_JSON = out;
+            getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
+                    .edit()
+                    .putString(STATE_JSON, out)
+                    .apply();
             Intent i = new Intent(BROADCAST_STATUS);
-            i.putExtra("payload", out);
+            i.setPackage(getPackageName());
+            i.putExtra(EXTRA_PAYLOAD, out);
             sendBroadcast(i);
         } catch (Exception ignored) {}
     }
