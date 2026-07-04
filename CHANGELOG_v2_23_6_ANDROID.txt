@@ -1,0 +1,9 @@
+ETH Scalper Cockpit Android v2.23.6
+
+Correction fonctionnement signal :
+- Un signal ne devient plus immédiatement PASSÉ à cause du cooldown.
+- Le dernier signal reste ACTIF pendant une fenêtre d'exécution de 90 secondes.
+- L'app affiche la fenêtre restante.
+- Le signal actif est annulé seulement si TP touché, SL touché, expiration ou prix indisponible.
+- Objectif : signal praticable humainement après notification.
+- Aucun ordre automatique.

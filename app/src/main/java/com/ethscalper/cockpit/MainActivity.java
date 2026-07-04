@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.23.5 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.23.6 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -348,7 +348,7 @@ public class MainActivity extends Activity {
                 renderDecision(decision, visibleReason);
                 renderPrices(eth, bid, ask, btc, btcBid, btcAsk);
                 renderMovement(movement);
-                renderSignal(lastSignal, signalAt, decision, visibleReason);
+                renderSignal(lastSignal, signalAt, decision, visibleReason, state.optBoolean("activeSignal", false), state.optInt("activeSignalRemainingSec", -1));
                 renderAction(action, decision, lastSignal);
                 renderDiagnostics(diagnostics, state.optString("engineReason", "NO_DATA"), reason);
                 serviceInfo.setText(visibleServiceInfo);
@@ -399,7 +399,8 @@ public class MainActivity extends Activity {
                 + "\nMouvement consommé : " + (movement.optBoolean("consumed", false) ? "OUI" : "NON"));
     }
 
-    private void renderSignal(JSONObject signal, long signalAt, String currentDecision, String currentReason) {
+    private void renderSignal(JSONObject signal, long signalAt, String currentDecision, String currentReason,
+                              boolean activeSignal, int remainingSec) {
         if (signal == null) {
             signalValue.setText("Aucun signal natif pour le moment.\nMoteur actif · attendre un setup confirmé.");
             signalValue.setTextColor(TEXT);
@@ -408,10 +409,10 @@ public class MainActivity extends Activity {
 
         long ageMs = signalAt > 0 ? System.currentTimeMillis() - signalAt : -1;
         long ageSec = ageMs >= 0 ? Math.max(0, ageMs / 1000) : -1;
-        boolean stillInDisplayWindow = ageMs >= 0 && ageMs <= MarketWatchService.SIGNAL_DISPLAY_TTL_MS;
-        boolean executableNow = "ENTRER".equals(currentDecision) && stillInDisplayWindow;
 
         String ageText = ageSec >= 0 ? "Signal reçu il y a " + formatDuration(ageSec) : "Âge du signal : —";
+        String remainingText = remainingSec >= 0 ? "Fenêtre restante : " + formatDuration(remainingSec) : "Fenêtre restante : —";
+
         String plan = signal.optString("side", "—")
                 + " · score " + signal.optInt("score", 0) + "/100"
                 + "\n" + signal.optString("family", "Signal natif")
@@ -420,9 +421,10 @@ public class MainActivity extends Activity {
                 + " · SL " + formatPrice(number(signal, "sl"))
                 + " · " + signal.optInt("qty", 0) + " ETH";
 
-        if (executableNow) {
+        if (activeSignal) {
             signalValue.setText("SIGNAL ACTIF — À EXÉCUTER MAINTENANT"
                     + "\n" + ageText
+                    + "\n" + remainingText
                     + "\n" + plan);
             signalValue.setTextColor(CYAN);
         } else {
@@ -500,7 +502,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_23_5_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_23_6_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -544,7 +546,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.23.5 Android natif\n");
+        b.append("Version app: v2.23.6 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n\n");
 
         b.append("STATUT\n");
@@ -680,7 +682,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.23.5\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.23.6\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");

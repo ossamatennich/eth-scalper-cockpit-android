@@ -50,8 +50,8 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22305";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22305";
+    private static final String CH_WATCH = "eth_scalper_watch_v22306";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22306";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
     private static final int NOTIF_WATCH_ID = 22305;
@@ -186,7 +186,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.23.5",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.23.6",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -564,7 +564,17 @@ public class MarketWatchService extends Service {
     }
 
     private void evaluateSignal(long now) {
-        SignalDecision decision = signalEngine.evaluate(buildSnapshot(now));
+        MarketSnapshot snapshot = buildSnapshot(now);
+        SignalDecision decision = signalEngine.evaluate(snapshot);
+
+        if (!decision.isSignal()
+                && "COOLDOWN".equals(decision.reasonCode)
+                && isLastSignalStillActionable(snapshot, now)) {
+            lastDecision = lastSignal;
+            broadcastStatus("signal_active", "Signal actif conservé pendant la fenêtre d’exécution");
+            return;
+        }
+
         lastDecision = decision;
         if (decision.isSignal()) {
             lastSignal = decision;
@@ -572,6 +582,46 @@ public class MarketWatchService extends Service {
             notifySignal(decision);
             broadcastStatus("signal", decision.reasonCode);
         }
+    }
+
+
+    private boolean isLastSignalStillActionable(MarketSnapshot snapshot, long now) {
+        return "ACTIVE".equals(activeSignalStatus(snapshot, now));
+    }
+
+    private String activeSignalStatus(MarketSnapshot snapshot, long now) {
+        if (lastSignal == null || lastSignalAt <= 0) return "NONE";
+
+        long age = now - lastSignalAt;
+        if (age < 0) return "NONE";
+        if (age > SIGNAL_DISPLAY_TTL_MS) return "EXPIRED";
+
+        double price = snapshot.ethLast;
+        if (!Double.isFinite(price) || price <= 0) return "NO_PRICE";
+
+        if ("LONG".equals(lastSignal.side)) {
+            if (price <= lastSignal.stopLoss) return "SL_TOUCHED";
+            if (price >= lastSignal.takeProfit) return "TP_TOUCHED";
+            return "ACTIVE";
+        }
+
+        if ("SHORT".equals(lastSignal.side)) {
+            if (price >= lastSignal.stopLoss) return "SL_TOUCHED";
+            if (price <= lastSignal.takeProfit) return "TP_TOUCHED";
+            return "ACTIVE";
+        }
+
+        return "NONE";
+    }
+
+    private long activeSignalAgeSec(long now) {
+        return lastSignalAt <= 0 ? -1 : Math.max(0, (now - lastSignalAt) / 1000);
+    }
+
+    private long activeSignalRemainingSec(long now) {
+        if (lastSignalAt <= 0) return -1;
+        long remaining = SIGNAL_DISPLAY_TTL_MS - (now - lastSignalAt);
+        return Math.max(0, remaining / 1000);
     }
 
     private MarketSnapshot buildSnapshot(long now) {
@@ -639,7 +689,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.23.5 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.23.6 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -708,8 +758,13 @@ public class MarketWatchService extends Service {
             long age = lastMessageAt == 0 ? -1 : Math.max(0, (now - lastMessageAt) / 1000);
             boolean connected = socket != null && age >= 0 && age < 70;
             SignalDecision decision = lastDecision;
+            MarketSnapshot statusSnapshot = buildSnapshot(now);
+            String activeStatus = activeSignalStatus(statusSnapshot, now);
+            boolean activeSignal = "ACTIVE".equals(activeStatus);
+            if (activeSignal && lastSignal != null) decision = lastSignal;
+
             JSONObject state = new JSONObject();
-            state.put("version", "2.23.5-android");
+            state.put("version", "2.23.6-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -732,7 +787,12 @@ public class MarketWatchService extends Service {
             state.put("lastRestKlineAgeSec", ageSeconds(now, lastRestKlineOkAt));
             state.put("lastRestTradeAgeSec", ageSeconds(now, lastRestTradeOkAt));
             state.put("lastEvaluationAgeSec", lastEvaluationAt == 0 ? -1 : Math.max(0, (now - lastEvaluationAt) / 1000));
-            MarketSnapshot snapshot = buildSnapshot(now);
+            MarketSnapshot snapshot = statusSnapshot;
+            state.put("activeSignal", activeSignal);
+            state.put("activeSignalStatus", activeStatus);
+            state.put("activeSignalAgeSec", activeSignalAgeSec(now));
+            state.put("activeSignalRemainingSec", activeSignalRemainingSec(now));
+            state.put("activeSignalTtlSec", SIGNAL_DISPLAY_TTL_MS / 1000);
             state.put("engineMetrics", engineMetricsJson(snapshot, decision));
             state.put("lastSignalAt", lastSignalAt);
             state.put("decision", decision == null ? "ATTENDRE" : decision.decision);
@@ -835,7 +895,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.23.4");
+        m.put("rulesProfile", "ETH Scalper sessions v2.23.6");
 
         return m;
     }
