@@ -11,6 +11,8 @@ public final class MarketSnapshot {
     public final double btcAsk;
     public final int ethCandles;
     public final int btcCandles;
+    public final int ethCandleCount;
+    public final int btcCandleCount;
     public final double avgRange20;
     public final double avgVolume20;
     public final double lastVolume;
@@ -33,6 +35,8 @@ public final class MarketSnapshot {
         btcAsk = b.btcAsk;
         ethCandles = b.ethCandles;
         btcCandles = b.btcCandles;
+        ethCandleCount = b.ethCandles;
+        btcCandleCount = b.btcCandles;
         avgRange20 = b.avgRange20;
         avgVolume20 = b.avgVolume20;
         lastVolume = b.lastVolume;
