@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.23.8 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.23.9 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -348,7 +348,7 @@ public class MainActivity extends Activity {
                 renderDecision(decision, visibleReason);
                 renderPrices(eth, bid, ask, btc, btcBid, btcAsk);
                 renderMovement(movement);
-                renderSignal(lastSignal, signalAt, decision, visibleReason, state.optBoolean("activeSignal", false), state.optInt("activeSignalRemainingSec", -1));
+                renderSignal(lastSignal, signalAt, decision, visibleReason, state.optBoolean("activeSignal", false), state.optString("activeSignalStatus", "NONE"));
                 renderAction(action, decision, lastSignal);
                 renderDiagnostics(diagnostics, state.optString("engineReason", "NO_DATA"), reason);
                 serviceInfo.setText(visibleServiceInfo);
@@ -400,7 +400,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderSignal(JSONObject signal, long signalAt, String currentDecision, String currentReason,
-                              boolean activeSignal, int remainingSec) {
+                              boolean activeSignal, String activeStatus) {
         if (signal == null) {
             signalValue.setText("Aucun signal natif pour le moment.\nMoteur actif · attendre un setup confirmé.");
             signalValue.setTextColor(TEXT);
@@ -411,8 +411,6 @@ public class MainActivity extends Activity {
         long ageSec = ageMs >= 0 ? Math.max(0, ageMs / 1000) : -1;
 
         String ageText = ageSec >= 0 ? "Signal reçu il y a " + formatDuration(ageSec) : "Âge du signal : —";
-        String remainingText = remainingSec >= 0 ? "Fenêtre restante : " + formatDuration(remainingSec) : "Fenêtre restante : —";
-
         String plan = signal.optString("side", "—")
                 + " · score " + signal.optInt("score", 0) + "/100"
                 + "\n" + signal.optString("family", "Signal natif")
@@ -422,22 +420,31 @@ public class MainActivity extends Activity {
                 + " · " + signal.optInt("qty", 0) + " ETH";
 
         if (activeSignal) {
-            signalValue.setText("SIGNAL ACTIF — À EXÉCUTER MAINTENANT"
+            signalValue.setText("SIGNAL ACTIF — MARCHÉ ENCORE VALIDE"
                     + "\n" + ageText
-                    + "\n" + remainingText
+                    + "\nValidité : jusqu’à TP / SL / inversion marché"
                     + "\n" + plan);
             signalValue.setTextColor(CYAN);
         } else {
-            String reason = currentReason == null || currentReason.trim().isEmpty()
-                    ? "Décision actuelle : " + currentDecision
-                    : currentReason;
             signalValue.setText("SIGNAL PASSÉ — NE PAS ENTRER MAINTENANT"
                     + "\n" + ageText
-                    + "\nRaison actuelle : " + reason
+                    + "\nInvalidation : " + humanSignalStatus(activeStatus)
                     + "\n\nDernier plan reçu :"
                     + "\n" + plan);
             signalValue.setTextColor(ORANGE);
         }
+    }
+
+    private String humanSignalStatus(String status) {
+        if ("TP_TOUCHED".equals(status)) return "objectif touché";
+        if ("SL_TOUCHED".equals(status)) return "stop touché";
+        if ("ENTRY_TOO_FAR".equals(status)) return "prix parti trop loin de l’entrée";
+        if ("BTC_VETO".equals(status)) return "BTC opposé";
+        if ("REVERSAL_FLOW".equals(status)) return "flow opposé";
+        if ("REVERSAL_MOVE".equals(status)) return "mouvement inversé";
+        if ("NO_PRICE".equals(status)) return "prix indisponible";
+        if ("NONE".equals(status)) return "aucun signal actif";
+        return status == null || status.trim().isEmpty() ? "raison inconnue" : status;
     }
 
     private String formatDuration(long seconds) {
@@ -502,7 +509,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_23_8_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_23_9_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -546,7 +553,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.23.8 Android natif\n");
+        b.append("Version app: v2.23.9 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n\n");
 
         b.append("STATUT\n");
@@ -682,7 +689,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.23.8\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.23.9\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");

@@ -1,0 +1,8 @@
+ETH Scalper Cockpit Android v2.23.9
+
+Correction logique de validité :
+- Le signal n'est plus limité par une fenêtre de temps fixe.
+- Il reste ACTIF tant que le marché reste valide.
+- Invalidation uniquement si TP touché, SL touché, prix trop loin de l'entrée, BTC veto, flow opposé ou inversion du mouvement.
+- L'interface affiche : SIGNAL ACTIF — MARCHÉ ENCORE VALIDE.
+- Aucun ordre automatique.
