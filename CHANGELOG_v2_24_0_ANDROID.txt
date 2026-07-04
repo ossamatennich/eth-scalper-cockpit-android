@@ -1,0 +1,9 @@
+ETH Scalper Cockpit Android v2.24.0
+
+Sécurité après pertes réelles :
+- Passage en MODE OBSERVATION uniquement.
+- Les signaux ne sont plus présentés comme exécutables.
+- Notification : SIGNAL ETH — OBSERVATION — NE PAS EXÉCUTER.
+- Objectif : collecter diagnostics ZIP après TP/SL théorique pour recalibrer.
+- Après 2 stops réels consécutifs, le moteur ne doit plus être utilisé en réel sans audit.
+- Aucun ordre automatique.
