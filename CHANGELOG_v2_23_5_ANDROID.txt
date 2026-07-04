@@ -1,0 +1,10 @@
+ETH Scalper Cockpit Android v2.23.5
+
+Correction clarté signal :
+- La carte SIGNAL NATIF distingue maintenant clairement :
+  SIGNAL ACTIF — À EXÉCUTER MAINTENANT
+  ou SIGNAL PASSÉ — NE PAS ENTRER MAINTENANT.
+- Affiche l'âge du signal : reçu il y a X secondes/minutes.
+- Évite la contradiction visuelle entre ancien signal et décision actuelle COOLDOWN.
+- Si la décision actuelle n'est pas ENTRER, l'app indique de ne pas poursuivre l'ancien signal.
+- Aucun ordre automatique.
