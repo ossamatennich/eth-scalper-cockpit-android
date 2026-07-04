@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.23.1 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.23.2 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -464,12 +464,15 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_23_1_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_23_2_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
             try (ZipOutputStream zip = new ZipOutputStream(memory)) {
+                JSONObject metrics = state.optJSONObject("engineMetrics");
                 addZipText(zip, "status.json", state.toString(2));
+                addZipText(zip, "engine_metrics.json", metrics == null ? "{}" : metrics.toString(2));
+                addZipText(zip, "engine_metrics.txt", buildEngineMetricsText(state));
                 addZipText(zip, "summary.txt", buildDiagnosticSummary(state));
                 addZipText(zip, "health_check.txt", buildHealthCheck(state));
                 addZipText(zip, "diagnostics.csv", buildDiagnosticsCsv(state.optJSONArray("diagnostics")));
@@ -505,7 +508,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.23.0 Android natif\n");
+        b.append("Version app: v2.23.2 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n\n");
 
         b.append("STATUT\n");
@@ -529,6 +532,21 @@ public class MainActivity extends Activity {
         b.append("- engineReason: ").append(s.optString("engineReason", "—")).append("\n");
         b.append("- decisionReason: ").append(s.optString("decisionReason", "—")).append("\n");
         b.append("- score: ").append(s.optInt("score", 0)).append("\n\n");
+
+        JSONObject metrics = s.optJSONObject("engineMetrics");
+        if (metrics != null) {
+            b.append("MÉTRIQUES MOTEUR EXPERTES\n");
+            b.append("- setupCandidate: ").append(metrics.optString("setupCandidate", "—")).append("\n");
+            b.append("- threshold: ").append(metrics.optString("threshold", "—")).append("\n");
+            b.append("- move1: ").append(metrics.optString("move1", "—")).append("\n");
+            b.append("- move3: ").append(metrics.optString("move3", "—")).append("\n");
+            b.append("- move8: ").append(metrics.optString("move8", "—")).append("\n");
+            b.append("- avgRange20: ").append(metrics.optString("avgRange20", "—")).append("\n");
+            b.append("- volumeRatio: ").append(metrics.optString("volumeRatio", "—")).append("\n");
+            b.append("- flowNorm: ").append(metrics.optString("flowNorm", "—")).append("\n");
+            b.append("- btcMove5: ").append(metrics.optString("btcMove5", "—")).append("\n");
+            b.append("- spread: ").append(metrics.optString("spread", "—")).append("\n\n");
+        }
 
         JSONObject movement = s.optJSONObject("movement");
         if (movement != null) {
@@ -570,8 +588,27 @@ public class MainActivity extends Activity {
         b.append(line(bidAskOk, "BID/ASK ETH reçus"));
         b.append(line(btcOk, "Prix BTC reçu"));
         b.append(line(btcBidAskOk, "BID/ASK BTC reçus"));
+        JSONObject metrics = s.optJSONObject("engineMetrics");
+        int evalAge = s.optInt("lastEvaluationAgeSec", -1);
+        int tradeFlowSamples = s.optInt("tradeFlowSamples", -1);
+        boolean metricsOk = metrics != null;
+        boolean evalOk = evalAge >= 0 && evalAge <= 5;
+        boolean tradesOk = tradeFlowSamples >= 0;
+
         b.append(line(candlesOk, "Bougies suffisantes ETH " + ethCandles + "/30 · BTC " + btcCandles + "/10"));
         b.append(line(!"NO_DATA".equals(reason), "Moteur sorti de NO_DATA, raison actuelle " + reason));
+        b.append(line(evalOk, "Dernière évaluation moteur récente : " + evalAge + "s"));
+        b.append(line(tradesOk, "Compteur trades/flow disponible : " + tradeFlowSamples));
+        b.append(line(metricsOk, "Métriques expertes incluses dans le ZIP"));
+        if (metrics != null) {
+            b.append(line(metrics.optBoolean("volumeDataOk", false), "Volume moyen disponible"));
+            b.append(line(metrics.optBoolean("rangeOk", false), "Range suffisant pour scalp"));
+            b.append("INFO setupCandidate: ").append(metrics.optString("setupCandidate", "—")).append("\n");
+            b.append("INFO threshold/move1/move3: ")
+                    .append(metrics.optString("threshold", "—")).append(" / ")
+                    .append(metrics.optString("move1", "—")).append(" / ")
+                    .append(metrics.optString("move3", "—")).append("\n");
+        }
         b.append("\nConclusion automatique: ");
         if (connected && age >= 0 && age <= 8 && ethOk && btcOk && candlesOk) {
             b.append("OK — moteur alimenté. Si aucun signal, c'est un refus logique du moteur.\n");
@@ -583,6 +620,46 @@ public class MainActivity extends Activity {
 
     private String line(boolean ok, String text) {
         return (ok ? "OK  " : "ERR ") + text + "\n";
+    }
+
+
+    private String buildEngineMetricsText(JSONObject s) {
+        JSONObject m = s.optJSONObject("engineMetrics");
+        if (m == null) return "Aucune métrique experte disponible.\n";
+
+        StringBuilder b = new StringBuilder();
+        b.append("ENGINE METRICS — ETH SCALPER v2.23.2\n\n");
+        b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
+        b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
+        b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
+
+        b.append("MOUVEMENT\n");
+        b.append("threshold=").append(m.optString("threshold", "—")).append("\n");
+        b.append("move1=").append(m.optString("move1", "—")).append("\n");
+        b.append("move3=").append(m.optString("move3", "—")).append("\n");
+        b.append("move8=").append(m.optString("move8", "—")).append("\n");
+        b.append("recentRange=").append(m.optString("recentRange", "—")).append("\n\n");
+
+        b.append("VOLUME / FLOW / BTC\n");
+        b.append("avgRange20=").append(m.optString("avgRange20", "—")).append("\n");
+        b.append("avgVolume20=").append(m.optString("avgVolume20", "—")).append("\n");
+        b.append("lastVolume=").append(m.optString("lastVolume", "—")).append("\n");
+        b.append("volumeRatio=").append(m.optString("volumeRatio", "—")).append("\n");
+        b.append("flowNorm=").append(m.optString("flowNorm", "—")).append("\n");
+        b.append("btcMove5=").append(m.optString("btcMove5", "—")).append("\n");
+        b.append("spread=").append(m.optString("spread", "—")).append("\n\n");
+
+        b.append("FLAGS\n");
+        b.append("c1Long=").append(m.optBoolean("c1Long", false)).append("\n");
+        b.append("c1Short=").append(m.optBoolean("c1Short", false)).append("\n");
+        b.append("c2Long=").append(m.optBoolean("c2Long", false)).append("\n");
+        b.append("c2Short=").append(m.optBoolean("c2Short", false)).append("\n");
+        b.append("btcLongVeto=").append(m.optBoolean("btcLongVeto", false)).append("\n");
+        b.append("btcShortVeto=").append(m.optBoolean("btcShortVeto", false)).append("\n");
+        b.append("flowLongOk=").append(m.optBoolean("flowLongOk", false)).append("\n");
+        b.append("flowShortOk=").append(m.optBoolean("flowShortOk", false)).append("\n");
+
+        return b.toString();
     }
 
     private String buildDiagnosticsCsv(JSONArray arr) {

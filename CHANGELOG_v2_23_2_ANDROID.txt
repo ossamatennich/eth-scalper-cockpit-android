@@ -1,0 +1,12 @@
+ETH Scalper Cockpit Android v2.23.2
+
+Amélioration demandée :
+- ZIP diagnostic toujours téléchargé directement dans Téléchargements.
+- ZIP enrichi pour analyse ChatGPT : engine_metrics.json + engine_metrics.txt.
+- Health check enrichi.
+- Tests moteur ajoutés : NO_DATA, BTC_VETO, FLOW_TOO_WEAK, MOVE_CONSUMED, risk/reward.
+- Objectif : l'utilisateur clique seulement sur Télécharger diagnostic ZIP et transmet le fichier.
+
+Aucune clé API.
+Aucun ordre automatique.
+Trading manuel uniquement.

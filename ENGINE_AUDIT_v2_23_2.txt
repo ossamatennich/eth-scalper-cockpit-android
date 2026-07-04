@@ -1,0 +1,11 @@
+ETH Scalper Cockpit Android v2.23.2 — Audit moteur
+
+Contrôles intégrés :
+- Export ZIP direct dans Téléchargements conservé.
+- Ajout engine_metrics.json et engine_metrics.txt.
+- Ajout métriques internes : move1, move3, move8, threshold, avgRange20, volumeRatio, flowNorm, btcMove5, spread.
+- Ajout flags C1/C2 long/short.
+- BTC reste un veto/contexte, jamais un déclencheur autonome.
+- Une seule décision à la fois : ENTRER ou ATTENDRE.
+- Aucun ordre automatique.
+- Test JUnit : NO_DATA, BTC_VETO, FLOW_TOO_WEAK, MOVE_CONSUMED, ratio risque/rendement.

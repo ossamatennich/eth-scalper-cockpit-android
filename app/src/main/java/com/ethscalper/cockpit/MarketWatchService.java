@@ -173,7 +173,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.22.2.2",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.23.2",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -470,7 +470,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.23.1 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.23.2 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -540,7 +540,7 @@ public class MarketWatchService extends Service {
             boolean connected = socket != null && age >= 0 && age < 70;
             SignalDecision decision = lastDecision;
             JSONObject state = new JSONObject();
-            state.put("version", "2.23.1-android");
+            state.put("version", "2.23.2-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -551,6 +551,10 @@ public class MarketWatchService extends Service {
             state.put("ethCandles", ethCandles.size());
             state.put("btcCandles", btcCandles.size());
             state.put("candles", ethCandles.size());
+            state.put("tradeFlowSamples", flows.size());
+            state.put("lastEvaluationAgeSec", lastEvaluationAt == 0 ? -1 : Math.max(0, (now - lastEvaluationAt) / 1000));
+            MarketSnapshot snapshot = buildSnapshot(now);
+            state.put("engineMetrics", engineMetricsJson(snapshot, decision));
             state.put("lastSignalAt", lastSignalAt);
             state.put("decision", decision == null ? "ATTENDRE" : decision.decision);
             state.put("decisionReason", decision == null ? "Initialisation du moteur" : decision.reasonText);
@@ -578,6 +582,67 @@ public class MarketWatchService extends Service {
             broadcast.putExtra(EXTRA_PAYLOAD, output);
             sendBroadcast(broadcast);
         } catch (Exception ignored) {}
+    }
+
+
+    private JSONObject engineMetricsJson(MarketSnapshot s, SignalDecision decision) throws Exception {
+        JSONObject m = new JSONObject();
+
+        double spread = Double.isFinite(s.ethBid) && Double.isFinite(s.ethAsk) && s.ethBid > 0 && s.ethAsk > 0
+                ? s.ethAsk - s.ethBid : Double.NaN;
+        double threshold = Math.max(0.75, s.avgRange20 * 0.55);
+        double volumeRatio = s.avgVolume20 > 0 ? s.lastVolume / s.avgVolume20 : Double.NaN;
+        double recentRange = Math.max(0, s.recentHigh - s.recentLow);
+
+        boolean c1Long = s.move1 > threshold && s.move3 > threshold * 1.15;
+        boolean c1Short = s.move1 < -threshold && s.move3 < -threshold * 1.15;
+        boolean c2Long = s.move3 > threshold * 1.35 && s.move1 > -s.avgRange20 * 0.25;
+        boolean c2Short = s.move3 < -threshold * 1.35 && s.move1 < s.avgRange20 * 0.25;
+
+        String candidate = c1Long ? "C1_LONG"
+                : c1Short ? "C1_SHORT"
+                : c2Long ? "C2_LONG"
+                : c2Short ? "C2_SHORT"
+                : "NONE";
+
+        putMetric(m, "spread", spread);
+        putMetric(m, "avgRange20", s.avgRange20);
+        putMetric(m, "avgVolume20", s.avgVolume20);
+        putMetric(m, "lastVolume", s.lastVolume);
+        putMetric(m, "volumeRatio", volumeRatio);
+        putMetric(m, "threshold", threshold);
+        putMetric(m, "move1", s.move1);
+        putMetric(m, "move3", s.move3);
+        putMetric(m, "move8", s.move8);
+        putMetric(m, "recentHigh", s.recentHigh);
+        putMetric(m, "recentLow", s.recentLow);
+        putMetric(m, "recentRange", recentRange);
+        putMetric(m, "flowNorm", s.flowNorm);
+        putMetric(m, "btcMove5", s.btcMove5);
+
+        m.put("ethCandlesOk", s.ethCandles >= 30);
+        m.put("btcCandlesOk", s.btcCandles >= 10);
+        m.put("rangeOk", s.avgRange20 >= 0.15);
+        m.put("volumeDataOk", s.avgVolume20 > 0);
+        m.put("volumeRatioOk", Double.isFinite(volumeRatio) && volumeRatio >= 0.60);
+        m.put("flowLongOk", s.flowNorm >= 0.05);
+        m.put("flowShortOk", s.flowNorm <= -0.05);
+        m.put("btcLongVeto", s.btcMove5 < -0.0012);
+        m.put("btcShortVeto", s.btcMove5 > 0.0012);
+        m.put("c1Long", c1Long);
+        m.put("c1Short", c1Short);
+        m.put("c2Long", c2Long);
+        m.put("c2Short", c2Short);
+        m.put("setupCandidate", candidate);
+        m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
+        m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
+        m.put("rulesProfile", "ETH Scalper sessions v2.23.2");
+
+        return m;
+    }
+
+    private static void putMetric(JSONObject object, String key, double value) throws Exception {
+        object.put(key, Double.isFinite(value) ? Math.round(value * 1_000_000.0) / 1_000_000.0 : JSONObject.NULL);
     }
 
     private static void putPrice(JSONObject object, String key, double value) throws Exception {
