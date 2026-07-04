@@ -1,0 +1,8 @@
+ETH Scalper Cockpit Android v2.24.1
+
+Correctif compilation :
+- Corrige le build rouge de v2.24.0.
+- Ajoute le helper de formatage manquant dans MarketWatchService.
+- Conserve le mode OBSERVATION_ONLY.
+- Les signaux restent non exécutables en réel.
+- Artifact attendu : ETH-Scalper-Cockpit-v2.24.1-debug-apk.
