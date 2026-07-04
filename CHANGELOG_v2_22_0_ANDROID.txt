@@ -1,0 +1,11 @@
+ETH Scalper Cockpit Android v2.22.0
+
+- Interface principale Android native premium inspirée du cockpit historique.
+- Cartes décision, action manuelle, prix ETH/BTC, mouvement, signal et diagnostic.
+- Boutons natifs de test de l’alerte forte et de la vibration.
+- Nouveau canal sonore eth_scalper_signal_loud_v2220.
+- Moteur de décision extrait dans des classes Java pures et testables.
+- Ring buffer des 200 derniers diagnostics, avec huit entrées visibles dans l’interface.
+- BTC reste uniquement un contexte/veto et aucun ordre automatique n’est exécuté.
+- Évaluation moteur limitée à 1 Hz et notification foreground limitée pour éviter le spam.
+- versionCode 22200 et versionName 2.22.0.
