@@ -33,9 +33,14 @@ import androidx.core.content.ContextCompat;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 public class MainActivity extends Activity {
     private static final int BG = Color.rgb(5, 10, 17);
@@ -135,7 +140,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.22.2 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.23.0 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -221,6 +226,8 @@ public class MainActivity extends Activity {
                 () -> sendServiceAction(MarketWatchService.ACTION_TEST_VIBRATION, "Vibration testée")));
         buttons.addView(actionButton("Réinitialiser diagnostic", ORANGE,
                 () -> sendServiceAction(MarketWatchService.ACTION_RESET_DIAGNOSTICS, "Diagnostic réinitialisé")));
+        buttons.addView(actionButton("Exporter diagnostic ZIP", CYAN,
+                this::exportDiagnosticZip));
     }
 
     private void buildLegacyFooter() {
@@ -441,6 +448,153 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(this, MarketWatchService.class).setAction(action);
         startForegroundService(intent);
         if (toast != null) Toast.makeText(this, toast, Toast.LENGTH_SHORT).show();
+    }
+
+
+    private void exportDiagnosticZip() {
+        try {
+            String raw = MarketWatchService.getLastStatusJson(this);
+            if (raw == null || raw.trim().isEmpty()) {
+                Toast.makeText(this, "Diagnostic vide : laisse le moteur tourner quelques secondes.", Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            JSONObject state = new JSONObject(raw);
+            File out = new File(getCacheDir(), "eth_scalper_diagnostic_v2_23_0.zip");
+
+            try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(out))) {
+                addZipText(zip, "status.json", state.toString(2));
+                addZipText(zip, "summary.txt", buildDiagnosticSummary(state));
+                addZipText(zip, "health_check.txt", buildHealthCheck(state));
+                addZipText(zip, "diagnostics.csv", buildDiagnosticsCsv(state.optJSONArray("diagnostics")));
+                addZipText(zip, "instructions.txt",
+                        "Envoyer ce ZIP à ChatGPT pour analyse du moteur ETH Scalper.\n" +
+                        "Ce fichier ne contient aucune clé API et aucun ordre automatique.\n" +
+                        "Le trading reste manuel.\n");
+            }
+
+            Intent share = new Intent(Intent.ACTION_SEND);
+            share.setType("application/zip");
+            share.putExtra(Intent.EXTRA_SUBJECT, "ETH Scalper diagnostic v2.23.0");
+            share.putExtra(Intent.EXTRA_TEXT, "Diagnostic ZIP ETH Scalper v2.23.0");
+            Uri uri = androidx.core.content.FileProvider.getUriForFile(
+                    this, getPackageName() + ".fileprovider", out);
+            share.putExtra(Intent.EXTRA_STREAM, uri);
+            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            startActivity(Intent.createChooser(share, "Partager le diagnostic ZIP"));
+        } catch (Exception error) {
+            Toast.makeText(this, "Export impossible : " + error.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private String buildDiagnosticSummary(JSONObject s) {
+        StringBuilder b = new StringBuilder();
+        b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
+        b.append("Version app: v2.23.0 Android natif\n");
+        b.append("Version service: ").append(s.optString("version", "—")).append("\n\n");
+
+        b.append("STATUT\n");
+        b.append("- connected: ").append(s.optBoolean("connected", false)).append("\n");
+        b.append("- nativeActive: ").append(s.optBoolean("nativeActive", false)).append("\n");
+        b.append("- lastAgeSec: ").append(s.optInt("lastAgeSec", -1)).append("\n");
+        b.append("- type: ").append(s.optString("type", "—")).append("\n");
+        b.append("- message: ").append(s.optString("message", "—")).append("\n\n");
+
+        b.append("MARCHÉ\n");
+        b.append("- ETH: ").append(s.optString("eth", "—")).append("\n");
+        b.append("- ETH bid/ask: ").append(s.optString("bid", "—")).append(" / ").append(s.optString("ask", "—")).append("\n");
+        b.append("- BTC: ").append(s.optString("btc", "—")).append("\n");
+        b.append("- BTC bid/ask: ").append(s.optString("btcBid", "—")).append(" / ").append(s.optString("btcAsk", "—")).append("\n");
+        b.append("- ethCandles: ").append(s.optInt("ethCandles", 0)).append("\n");
+        b.append("- btcCandles: ").append(s.optInt("btcCandles", 0)).append("\n\n");
+
+        b.append("MOTEUR\n");
+        b.append("- decision: ").append(s.optString("decision", "—")).append("\n");
+        b.append("- action: ").append(s.optString("action", "—")).append("\n");
+        b.append("- engineReason: ").append(s.optString("engineReason", "—")).append("\n");
+        b.append("- decisionReason: ").append(s.optString("decisionReason", "—")).append("\n");
+        b.append("- score: ").append(s.optInt("score", 0)).append("\n\n");
+
+        JSONObject movement = s.optJSONObject("movement");
+        if (movement != null) {
+            b.append("MOUVEMENT\n");
+            b.append("- impulse: ").append(movement.optString("impulse", "—")).append("\n");
+            b.append("- reset: ").append(movement.optBoolean("reset", false)).append("\n");
+            b.append("- origin: ").append(movement.optString("origin", "—")).append("\n");
+            b.append("- extreme: ").append(movement.optString("extreme", "—")).append("\n");
+            b.append("- distance: ").append(movement.optString("distance", "—")).append("\n");
+            b.append("- consumed: ").append(movement.optBoolean("consumed", false)).append("\n\n");
+        }
+
+        b.append("RÈGLES PROJET\n");
+        b.append("- Une seule décision à la fois.\n");
+        b.append("- BTC = contexte/veto, jamais déclencheur autonome.\n");
+        b.append("- Aucun ordre automatique.\n");
+        b.append("- Ne jamais poursuivre un mouvement consommé.\n");
+
+        return b.toString();
+    }
+
+    private String buildHealthCheck(JSONObject s) {
+        StringBuilder b = new StringBuilder();
+        boolean connected = s.optBoolean("connected", false);
+        int age = s.optInt("lastAgeSec", -1);
+        int ethCandles = s.optInt("ethCandles", s.optInt("candles", 0));
+        int btcCandles = s.optInt("btcCandles", 0);
+        boolean ethOk = !s.isNull("eth") && s.optDouble("eth", 0) > 0;
+        boolean btcOk = !s.isNull("btc") && s.optDouble("btc", 0) > 0;
+        boolean bidAskOk = !s.isNull("bid") && !s.isNull("ask") && s.optDouble("bid", 0) > 0 && s.optDouble("ask", 0) > 0;
+        boolean btcBidAskOk = !s.isNull("btcBid") && !s.isNull("btcAsk") && s.optDouble("btcBid", 0) > 0 && s.optDouble("btcAsk", 0) > 0;
+        boolean candlesOk = ethCandles >= 30 && btcCandles >= 10;
+        String reason = s.optString("engineReason", "—");
+
+        b.append("AUTO-CHECK ETH SCALPER\n\n");
+        b.append(line(connected, "Service natif connecté"));
+        b.append(line(age >= 0 && age <= 8, "Flux récent <= 8s, âge actuel " + age + "s"));
+        b.append(line(ethOk, "Prix ETH reçu"));
+        b.append(line(bidAskOk, "BID/ASK ETH reçus"));
+        b.append(line(btcOk, "Prix BTC reçu"));
+        b.append(line(btcBidAskOk, "BID/ASK BTC reçus"));
+        b.append(line(candlesOk, "Bougies suffisantes ETH " + ethCandles + "/30 · BTC " + btcCandles + "/10"));
+        b.append(line(!"NO_DATA".equals(reason), "Moteur sorti de NO_DATA, raison actuelle " + reason));
+        b.append("\nConclusion automatique: ");
+        if (connected && age >= 0 && age <= 8 && ethOk && btcOk && candlesOk) {
+            b.append("OK — moteur alimenté. Si aucun signal, c'est un refus logique du moteur.\n");
+        } else {
+            b.append("À vérifier — une donnée moteur manque ou le flux est retardé.\n");
+        }
+        return b.toString();
+    }
+
+    private String line(boolean ok, String text) {
+        return (ok ? "OK  " : "ERR ") + text + "\n";
+    }
+
+    private String buildDiagnosticsCsv(JSONArray arr) {
+        StringBuilder b = new StringBuilder("time,code,message\n");
+        if (arr == null) return b.toString();
+        SimpleDateFormat clock = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.FRANCE);
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject item = arr.optJSONObject(i);
+            if (item == null) continue;
+            b.append(csv(clock.format(new Date(item.optLong("at", 0))))).append(',')
+                    .append(csv(item.optString("code", ""))).append(',')
+                    .append(csv(item.optString("message", ""))).append('\n');
+        }
+        return b.toString();
+    }
+
+    private String csv(String value) {
+        if (value == null) value = "";
+        return "\"" + value.replace("\"", "\"\"") + "\"";
+    }
+
+    private void addZipText(ZipOutputStream zip, String name, String text) throws Exception {
+        zip.putNextEntry(new ZipEntry(name));
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        zip.write(bytes, 0, bytes.length);
+        zip.closeEntry();
     }
 
     private void showLegacyCockpit() {

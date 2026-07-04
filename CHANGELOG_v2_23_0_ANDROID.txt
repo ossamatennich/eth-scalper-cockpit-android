@@ -1,0 +1,12 @@
+ETH Scalper Cockpit Android v2.23.0
+
+Ajout majeur :
+- Bouton Exporter diagnostic ZIP.
+- Génère un petit fichier compressé partageable depuis l’application.
+- Contenu : status.json, summary.txt, health_check.txt, diagnostics.csv, instructions.txt.
+- Permet d’envoyer le diagnostic à ChatGPT sans devoir analyser soi-même.
+- Export sans clé API, sans donnée sensible trading, sans ordre automatique.
+- GitHub Actions lance maintenant gradle test assembleDebug.
+
+Architecture native conservée.
+Aucune WebView en écran principal.

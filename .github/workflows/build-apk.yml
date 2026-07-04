@@ -21,9 +21,9 @@ jobs:
         with:
           gradle-version: 8.10.2
       - name: Build debug APK
-        run: gradle assembleDebug
+        run: gradle test assembleDebug
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ETH-Scalper-Cockpit-v2.22.2-debug-apk
+          name: ETH-Scalper-Cockpit-v2.23.0-debug-apk
           path: app/build/outputs/apk/debug/*.apk

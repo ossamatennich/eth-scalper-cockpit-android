@@ -470,7 +470,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.22.2 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.23.0 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -540,7 +540,7 @@ public class MarketWatchService extends Service {
             boolean connected = socket != null && age >= 0 && age < 70;
             SignalDecision decision = lastDecision;
             JSONObject state = new JSONObject();
-            state.put("version", "2.22.2-android");
+            state.put("version", "2.23.0-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -565,7 +565,7 @@ public class MarketWatchService extends Service {
                 state.put("lastPlan", signal);
             }
             JSONArray recent = new JSONArray();
-            for (DiagnosticEntry entry : signalEngine.recentDiagnostics(8)) {
+            for (DiagnosticEntry entry : signalEngine.recentDiagnostics(80)) {
                 JSONObject item = new JSONObject();
                 item.put("at", entry.timestamp); item.put("code", entry.code); item.put("message", entry.message);
                 recent.put(item);
