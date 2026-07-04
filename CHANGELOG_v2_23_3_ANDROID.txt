@@ -1,0 +1,9 @@
+ETH Scalper Cockpit Android v2.23.3
+
+Correction diagnostic moteur :
+- Le ZIP vérifie réellement le flux trades/flow ETH.
+- Ajout compteurs : bookTickerMessages, klineMessages, aggTradeMessages.
+- Ajout âges flux : lastBookTickerAgeSec, lastKlineAgeSec, lastAggTradeAgeSec.
+- Health check marque maintenant ERR si aucun trade/flow ETH n'est reçu.
+- Détection stream plus robuste avec normalisation lowercase.
+- Aucun ordre automatique.

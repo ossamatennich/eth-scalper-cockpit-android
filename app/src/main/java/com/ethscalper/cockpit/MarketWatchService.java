@@ -50,11 +50,11 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v2222";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v2222";
+    private static final String CH_WATCH = "eth_scalper_watch_v22303";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22303";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 2222;
+    private static final int NOTIF_WATCH_ID = 22303;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
@@ -76,6 +76,12 @@ public class MarketWatchService extends Service {
     private long lastStatusAt;
     private long lastEvaluationAt;
     private long lastWatchNotificationAt;
+    private long bookTickerMessages;
+    private long klineMessages;
+    private long aggTradeMessages;
+    private long lastBookTickerAt;
+    private long lastKlineAt;
+    private long lastAggTradeAt;
     private int reconnectAttempt;
     private boolean historyPrefillRequested;
     private int signalNotificationId = 3000;
@@ -173,7 +179,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.23.2",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — alerte forte v2.23.3",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -345,9 +351,10 @@ public class MarketWatchService extends Service {
             String stream = root.optString("stream", "");
             JSONObject data = root.optJSONObject("data");
             if (data == null) return;
-            if (stream.contains("bookTicker")) handleBookTicker(stream, data);
-            else if (stream.contains("kline_1m")) handleKline(stream, data);
-            else if (stream.contains("aggTrade")) handleAggTrade(data);
+            String normalizedStream = stream.toLowerCase(Locale.ROOT);
+            if (normalizedStream.contains("bookticker")) handleBookTicker(stream, data);
+            else if (normalizedStream.contains("kline_1m")) handleKline(stream, data);
+            else if (normalizedStream.contains("aggtrade")) handleAggTrade(data);
 
             long now = System.currentTimeMillis();
             if (now - lastEvaluationAt >= 1000) {
@@ -362,6 +369,8 @@ public class MarketWatchService extends Service {
     }
 
     private void handleBookTicker(String stream, JSONObject data) {
+        bookTickerMessages++;
+        lastBookTickerAt = System.currentTimeMillis();
         if (stream.startsWith("ethusdt")) {
             ethBid = data.optDouble("b", ethBid);
             ethAsk = data.optDouble("a", ethAsk);
@@ -374,6 +383,8 @@ public class MarketWatchService extends Service {
     }
 
     private void handleKline(String stream, JSONObject data) {
+        klineMessages++;
+        lastKlineAt = System.currentTimeMillis();
         JSONObject kline = data.optJSONObject("k");
         if (kline == null) return;
         Candle candle = new Candle(kline.optLong("t"), kline.optDouble("o"), kline.optDouble("h"),
@@ -388,6 +399,8 @@ public class MarketWatchService extends Service {
     }
 
     private void handleAggTrade(JSONObject data) {
+        aggTradeMessages++;
+        lastAggTradeAt = System.currentTimeMillis();
         long time = data.optLong("T", System.currentTimeMillis());
         double quantity = data.optDouble("q", 0);
         flows.addLast(new TradeFlow(time, data.optBoolean("m", false) ? -quantity : quantity));
@@ -470,7 +483,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.23.2 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.23.3 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -540,7 +553,7 @@ public class MarketWatchService extends Service {
             boolean connected = socket != null && age >= 0 && age < 70;
             SignalDecision decision = lastDecision;
             JSONObject state = new JSONObject();
-            state.put("version", "2.23.2-android");
+            state.put("version", "2.23.3-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -552,6 +565,12 @@ public class MarketWatchService extends Service {
             state.put("btcCandles", btcCandles.size());
             state.put("candles", ethCandles.size());
             state.put("tradeFlowSamples", flows.size());
+            state.put("bookTickerMessages", bookTickerMessages);
+            state.put("klineMessages", klineMessages);
+            state.put("aggTradeMessages", aggTradeMessages);
+            state.put("lastBookTickerAgeSec", ageSeconds(now, lastBookTickerAt));
+            state.put("lastKlineAgeSec", ageSeconds(now, lastKlineAt));
+            state.put("lastAggTradeAgeSec", ageSeconds(now, lastAggTradeAt));
             state.put("lastEvaluationAgeSec", lastEvaluationAt == 0 ? -1 : Math.max(0, (now - lastEvaluationAt) / 1000));
             MarketSnapshot snapshot = buildSnapshot(now);
             state.put("engineMetrics", engineMetricsJson(snapshot, decision));
@@ -634,11 +653,24 @@ public class MarketWatchService extends Service {
         m.put("c2Long", c2Long);
         m.put("c2Short", c2Short);
         m.put("setupCandidate", candidate);
+        long aggAge = ageSeconds(s.now, lastAggTradeAt);
+        m.put("flowSamples", flows.size());
+        m.put("bookTickerMessages", bookTickerMessages);
+        m.put("klineMessages", klineMessages);
+        m.put("aggTradeMessages", aggTradeMessages);
+        m.put("lastBookTickerAgeSec", ageSeconds(s.now, lastBookTickerAt));
+        m.put("lastKlineAgeSec", ageSeconds(s.now, lastKlineAt));
+        m.put("lastAggTradeAgeSec", aggAge);
+        m.put("flowDataOk", aggTradeMessages > 0 && !flows.isEmpty() && aggAge >= 0 && aggAge <= 120);
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.23.2");
+        m.put("rulesProfile", "ETH Scalper sessions v2.23.3");
 
         return m;
+    }
+
+    private static long ageSeconds(long now, long at) {
+        return at <= 0 ? -1 : Math.max(0, (now - at) / 1000);
     }
 
     private static void putMetric(JSONObject object, String key, double value) throws Exception {

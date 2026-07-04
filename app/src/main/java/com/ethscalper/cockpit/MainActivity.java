@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.23.2 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.23.3 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -464,7 +464,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_23_2_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_23_3_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -508,7 +508,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.23.2 Android natif\n");
+        b.append("Version app: v2.23.3 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n\n");
 
         b.append("STATUT\n");
@@ -524,7 +524,12 @@ public class MainActivity extends Activity {
         b.append("- BTC: ").append(s.optString("btc", "—")).append("\n");
         b.append("- BTC bid/ask: ").append(s.optString("btcBid", "—")).append(" / ").append(s.optString("btcAsk", "—")).append("\n");
         b.append("- ethCandles: ").append(s.optInt("ethCandles", 0)).append("\n");
-        b.append("- btcCandles: ").append(s.optInt("btcCandles", 0)).append("\n\n");
+        b.append("- btcCandles: ").append(s.optInt("btcCandles", 0)).append("\n");
+        b.append("- bookTickerMessages: ").append(s.optLong("bookTickerMessages", 0)).append("\n");
+        b.append("- klineMessages: ").append(s.optLong("klineMessages", 0)).append("\n");
+        b.append("- aggTradeMessages: ").append(s.optLong("aggTradeMessages", 0)).append("\n");
+        b.append("- tradeFlowSamples: ").append(s.optInt("tradeFlowSamples", 0)).append("\n");
+        b.append("- lastAggTradeAgeSec: ").append(s.optInt("lastAggTradeAgeSec", -1)).append("\n\n");
 
         b.append("MOTEUR\n");
         b.append("- decision: ").append(s.optString("decision", "—")).append("\n");
@@ -591,14 +596,16 @@ public class MainActivity extends Activity {
         JSONObject metrics = s.optJSONObject("engineMetrics");
         int evalAge = s.optInt("lastEvaluationAgeSec", -1);
         int tradeFlowSamples = s.optInt("tradeFlowSamples", -1);
+        long aggTradeMessages = s.optLong("aggTradeMessages", -1);
+        int aggTradeAge = s.optInt("lastAggTradeAgeSec", -1);
         boolean metricsOk = metrics != null;
         boolean evalOk = evalAge >= 0 && evalAge <= 5;
-        boolean tradesOk = tradeFlowSamples >= 0;
+        boolean tradesOk = tradeFlowSamples > 0 && aggTradeMessages > 0 && aggTradeAge >= 0 && aggTradeAge <= 120;
 
         b.append(line(candlesOk, "Bougies suffisantes ETH " + ethCandles + "/30 · BTC " + btcCandles + "/10"));
         b.append(line(!"NO_DATA".equals(reason), "Moteur sorti de NO_DATA, raison actuelle " + reason));
         b.append(line(evalOk, "Dernière évaluation moteur récente : " + evalAge + "s"));
-        b.append(line(tradesOk, "Compteur trades/flow disponible : " + tradeFlowSamples));
+        b.append(line(tradesOk, "Trades/flow ETH reçus : samples=" + tradeFlowSamples + ", messages=" + aggTradeMessages + ", âge=" + aggTradeAge + "s"));
         b.append(line(metricsOk, "Métriques expertes incluses dans le ZIP"));
         if (metrics != null) {
             b.append(line(metrics.optBoolean("volumeDataOk", false), "Volume moyen disponible"));
@@ -610,7 +617,7 @@ public class MainActivity extends Activity {
                     .append(metrics.optString("move3", "—")).append("\n");
         }
         b.append("\nConclusion automatique: ");
-        if (connected && age >= 0 && age <= 8 && ethOk && btcOk && candlesOk) {
+        if (connected && age >= 0 && age <= 8 && ethOk && btcOk && candlesOk && tradesOk) {
             b.append("OK — moteur alimenté. Si aucun signal, c'est un refus logique du moteur.\n");
         } else {
             b.append("À vérifier — une donnée moteur manque ou le flux est retardé.\n");
@@ -628,7 +635,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.23.2\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.23.3\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -648,6 +655,14 @@ public class MainActivity extends Activity {
         b.append("flowNorm=").append(m.optString("flowNorm", "—")).append("\n");
         b.append("btcMove5=").append(m.optString("btcMove5", "—")).append("\n");
         b.append("spread=").append(m.optString("spread", "—")).append("\n\n");
+
+        b.append("FLUX REÇUS\n");
+        b.append("bookTickerMessages=").append(m.optString("bookTickerMessages", "—")).append("\n");
+        b.append("klineMessages=").append(m.optString("klineMessages", "—")).append("\n");
+        b.append("aggTradeMessages=").append(m.optString("aggTradeMessages", "—")).append("\n");
+        b.append("flowSamples=").append(m.optString("flowSamples", "—")).append("\n");
+        b.append("lastAggTradeAgeSec=").append(m.optString("lastAggTradeAgeSec", "—")).append("\n");
+        b.append("flowDataOk=").append(m.optBoolean("flowDataOk", false)).append("\n\n");
 
         b.append("FLAGS\n");
         b.append("c1Long=").append(m.optBoolean("c1Long", false)).append("\n");
