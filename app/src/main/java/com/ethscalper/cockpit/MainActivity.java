@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -15,6 +16,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -33,8 +35,10 @@ import androidx.core.content.ContextCompat;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -140,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.23.0 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.23.1 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -226,7 +230,7 @@ public class MainActivity extends Activity {
                 () -> sendServiceAction(MarketWatchService.ACTION_TEST_VIBRATION, "Vibration testée")));
         buttons.addView(actionButton("Réinitialiser diagnostic", ORANGE,
                 () -> sendServiceAction(MarketWatchService.ACTION_RESET_DIAGNOSTICS, "Diagnostic réinitialisé")));
-        buttons.addView(actionButton("Exporter diagnostic ZIP", CYAN,
+        buttons.addView(actionButton("Télécharger diagnostic ZIP", CYAN,
                 this::exportDiagnosticZip));
     }
 
@@ -460,9 +464,11 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            File out = new File(getCacheDir(), "eth_scalper_diagnostic_v2_23_0.zip");
+            String fileName = "ETH_Scalper_Diagnostic_v2_23_1_" +
+                    new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
-            try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(out))) {
+            ByteArrayOutputStream memory = new ByteArrayOutputStream();
+            try (ZipOutputStream zip = new ZipOutputStream(memory)) {
                 addZipText(zip, "status.json", state.toString(2));
                 addZipText(zip, "summary.txt", buildDiagnosticSummary(state));
                 addZipText(zip, "health_check.txt", buildHealthCheck(state));
@@ -473,18 +479,26 @@ public class MainActivity extends Activity {
                         "Le trading reste manuel.\n");
             }
 
-            Intent share = new Intent(Intent.ACTION_SEND);
-            share.setType("application/zip");
-            share.putExtra(Intent.EXTRA_SUBJECT, "ETH Scalper diagnostic v2.23.0");
-            share.putExtra(Intent.EXTRA_TEXT, "Diagnostic ZIP ETH Scalper v2.23.0");
-            Uri uri = androidx.core.content.FileProvider.getUriForFile(
-                    this, getPackageName() + ".fileprovider", out);
-            share.putExtra(Intent.EXTRA_STREAM, uri);
-            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+            values.put(MediaStore.Downloads.MIME_TYPE, "application/zip");
+            values.put(MediaStore.Downloads.IS_PENDING, 1);
 
-            startActivity(Intent.createChooser(share, "Partager le diagnostic ZIP"));
+            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) throw new Exception("Impossible de créer le fichier dans Téléchargements");
+
+            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out == null) throw new Exception("Impossible d’écrire le fichier");
+                memory.writeTo(out);
+            }
+
+            values.clear();
+            values.put(MediaStore.Downloads.IS_PENDING, 0);
+            getContentResolver().update(uri, values, null, null);
+
+            Toast.makeText(this, "Diagnostic téléchargé dans Téléchargements : " + fileName, Toast.LENGTH_LONG).show();
         } catch (Exception error) {
-            Toast.makeText(this, "Export impossible : " + error.getMessage(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Téléchargement impossible : " + error.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
 

@@ -1,0 +1,7 @@
+ETH Scalper Cockpit Android v2.23.1
+
+Correction simplicité :
+- Le bouton devient Télécharger diagnostic ZIP.
+- Le fichier ZIP est enregistré directement dans le dossier Téléchargements du téléphone.
+- Plus de menu partage WhatsApp/Drive obligatoire.
+- L'utilisateur peut ensuite envoyer le ZIP à ChatGPT comme un fichier normal.
