@@ -86,7 +86,7 @@ public class MainActivity extends Activity {
         scroll.setBackgroundColor(BG);
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(34));
+        root.setPadding(dp(18), dp(18), dp(18), dp(110));
         scroll.addView(root, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
@@ -114,7 +114,7 @@ public class MainActivity extends Activity {
         TextView eyebrow = text("NATIVE MARKET INTELLIGENCE", 11, CYAN, true);
         eyebrow.setLetterSpacing(0.12f);
         header.addView(eyebrow);
-        header.addView(text("ETH SCALPER\nCOCKPIT", 29, TEXT, true));
+        header.addView(text("ETH SCALPER\nCOCKPIT", 27, TEXT, true));
 
         LinearLayout statusRow = new LinearLayout(this);
         statusRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -135,14 +135,14 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.22.0 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.22.1 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
 
     private void buildDecisionCard() {
         LinearLayout card = card("DÉCISION UNIQUE", ORANGE);
-        decisionValue = text("ATTENDRE", 38, ORANGE, true);
+        decisionValue = text("ATTENDRE", 36, ORANGE, true);
         decisionValue.setLetterSpacing(0.04f);
         card.addView(decisionValue);
         decisionReason = text("Initialisation du moteur natif", 14, MUTED, false);
@@ -152,7 +152,7 @@ public class MainActivity extends Activity {
 
     private void buildActionCard() {
         LinearLayout card = card("ACTION IMMÉDIATE · EXÉCUTION MANUELLE", ORANGE);
-        actionValue = text("NE PAS ENTRER", 27, TEXT, true);
+        actionValue = text("NE PAS ENTRER", 26, TEXT, true);
         card.addView(actionValue);
         actionDetails = text("Aucun ordre automatique · attendre un signal confirmé", 14, MUTED, false);
         actionDetails.setPadding(0, dp(8), 0, 0);
@@ -243,11 +243,11 @@ public class MainActivity extends Activity {
     private LinearLayout card(String label, int accent) {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(dp(18), dp(16), dp(18), dp(17));
+        container.setPadding(dp(18), dp(14), dp(18), dp(15));
         container.setBackground(rounded(CARD, BORDER, 18, 1));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(13), 0, 0);
+        params.setMargins(0, dp(11), 0, 0);
         root.addView(container, params);
         TextView title = text(label, 11, accent, true);
         title.setLetterSpacing(0.12f);
@@ -323,18 +323,24 @@ public class MainActivity extends Activity {
             long signalAt = state.optLong("lastSignalAt", 0);
             int ethCount = state.optInt("ethCandles", state.optInt("candles", 0));
             int btcCount = state.optInt("btcCandles", 0);
+            final boolean warmingUp = ethCount < 30 || btcCount < 10;
+            final String visibleReason = warmingUp
+                    ? "Pré-chauffage moteur : ETH " + ethCount + "/30 · BTC " + btcCount + "/10"
+                    : reason;
+            final String visibleServiceInfo = warmingUp
+                    ? "Pré-chauffage moteur : ETH " + ethCount + "/30 · BTC " + btcCount + "/10\nSource : MarketWatchService natif · trading manuel uniquement"
+                    : "Moteur prêt · bougies ETH " + ethCount + " / BTC " + btcCount + "\nSource : MarketWatchService natif · trading manuel uniquement";
 
             runOnUiThread(() -> {
                 if (statusPill == null) return;
                 renderConnection(connected, ageSeconds);
-                renderDecision(decision, reason);
+                renderDecision(decision, visibleReason);
                 renderPrices(eth, bid, ask, btc, btcBid, btcAsk);
                 renderMovement(movement);
                 renderSignal(lastSignal, signalAt);
                 renderAction(action, decision, lastSignal);
                 renderDiagnostics(diagnostics, state.optString("engineReason", "NO_DATA"), reason);
-                serviceInfo.setText("Source : MarketWatchService natif · bougies ETH " + ethCount
-                        + " / BTC " + btcCount + " · trading manuel uniquement");
+                serviceInfo.setText(visibleServiceInfo);
             });
         } catch (Exception ignored) {}
     }

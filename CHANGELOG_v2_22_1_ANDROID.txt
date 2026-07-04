@@ -1,0 +1,11 @@
+ETH Scalper Cockpit Android v2.22.1
+
+Finition légère sans refactor massif :
+- Padding bas augmenté pour éviter que la barre de navigation Android coupe l’interface.
+- Header légèrement réduit.
+- Cartes un peu plus compactes.
+- Message de pré-chauffage moteur plus clair :
+  ETH X/30 · BTC Y/10.
+- Affichage service info amélioré.
+- Nouveau canal notification eth_scalper_signal_loud_v2221 pour forcer Android à recréer le canal sonore.
+- Architecture native v2.22 conservée.
