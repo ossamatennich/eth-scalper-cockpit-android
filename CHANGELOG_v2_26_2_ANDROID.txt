@@ -1,0 +1,12 @@
+ETH Scalper Cockpit Android v2.26.2
+
+Oracle Path :
+- Ne modifie pas le moteur d'entrée.
+- Ajoute l'ordre du mouvement après chaque frame.
+- Enregistre :
+  longHit2Sec / longHit28Sec / longHit35Sec,
+  shortHit2Sec / shortHit28Sec / shortHit35Sec,
+  drawdown adverse avant chaque hit.
+- Corrige market_frames.csv pour inclure tous les labels futurs.
+- Objectif : identifier les vraies entrées gagnantes et les filtres qui les bloquent.
+- Aucun trade réel.

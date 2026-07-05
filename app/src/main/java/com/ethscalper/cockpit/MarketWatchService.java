@@ -50,8 +50,8 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22601";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22601";
+    private static final String CH_WATCH = "eth_scalper_watch_v22602";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22602";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
     private static final int NOTIF_WATCH_ID = 22601;
@@ -201,7 +201,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — playback lab annotated v2.26.1",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — oracle path v2.26.2",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -641,6 +641,9 @@ public class MarketWatchService extends Service {
         for (MarketFrame frame : marketFrames) {
             long ageSec = Math.max(0, (now - frame.at) / 1000);
 
+            double longMove = price - frame.ethLast;
+            double shortMove = frame.ethLast - price;
+
             if (ageSec <= 300) {
                 frame.futureMax5 = Math.max(frame.futureMax5, price);
                 frame.futureMin5 = Math.min(frame.futureMin5, price);
@@ -654,8 +657,54 @@ public class MarketWatchService extends Service {
             if (ageSec <= 900) {
                 frame.futureMax15 = Math.max(frame.futureMax15, price);
                 frame.futureMin15 = Math.min(frame.futureMin15, price);
+
+                updateLongTarget(frame, 2.00, longMove, shortMove, ageSec);
+                updateLongTarget(frame, 2.80, longMove, shortMove, ageSec);
+                updateLongTarget(frame, 3.50, longMove, shortMove, ageSec);
+
+                updateShortTarget(frame, 2.00, shortMove, longMove, ageSec);
+                updateShortTarget(frame, 2.80, shortMove, longMove, ageSec);
+                updateShortTarget(frame, 3.50, shortMove, longMove, ageSec);
             } else {
                 frame.futureClosed15 = true;
+            }
+        }
+    }
+
+    private void updateLongTarget(MarketFrame f, double target, double favorable, double adverse, long ageSec) {
+        if (target == 2.00) {
+            if (f.longHit2Sec < 0) {
+                f.longAdverseBefore2 = Math.max(f.longAdverseBefore2, adverse);
+                if (favorable >= target) f.longHit2Sec = ageSec;
+            }
+        } else if (target == 2.80) {
+            if (f.longHit28Sec < 0) {
+                f.longAdverseBefore28 = Math.max(f.longAdverseBefore28, adverse);
+                if (favorable >= target) f.longHit28Sec = ageSec;
+            }
+        } else if (target == 3.50) {
+            if (f.longHit35Sec < 0) {
+                f.longAdverseBefore35 = Math.max(f.longAdverseBefore35, adverse);
+                if (favorable >= target) f.longHit35Sec = ageSec;
+            }
+        }
+    }
+
+    private void updateShortTarget(MarketFrame f, double target, double favorable, double adverse, long ageSec) {
+        if (target == 2.00) {
+            if (f.shortHit2Sec < 0) {
+                f.shortAdverseBefore2 = Math.max(f.shortAdverseBefore2, adverse);
+                if (favorable >= target) f.shortHit2Sec = ageSec;
+            }
+        } else if (target == 2.80) {
+            if (f.shortHit28Sec < 0) {
+                f.shortAdverseBefore28 = Math.max(f.shortAdverseBefore28, adverse);
+                if (favorable >= target) f.shortHit28Sec = ageSec;
+            }
+        } else if (target == 3.50) {
+            if (f.shortHit35Sec < 0) {
+                f.shortAdverseBefore35 = Math.max(f.shortAdverseBefore35, adverse);
+                if (favorable >= target) f.shortHit35Sec = ageSec;
             }
         }
     }
@@ -706,6 +755,23 @@ public class MarketWatchService extends Service {
         o.put("bestSide5", bestSide(f.futureMax5 - f.ethLast, f.ethLast - f.futureMin5));
         o.put("bestSide10", bestSide(f.futureMax10 - f.ethLast, f.ethLast - f.futureMin10));
         o.put("bestSide15", bestSide(f.futureMax15 - f.ethLast, f.ethLast - f.futureMin15));
+
+        o.put("longHit2Sec", f.longHit2Sec);
+        o.put("longHit28Sec", f.longHit28Sec);
+        o.put("longHit35Sec", f.longHit35Sec);
+        o.put("shortHit2Sec", f.shortHit2Sec);
+        o.put("shortHit28Sec", f.shortHit28Sec);
+        o.put("shortHit35Sec", f.shortHit35Sec);
+
+        putMetric(o, "longAdverseBefore2", f.longAdverseBefore2);
+        putMetric(o, "longAdverseBefore28", f.longAdverseBefore28);
+        putMetric(o, "longAdverseBefore35", f.longAdverseBefore35);
+        putMetric(o, "shortAdverseBefore2", f.shortAdverseBefore2);
+        putMetric(o, "shortAdverseBefore28", f.shortAdverseBefore28);
+        putMetric(o, "shortAdverseBefore35", f.shortAdverseBefore35);
+
+        o.put("oracleLongClean28", f.longHit28Sec >= 0 && f.longAdverseBefore28 <= 1.35);
+        o.put("oracleShortClean28", f.shortHit28Sec >= 0 && f.shortAdverseBefore28 <= 1.35);
 
         o.put("setupCandidate", f.setupCandidate);
         o.put("decision", f.decision);
@@ -1060,7 +1126,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.26.1 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.26.2 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1135,7 +1201,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.26.1-android");
+            state.put("version", "2.26.2-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1272,7 +1338,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.26.1-playback-lab-annotated");
+        m.put("rulesProfile", "ETH Scalper sessions v2.26.2-oracle-path");
 
         return m;
     }
@@ -1362,6 +1428,20 @@ public class MarketWatchService extends Service {
         double futureMax10, futureMin10;
         double futureMax15, futureMin15;
         boolean futureClosed15;
+
+        long longHit2Sec = -1;
+        long longHit28Sec = -1;
+        long longHit35Sec = -1;
+        long shortHit2Sec = -1;
+        long shortHit28Sec = -1;
+        long shortHit35Sec = -1;
+
+        double longAdverseBefore2;
+        double longAdverseBefore28;
+        double longAdverseBefore35;
+        double shortAdverseBefore2;
+        double shortAdverseBefore28;
+        double shortAdverseBefore35;
 
         MarketFrame(long at, MarketSnapshot s, SignalDecision d, String setupCandidate) {
             this.at = at;

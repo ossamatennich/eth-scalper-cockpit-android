@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.26.1 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.26.2 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -516,7 +516,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_26_1_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_26_2_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -572,9 +572,9 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.26.1 Android natif\n");
+        b.append("Version app: v2.26.2 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
-        b.append("Mode: PLAYBACK_LAB — enregistrement marché complet, aucun trade réel\n\n");
+        b.append("Mode: ORACLE_PATH — playback ordre du mouvement, aucun trade réel\n\n");
 
         b.append("STATUT\n");
         b.append("- connected: ").append(s.optBoolean("connected", false)).append("\n");
@@ -709,7 +709,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.26.1\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.26.2\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -762,7 +762,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("PLAYBACK LAB ANNOTATED — ETH SCALPER v2.26.1\n\n");
+        b.append("ORACLE PATH — ETH SCALPER v2.26.2\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -793,7 +793,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("PLAYBACK LAB ANNOTATED — MARKET RECORDER v2.26.1\n\n");
+        StringBuilder b = new StringBuilder("ORACLE PATH — MARKET RECORDER v2.26.2\n\n");
         b.append("mode=").append(s.optString("mode", "—")).append("\n");
         b.append("frames=").append(s.optInt("frames", 0)).append("\n");
         b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");
@@ -807,7 +807,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketFramesCsv(JSONArray arr) {
-        StringBuilder b = new StringBuilder("at,eth,bid,ask,spread,btc,avgRange20,avgVolume20,lastVolume,volumeRatio,flowNorm,btcMove5,move1,move3,move8,recentHigh,recentLow,recentRange,setupCandidate,decision,decisionCode,isSignal,side,family,score,qty,entry,tp,sl,targetMove,stopDistance\n");
+        StringBuilder b = new StringBuilder("at,eth,bid,ask,spread,btc,avgRange20,avgVolume20,lastVolume,volumeRatio,flowNorm,btcMove5,move1,move3,move8,recentHigh,recentLow,recentRange,longMfe5,shortMfe5,longMfe10,shortMfe10,longMfe15,shortMfe15,bestSide5,bestSide10,bestSide15,longHit2Sec,longHit28Sec,longHit35Sec,shortHit2Sec,shortHit28Sec,shortHit35Sec,longAdverseBefore2,longAdverseBefore28,longAdverseBefore35,shortAdverseBefore2,shortAdverseBefore28,shortAdverseBefore35,oracleLongClean28,oracleShortClean28,setupCandidate,decision,decisionCode,isSignal,side,family,score,qty,entry,tp,sl,targetMove,stopDistance\n");
         if (arr == null) return b.toString();
         for (int i = 0; i < arr.length(); i++) {
             JSONObject o = arr.optJSONObject(i);
@@ -830,6 +830,29 @@ public class MainActivity extends Activity {
                     .append(o.optString("recentHigh", "")).append(',')
                     .append(o.optString("recentLow", "")).append(',')
                     .append(o.optString("recentRange", "")).append(',')
+                    .append(o.optString("longMfe5", "")).append(',')
+                    .append(o.optString("shortMfe5", "")).append(',')
+                    .append(o.optString("longMfe10", "")).append(',')
+                    .append(o.optString("shortMfe10", "")).append(',')
+                    .append(o.optString("longMfe15", "")).append(',')
+                    .append(o.optString("shortMfe15", "")).append(',')
+                    .append(csv(o.optString("bestSide5", ""))).append(',')
+                    .append(csv(o.optString("bestSide10", ""))).append(',')
+                    .append(csv(o.optString("bestSide15", ""))).append(',')
+                    .append(o.optLong("longHit2Sec", -1)).append(',')
+                    .append(o.optLong("longHit28Sec", -1)).append(',')
+                    .append(o.optLong("longHit35Sec", -1)).append(',')
+                    .append(o.optLong("shortHit2Sec", -1)).append(',')
+                    .append(o.optLong("shortHit28Sec", -1)).append(',')
+                    .append(o.optLong("shortHit35Sec", -1)).append(',')
+                    .append(o.optString("longAdverseBefore2", "")).append(',')
+                    .append(o.optString("longAdverseBefore28", "")).append(',')
+                    .append(o.optString("longAdverseBefore35", "")).append(',')
+                    .append(o.optString("shortAdverseBefore2", "")).append(',')
+                    .append(o.optString("shortAdverseBefore28", "")).append(',')
+                    .append(o.optString("shortAdverseBefore35", "")).append(',')
+                    .append(o.optBoolean("oracleLongClean28", false)).append(',')
+                    .append(o.optBoolean("oracleShortClean28", false)).append(',')
                     .append(csv(o.optString("setupCandidate", ""))).append(',')
                     .append(csv(o.optString("decision", ""))).append(',')
                     .append(csv(o.optString("decisionCode", ""))).append(',')
