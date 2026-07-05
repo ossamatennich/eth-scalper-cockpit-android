@@ -1,0 +1,16 @@
+ETH Scalper Cockpit Android v2.26.1
+
+Playback Lab Annotated :
+- Ne modifie toujours pas le moteur d'entrée.
+- Ajoute un résultat futur à chaque frame marché.
+- Pour chaque frame, le ZIP contient maintenant :
+  longMfe5 / shortMfe5,
+  longMfe10 / shortMfe10,
+  longMfe15 / shortMfe15,
+  bestSide5 / bestSide10 / bestSide15.
+- Objectif :
+  voir les endroits où il fallait entrer LONG ou SHORT,
+  comparer avec la décision du moteur,
+  comprendre les refus,
+  trouver les répétitions des vrais mouvements gagnants.
+- Aucun trade réel.

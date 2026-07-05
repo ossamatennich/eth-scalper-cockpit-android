@@ -50,11 +50,11 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22600";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22600";
+    private static final String CH_WATCH = "eth_scalper_watch_v22601";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22601";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 22600;
+    private static final int NOTIF_WATCH_ID = 22601;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
@@ -201,7 +201,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — playback lab v2.26.0",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — playback lab annotated v2.26.1",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -609,6 +609,7 @@ public class MarketWatchService extends Service {
 
         MarketFrame frame = new MarketFrame(now, snapshot, decision, setupCandidateFor(snapshot));
         marketFrames.addLast(frame);
+        updateMarketFrameFutureLabels(snapshot.ethLast, now);
 
         while (marketFrames.size() > 7200) marketFrames.removeFirst();
 
@@ -634,10 +635,43 @@ public class MarketWatchService extends Service {
         return "NONE";
     }
 
+    private void updateMarketFrameFutureLabels(double price, long now) {
+        if (!Double.isFinite(price) || price <= 0) return;
+
+        for (MarketFrame frame : marketFrames) {
+            long ageSec = Math.max(0, (now - frame.at) / 1000);
+
+            if (ageSec <= 300) {
+                frame.futureMax5 = Math.max(frame.futureMax5, price);
+                frame.futureMin5 = Math.min(frame.futureMin5, price);
+            }
+
+            if (ageSec <= 600) {
+                frame.futureMax10 = Math.max(frame.futureMax10, price);
+                frame.futureMin10 = Math.min(frame.futureMin10, price);
+            }
+
+            if (ageSec <= 900) {
+                frame.futureMax15 = Math.max(frame.futureMax15, price);
+                frame.futureMin15 = Math.min(frame.futureMin15, price);
+            } else {
+                frame.futureClosed15 = true;
+            }
+        }
+    }
+
     private JSONArray marketFramesJson() throws Exception {
         JSONArray arr = new JSONArray();
         for (MarketFrame frame : marketFrames) arr.put(marketFrameJson(frame));
         return arr;
+    }
+
+    private String bestSide(double longMfe, double shortMfe) {
+        if (!Double.isFinite(longMfe) || !Double.isFinite(shortMfe)) return "UNKNOWN";
+        double diff = longMfe - shortMfe;
+        if (diff > 0.35) return "LONG";
+        if (diff < -0.35) return "SHORT";
+        return "NEUTRAL";
     }
 
     private JSONObject marketFrameJson(MarketFrame f) throws Exception {
@@ -660,6 +694,19 @@ public class MarketWatchService extends Service {
         putMetric(o, "recentHigh", f.recentHigh);
         putMetric(o, "recentLow", f.recentLow);
         putMetric(o, "recentRange", f.recentRange);
+
+        putMetric(o, "longMfe5", f.futureMax5 - f.ethLast);
+        putMetric(o, "shortMfe5", f.ethLast - f.futureMin5);
+        putMetric(o, "longMfe10", f.futureMax10 - f.ethLast);
+        putMetric(o, "shortMfe10", f.ethLast - f.futureMin10);
+        putMetric(o, "longMfe15", f.futureMax15 - f.ethLast);
+        putMetric(o, "shortMfe15", f.ethLast - f.futureMin15);
+        o.put("futureClosed15", f.futureClosed15);
+
+        o.put("bestSide5", bestSide(f.futureMax5 - f.ethLast, f.ethLast - f.futureMin5));
+        o.put("bestSide10", bestSide(f.futureMax10 - f.ethLast, f.ethLast - f.futureMin10));
+        o.put("bestSide15", bestSide(f.futureMax15 - f.ethLast, f.ethLast - f.futureMin15));
+
         o.put("setupCandidate", f.setupCandidate);
         o.put("decision", f.decision);
         o.put("decisionCode", f.decisionCode);
@@ -1013,7 +1060,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.26.0 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.26.1 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1088,7 +1135,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.26.0-android");
+            state.put("version", "2.26.1-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1225,7 +1272,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.26.0-playback-lab");
+        m.put("rulesProfile", "ETH Scalper sessions v2.26.1-playback-lab-annotated");
 
         return m;
     }
@@ -1311,6 +1358,11 @@ public class MarketWatchService extends Service {
         final int score, qty;
         final double entry, tp, sl, targetMove, stopDistance;
 
+        double futureMax5, futureMin5;
+        double futureMax10, futureMin10;
+        double futureMax15, futureMin15;
+        boolean futureClosed15;
+
         MarketFrame(long at, MarketSnapshot s, SignalDecision d, String setupCandidate) {
             this.at = at;
             this.ethLast = s.ethLast;
@@ -1332,6 +1384,13 @@ public class MarketWatchService extends Service {
             this.recentLow = s.recentLow;
             this.recentRange = Math.max(0, s.recentHigh - s.recentLow);
             this.setupCandidate = setupCandidate;
+
+            this.futureMax5 = s.ethLast;
+            this.futureMin5 = s.ethLast;
+            this.futureMax10 = s.ethLast;
+            this.futureMin10 = s.ethLast;
+            this.futureMax15 = s.ethLast;
+            this.futureMin15 = s.ethLast;
 
             this.decision = d == null ? "ATTENDRE" : d.decision;
             this.decisionCode = d == null ? "NO_DECISION" : d.reasonCode;
