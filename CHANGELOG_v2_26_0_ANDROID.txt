@@ -1,0 +1,21 @@
+ETH Scalper Cockpit Android v2.26.0
+
+Playback Lab :
+- Ne modifie pas encore le moteur d’entrée.
+- Enregistre le marché complet, pas seulement les signaux.
+- Stocke jusqu’à 7200 snapshots moteur.
+- Ajoute dans le ZIP :
+  market_frames.json
+  market_frames.csv
+  market_summary.json
+  market_summary.txt
+- Chaque frame contient :
+  prix ETH/BTC, bid/ask/spread,
+  volumeRatio, flowNorm, btcMove5,
+  move1/move3/move8,
+  recentRange,
+  setupCandidate,
+  décision moteur,
+  raison du refus ou signal.
+- Objectif : replay sérieux pour trouver les vrais points d’entrée gagnants et les points ratés.
+- Aucun trade réel.

@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.25.0 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.26.0 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -516,19 +516,27 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_25_0_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_26_0_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
             try (ZipOutputStream zip = new ZipOutputStream(memory)) {
                 JSONObject metrics = state.optJSONObject("engineMetrics");
                 JSONArray observed = state.optJSONArray("observedSignals");
+                String marketFramesRaw = MarketWatchService.getLastMarketFramesJson();
+                String marketSummaryRaw = MarketWatchService.getLastMarketSummaryJson();
+                JSONArray marketFrames = new JSONArray(marketFramesRaw == null || marketFramesRaw.trim().isEmpty() ? "[]" : marketFramesRaw);
+                JSONObject marketSummary = new JSONObject(marketSummaryRaw == null || marketSummaryRaw.trim().isEmpty() ? "{}" : marketSummaryRaw);
                 addZipText(zip, "status.json", state.toString(2));
                 addZipText(zip, "engine_metrics.json", metrics == null ? "{}" : metrics.toString(2));
                 addZipText(zip, "engine_metrics.txt", buildEngineMetricsText(state));
                 addZipText(zip, "observation_journal.json", observed == null ? "[]" : observed.toString(2));
                 addZipText(zip, "observation_journal.csv", buildObservationJournalCsv(observed));
                 addZipText(zip, "observation_summary.txt", buildObservationSummaryText(state));
+                addZipText(zip, "market_frames.json", marketFrames.toString(2));
+                addZipText(zip, "market_frames.csv", buildMarketFramesCsv(marketFrames));
+                addZipText(zip, "market_summary.json", marketSummary.toString(2));
+                addZipText(zip, "market_summary.txt", buildMarketSummaryText(marketSummary));
                 addZipText(zip, "summary.txt", buildDiagnosticSummary(state));
                 addZipText(zip, "health_check.txt", buildHealthCheck(state));
                 addZipText(zip, "diagnostics.csv", buildDiagnosticsCsv(state.optJSONArray("diagnostics")));
@@ -564,9 +572,9 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.25.0 Android natif\n");
+        b.append("Version app: v2.26.0 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
-        b.append("Mode: RESEARCH_ONLY — collecte de données, aucun trade réel\n\n");
+        b.append("Mode: PLAYBACK_LAB — enregistrement marché complet, aucun trade réel\n\n");
 
         b.append("STATUT\n");
         b.append("- connected: ").append(s.optBoolean("connected", false)).append("\n");
@@ -701,7 +709,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.25.0\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.26.0\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -754,7 +762,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("RESEARCH JOURNAL — ETH SCALPER v2.25.0\n\n");
+        b.append("PLAYBACK LAB — ETH SCALPER v2.26.0\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -780,6 +788,61 @@ public class MainActivity extends Activity {
                     .append(" mfe=").append(o.optString("mfe", "—"))
                     .append(" mae=").append(o.optString("mae", "—"))
                     .append("\n");
+        }
+        return b.toString();
+    }
+
+    private String buildMarketSummaryText(JSONObject s) {
+        StringBuilder b = new StringBuilder("PLAYBACK LAB — MARKET RECORDER v2.26.0\n\n");
+        b.append("mode=").append(s.optString("mode", "—")).append("\n");
+        b.append("frames=").append(s.optInt("frames", 0)).append("\n");
+        b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");
+        b.append("signals=").append(s.optInt("signals", 0)).append("\n");
+        b.append("c1LongCandidates=").append(s.optInt("c1LongCandidates", 0)).append("\n");
+        b.append("c1ShortCandidates=").append(s.optInt("c1ShortCandidates", 0)).append("\n");
+        b.append("c2LongCandidates=").append(s.optInt("c2LongCandidates", 0)).append("\n");
+        b.append("c2ShortCandidates=").append(s.optInt("c2ShortCandidates", 0)).append("\n\n");
+        b.append("But : analyser les endroits où il fallait entrer LONG/SHORT, les entrées ratées et les faux signaux.\n");
+        return b.toString();
+    }
+
+    private String buildMarketFramesCsv(JSONArray arr) {
+        StringBuilder b = new StringBuilder("at,eth,bid,ask,spread,btc,avgRange20,avgVolume20,lastVolume,volumeRatio,flowNorm,btcMove5,move1,move3,move8,recentHigh,recentLow,recentRange,setupCandidate,decision,decisionCode,isSignal,side,family,score,qty,entry,tp,sl,targetMove,stopDistance\n");
+        if (arr == null) return b.toString();
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject o = arr.optJSONObject(i);
+            if (o == null) continue;
+            b.append(o.optLong("at", 0)).append(',')
+                    .append(o.optString("eth", "")).append(',')
+                    .append(o.optString("bid", "")).append(',')
+                    .append(o.optString("ask", "")).append(',')
+                    .append(o.optString("spread", "")).append(',')
+                    .append(o.optString("btc", "")).append(',')
+                    .append(o.optString("avgRange20", "")).append(',')
+                    .append(o.optString("avgVolume20", "")).append(',')
+                    .append(o.optString("lastVolume", "")).append(',')
+                    .append(o.optString("volumeRatio", "")).append(',')
+                    .append(o.optString("flowNorm", "")).append(',')
+                    .append(o.optString("btcMove5", "")).append(',')
+                    .append(o.optString("move1", "")).append(',')
+                    .append(o.optString("move3", "")).append(',')
+                    .append(o.optString("move8", "")).append(',')
+                    .append(o.optString("recentHigh", "")).append(',')
+                    .append(o.optString("recentLow", "")).append(',')
+                    .append(o.optString("recentRange", "")).append(',')
+                    .append(csv(o.optString("setupCandidate", ""))).append(',')
+                    .append(csv(o.optString("decision", ""))).append(',')
+                    .append(csv(o.optString("decisionCode", ""))).append(',')
+                    .append(o.optBoolean("isSignal", false)).append(',')
+                    .append(csv(o.optString("side", ""))).append(',')
+                    .append(csv(o.optString("family", ""))).append(',')
+                    .append(o.optInt("score", 0)).append(',')
+                    .append(o.optInt("qty", 0)).append(',')
+                    .append(o.optString("entry", "")).append(',')
+                    .append(o.optString("tp", "")).append(',')
+                    .append(o.optString("sl", "")).append(',')
+                    .append(o.optString("targetMove", "")).append(',')
+                    .append(o.optString("stopDistance", "")).append('\n');
         }
         return b.toString();
     }

@@ -50,11 +50,11 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22500";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22500";
+    private static final String CH_WATCH = "eth_scalper_watch_v22600";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22600";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 22500;
+    private static final int NOTIF_WATCH_ID = 22600;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
@@ -66,7 +66,10 @@ public class MarketWatchService extends Service {
     private final Deque<TradeFlow> flows = new ArrayDeque<>();
     private final SignalEngine signalEngine = new SignalEngine();
     private final Deque<ObservedSignal> observedSignals = new ArrayDeque<>();
+    private final Deque<MarketFrame> marketFrames = new ArrayDeque<>();
     private long observedSignalId;
+    private long lastMarketFrameAt;
+    private long lastMarketFrameJsonRefreshAt;
 
     private OkHttpClient client;
     private WebSocket socket;
@@ -100,6 +103,8 @@ public class MarketWatchService extends Service {
     private SignalDecision lastDecision;
     private SignalDecision lastSignal;
     public static volatile String LAST_STATUS_JSON = "";
+    public static volatile String LAST_MARKET_FRAMES_JSON = "[]";
+    public static volatile String LAST_MARKET_SUMMARY_JSON = "{}";
 
     public static String getLastStatusJson(Context context) {
         String memory = LAST_STATUS_JSON == null ? "" : LAST_STATUS_JSON;
@@ -109,6 +114,14 @@ public class MarketWatchService extends Service {
 
     public static String getLastStatusJson() {
         return LAST_STATUS_JSON == null ? "" : LAST_STATUS_JSON;
+    }
+
+    public static String getLastMarketFramesJson() {
+        return LAST_MARKET_FRAMES_JSON == null ? "[]" : LAST_MARKET_FRAMES_JSON;
+    }
+
+    public static String getLastMarketSummaryJson() {
+        return LAST_MARKET_SUMMARY_JSON == null ? "{}" : LAST_MARKET_SUMMARY_JSON;
     }
 
     @Override public void onCreate() {
@@ -188,7 +201,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — recherche v2.25.0",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — playback lab v2.26.0",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -570,6 +583,7 @@ public class MarketWatchService extends Service {
         updateObservedSignals(snapshot, now);
 
         SignalDecision decision = signalEngine.evaluate(snapshot);
+        recordMarketFrame(snapshot, decision, now);
 
         if (!decision.isSignal() && isLastSignalStillActionable(snapshot, now)) {
             lastDecision = lastSignal;
@@ -588,6 +602,112 @@ public class MarketWatchService extends Service {
     }
 
 
+
+    private void recordMarketFrame(MarketSnapshot snapshot, SignalDecision decision, long now) {
+        if (lastMarketFrameAt > 0 && now - lastMarketFrameAt < 1000) return;
+        lastMarketFrameAt = now;
+
+        MarketFrame frame = new MarketFrame(now, snapshot, decision, setupCandidateFor(snapshot));
+        marketFrames.addLast(frame);
+
+        while (marketFrames.size() > 7200) marketFrames.removeFirst();
+
+        if (now - lastMarketFrameJsonRefreshAt >= 5000) {
+            try {
+                LAST_MARKET_FRAMES_JSON = marketFramesJson().toString();
+                LAST_MARKET_SUMMARY_JSON = marketRecorderSummaryJson().toString();
+                lastMarketFrameJsonRefreshAt = now;
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private String setupCandidateFor(MarketSnapshot s) {
+        double threshold = Math.max(0.75, s.avgRange20 * 0.55);
+        boolean c1Long = s.move1 > threshold && s.move3 > threshold * 1.15;
+        boolean c1Short = s.move1 < -threshold && s.move3 < -threshold * 1.15;
+        boolean c2Long = s.move3 > threshold * 1.35 && s.move1 > -s.avgRange20 * 0.25;
+        boolean c2Short = s.move3 < -threshold * 1.35 && s.move1 < s.avgRange20 * 0.25;
+        if (c1Long) return "C1_LONG";
+        if (c1Short) return "C1_SHORT";
+        if (c2Long) return "C2_LONG";
+        if (c2Short) return "C2_SHORT";
+        return "NONE";
+    }
+
+    private JSONArray marketFramesJson() throws Exception {
+        JSONArray arr = new JSONArray();
+        for (MarketFrame frame : marketFrames) arr.put(marketFrameJson(frame));
+        return arr;
+    }
+
+    private JSONObject marketFrameJson(MarketFrame f) throws Exception {
+        JSONObject o = new JSONObject();
+        o.put("at", f.at);
+        putMetric(o, "eth", f.ethLast);
+        putMetric(o, "bid", f.ethBid);
+        putMetric(o, "ask", f.ethAsk);
+        putMetric(o, "spread", f.spread);
+        putMetric(o, "btc", f.btcLast);
+        putMetric(o, "avgRange20", f.avgRange20);
+        putMetric(o, "avgVolume20", f.avgVolume20);
+        putMetric(o, "lastVolume", f.lastVolume);
+        putMetric(o, "volumeRatio", f.volumeRatio);
+        putMetric(o, "flowNorm", f.flowNorm);
+        putMetric(o, "btcMove5", f.btcMove5);
+        putMetric(o, "move1", f.move1);
+        putMetric(o, "move3", f.move3);
+        putMetric(o, "move8", f.move8);
+        putMetric(o, "recentHigh", f.recentHigh);
+        putMetric(o, "recentLow", f.recentLow);
+        putMetric(o, "recentRange", f.recentRange);
+        o.put("setupCandidate", f.setupCandidate);
+        o.put("decision", f.decision);
+        o.put("decisionCode", f.decisionCode);
+        o.put("decisionText", f.decisionText);
+        o.put("isSignal", f.isSignal);
+        o.put("side", f.side);
+        o.put("family", f.family);
+        o.put("score", f.score);
+        putMetric(o, "entry", f.entry);
+        putMetric(o, "tp", f.tp);
+        putMetric(o, "sl", f.sl);
+        putMetric(o, "targetMove", f.targetMove);
+        putMetric(o, "stopDistance", f.stopDistance);
+        o.put("qty", f.qty);
+        return o;
+    }
+
+    private JSONObject marketRecorderSummaryJson() throws Exception {
+        JSONObject o = new JSONObject();
+        long oldest = 0, newest = 0;
+        int frames = 0, signals = 0;
+        int c1Long = 0, c1Short = 0, c2Long = 0, c2Short = 0;
+
+        for (MarketFrame f : marketFrames) {
+            frames++;
+            if (oldest == 0) oldest = f.at;
+            newest = f.at;
+            if (f.isSignal) signals++;
+            if ("C1_LONG".equals(f.setupCandidate)) c1Long++;
+            else if ("C1_SHORT".equals(f.setupCandidate)) c1Short++;
+            else if ("C2_LONG".equals(f.setupCandidate)) c2Long++;
+            else if ("C2_SHORT".equals(f.setupCandidate)) c2Short++;
+        }
+
+        o.put("mode", "PLAYBACK_LAB");
+        o.put("frames", frames);
+        o.put("signals", signals);
+        o.put("oldestAt", oldest);
+        o.put("newestAt", newest);
+        o.put("durationSec", oldest > 0 && newest > oldest ? (newest - oldest) / 1000 : 0);
+        o.put("maxStoredFrames", 7200);
+        o.put("c1LongCandidates", c1Long);
+        o.put("c1ShortCandidates", c1Short);
+        o.put("c2LongCandidates", c2Long);
+        o.put("c2ShortCandidates", c2Short);
+        o.put("purpose", "Full market playback: find missed LONG/SHORT opportunities and false entries");
+        return o;
+    }
 
     private void recordObservedSignal(SignalDecision decision, MarketSnapshot snapshot, long now) {
         double price = Double.isFinite(snapshot.ethLast) && snapshot.ethLast > 0 ? snapshot.ethLast : decision.entry;
@@ -893,7 +1013,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.25.0 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.26.0 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -968,7 +1088,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.25.0-android");
+            state.put("version", "2.26.0-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -999,6 +1119,8 @@ public class MarketWatchService extends Service {
             state.put("activeSignalValidity", "RESEARCH_UNTIL_MARKET_INVALIDATION");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", false);
+            state.put("marketFramesInMemory", marketFrames.size());
+            state.put("marketRecorderSummary", marketRecorderSummaryJson());
             state.put("observationSummary", observationSummaryJson());
             state.put("observedSignals", observedSignalsJson());
             state.put("engineMetrics", engineMetricsJson(snapshot, decision));
@@ -1103,7 +1225,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.25.0");
+        m.put("rulesProfile", "ETH Scalper sessions v2.26.0-playback-lab");
 
         return m;
     }
@@ -1171,6 +1293,59 @@ public class MarketWatchService extends Service {
         final long openTime; final double open, high, low, close, volume;
         Candle(long openTime, double open, double high, double low, double close, double volume) {
             this.openTime=openTime; this.open=open; this.high=high; this.low=low; this.close=close; this.volume=volume;
+        }
+    }
+
+    static final class MarketFrame {
+        final long at;
+        final double ethLast, ethBid, ethAsk, spread;
+        final double btcLast;
+        final double avgRange20, avgVolume20, lastVolume, volumeRatio;
+        final double flowNorm, btcMove5;
+        final double move1, move3, move8;
+        final double recentHigh, recentLow, recentRange;
+        final String setupCandidate;
+        final String decision, decisionCode, decisionText;
+        final boolean isSignal;
+        final String side, family;
+        final int score, qty;
+        final double entry, tp, sl, targetMove, stopDistance;
+
+        MarketFrame(long at, MarketSnapshot s, SignalDecision d, String setupCandidate) {
+            this.at = at;
+            this.ethLast = s.ethLast;
+            this.ethBid = s.ethBid;
+            this.ethAsk = s.ethAsk;
+            this.spread = Double.isFinite(s.ethAsk) && Double.isFinite(s.ethBid)
+                    && s.ethAsk > 0 && s.ethBid > 0 ? s.ethAsk - s.ethBid : Double.NaN;
+            this.btcLast = s.btcLast;
+            this.avgRange20 = s.avgRange20;
+            this.avgVolume20 = s.avgVolume20;
+            this.lastVolume = s.lastVolume;
+            this.volumeRatio = s.avgVolume20 > 0 ? s.lastVolume / s.avgVolume20 : Double.NaN;
+            this.flowNorm = s.flowNorm;
+            this.btcMove5 = s.btcMove5;
+            this.move1 = s.move1;
+            this.move3 = s.move3;
+            this.move8 = s.move8;
+            this.recentHigh = s.recentHigh;
+            this.recentLow = s.recentLow;
+            this.recentRange = Math.max(0, s.recentHigh - s.recentLow);
+            this.setupCandidate = setupCandidate;
+
+            this.decision = d == null ? "ATTENDRE" : d.decision;
+            this.decisionCode = d == null ? "NO_DECISION" : d.reasonCode;
+            this.decisionText = d == null ? "" : d.reasonText;
+            this.isSignal = d != null && d.isSignal();
+            this.side = isSignal ? d.side : "";
+            this.family = isSignal ? d.family : "";
+            this.score = d == null ? 0 : d.score;
+            this.qty = isSignal ? d.quantity : 0;
+            this.entry = isSignal ? d.entry : Double.NaN;
+            this.tp = isSignal ? d.takeProfit : Double.NaN;
+            this.sl = isSignal ? d.stopLoss : Double.NaN;
+            this.targetMove = isSignal ? d.targetMove : Double.NaN;
+            this.stopDistance = isSignal ? d.stopDistance : Double.NaN;
         }
     }
 
