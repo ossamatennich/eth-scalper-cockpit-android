@@ -1,0 +1,9 @@
+ETH Scalper Cockpit Android v2.25.0
+
+Mode recherche :
+- Aucun trade réel.
+- Stocke 200 signaux observés au lieu de 30.
+- Enregistre les métriques exactes au moment du signal :
+  volumeRatio, flowNorm, btcMove5, move1, move3, move8, avgRange20, spread, range récent.
+- Les signaux sont enregistrés sans alerte forte.
+- Objectif : collecter assez de données pour recalibrer le moteur.

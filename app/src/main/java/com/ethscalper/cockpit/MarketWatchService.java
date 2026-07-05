@@ -50,11 +50,11 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22403";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22403";
+    private static final String CH_WATCH = "eth_scalper_watch_v22500";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22500";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 22403;
+    private static final int NOTIF_WATCH_ID = 22500;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
@@ -188,7 +188,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — observation v2.24.3",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — recherche v2.25.0",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -591,9 +591,9 @@ public class MarketWatchService extends Service {
 
     private void recordObservedSignal(SignalDecision decision, MarketSnapshot snapshot, long now) {
         double price = Double.isFinite(snapshot.ethLast) && snapshot.ethLast > 0 ? snapshot.ethLast : decision.entry;
-        ObservedSignal item = new ObservedSignal(++observedSignalId, now, decision, price);
+        ObservedSignal item = new ObservedSignal(++observedSignalId, now, decision, price, snapshot);
         observedSignals.addLast(item);
-        while (observedSignals.size() > 30) observedSignals.removeFirst();
+        while (observedSignals.size() > 200) observedSignals.removeFirst();
     }
 
     private void updateObservedSignals(MarketSnapshot snapshot, long now) {
@@ -679,6 +679,7 @@ public class MarketWatchService extends Service {
             o.put("sl", item.signal.stopLoss);
             o.put("targetMove", item.signal.targetMove);
             o.put("stopDistance", item.signal.stopDistance);
+            o.put("signalMetrics", signalMetricsJson(item));
 
             putMetric(o, "lastPrice", item.lastPrice);
             putMetric(o, "maxPrice", item.maxPrice);
@@ -695,6 +696,29 @@ public class MarketWatchService extends Service {
             out.put(o);
         }
         return out;
+    }
+
+    private JSONObject signalMetricsJson(ObservedSignal item) throws Exception {
+        JSONObject m = new JSONObject();
+        putMetric(m, "signalEthLast", item.signalEthLast);
+        putMetric(m, "signalBid", item.signalBid);
+        putMetric(m, "signalAsk", item.signalAsk);
+        putMetric(m, "signalSpread", item.signalSpread);
+        putMetric(m, "avgRange20", item.avgRange20);
+        putMetric(m, "avgVolume20", item.avgVolume20);
+        putMetric(m, "lastVolume", item.lastVolume);
+        putMetric(m, "volumeRatio", item.volumeRatio);
+        putMetric(m, "flowNorm", item.flowNorm);
+        putMetric(m, "btcMove5", item.btcMove5);
+        putMetric(m, "move1", item.move1);
+        putMetric(m, "move3", item.move3);
+        putMetric(m, "move8", item.move8);
+        putMetric(m, "recentHigh", item.recentHigh);
+        putMetric(m, "recentLow", item.recentLow);
+        putMetric(m, "recentRange", item.recentRange);
+        putMetric(m, "targetNetPerEthAfterFees", item.signal.targetMove - 1.33);
+        putMetric(m, "stopCostPerEthAfterFees", item.signal.stopDistance + 1.33);
+        return m;
     }
 
     private JSONObject observationSummaryJson() throws Exception {
@@ -714,8 +738,8 @@ public class MarketWatchService extends Service {
         o.put("tpTouched", tp);
         o.put("slTouched", sl);
         o.put("invalidated", invalid);
-        o.put("mode", "OBSERVATION_JOURNAL");
-        o.put("maxStoredSignals", 30);
+        o.put("mode", "RESEARCH_JOURNAL");
+        o.put("maxStoredSignals", 200);
         return o;
     }
 
@@ -850,18 +874,8 @@ public class MarketWatchService extends Service {
     }
 
     private void notifyObservationSignal(SignalDecision decision) {
-        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (manager == null) return;
-
-        String title = "🧪 SIGNAL ETH " + decision.side + " — OBSERVATION";
-        String body = decision.family + " · score " + decision.score + "/100"
-                + " · LIMIT " + fmt(decision.entry)
-                + " · TP " + fmt(decision.takeProfit)
-                + " · SL " + fmt(decision.stopLoss)
-                + " · " + decision.quantity + " ETH"
-                + " · NE PAS EXÉCUTER";
-
-        manager.notify(signalNotificationId++, buildSignalNotification(title, body));
+        updateWatch("Recherche : signal " + decision.side + " enregistré · score "
+                + decision.score + "/100 · aucun trade réel", true);
     }
 
     private void notifySignal(SignalDecision decision) {
@@ -879,7 +893,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.24.3 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.25.0 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -954,7 +968,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.24.3-android");
+            state.put("version", "2.25.0-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -982,8 +996,8 @@ public class MarketWatchService extends Service {
             state.put("activeSignalStatus", activeStatus);
             state.put("activeSignalAgeSec", activeSignalAgeSec(now));
             state.put("activeSignalRemainingSec", activeSignalRemainingSec(now));
-            state.put("activeSignalValidity", "OBSERVATION_UNTIL_MARKET_INVALIDATION");
-            state.put("executionMode", "OBSERVATION_ONLY");
+            state.put("activeSignalValidity", "RESEARCH_UNTIL_MARKET_INVALIDATION");
+            state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", false);
             state.put("observationSummary", observationSummaryJson());
             state.put("observedSignals", observedSignalsJson());
@@ -1089,7 +1103,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.24.3");
+        m.put("rulesProfile", "ETH Scalper sessions v2.25.0");
 
         return m;
     }
@@ -1174,7 +1188,24 @@ public class MarketWatchService extends Service {
         double mfe;
         double mae;
 
-        ObservedSignal(long id, long createdAt, SignalDecision signal, double price) {
+        final double signalEthLast;
+        final double signalBid;
+        final double signalAsk;
+        final double signalSpread;
+        final double avgRange20;
+        final double avgVolume20;
+        final double lastVolume;
+        final double volumeRatio;
+        final double flowNorm;
+        final double btcMove5;
+        final double move1;
+        final double move3;
+        final double move8;
+        final double recentHigh;
+        final double recentLow;
+        final double recentRange;
+
+        ObservedSignal(long id, long createdAt, SignalDecision signal, double price, MarketSnapshot snapshot) {
             this.id = id;
             this.createdAt = createdAt;
             this.signal = signal;
@@ -1182,6 +1213,24 @@ public class MarketWatchService extends Service {
             this.lastPrice = price;
             this.maxPrice = price;
             this.minPrice = price;
+
+            this.signalEthLast = snapshot.ethLast;
+            this.signalBid = snapshot.ethBid;
+            this.signalAsk = snapshot.ethAsk;
+            this.signalSpread = Double.isFinite(snapshot.ethAsk) && Double.isFinite(snapshot.ethBid)
+                    && snapshot.ethAsk > 0 && snapshot.ethBid > 0 ? snapshot.ethAsk - snapshot.ethBid : Double.NaN;
+            this.avgRange20 = snapshot.avgRange20;
+            this.avgVolume20 = snapshot.avgVolume20;
+            this.lastVolume = snapshot.lastVolume;
+            this.volumeRatio = snapshot.avgVolume20 > 0 ? snapshot.lastVolume / snapshot.avgVolume20 : Double.NaN;
+            this.flowNorm = snapshot.flowNorm;
+            this.btcMove5 = snapshot.btcMove5;
+            this.move1 = snapshot.move1;
+            this.move3 = snapshot.move3;
+            this.move8 = snapshot.move8;
+            this.recentHigh = snapshot.recentHigh;
+            this.recentLow = snapshot.recentLow;
+            this.recentRange = Math.max(0, snapshot.recentHigh - snapshot.recentLow);
         }
     }
 

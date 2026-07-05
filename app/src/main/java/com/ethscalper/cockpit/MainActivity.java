@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.24.3 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.25.0 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -424,7 +424,7 @@ public class MainActivity extends Activity {
                 + " · " + signal.optInt("qty", 0) + " ETH";
 
         if (activeSignal) {
-            signalValue.setText("SIGNAL EN OBSERVATION — NE PAS EXÉCUTER"
+            signalValue.setText("SIGNAL EN RECHERCHE — NE PAS EXÉCUTER"
                     + "\n" + ageText
                     + "\nValidité : jusqu’à TP / SL / inversion marché"
                     + "\n" + plan);
@@ -463,7 +463,7 @@ public class MainActivity extends Activity {
 
     private void renderAction(String action, String decision, JSONObject signal) {
         if ("ENTRER".equals(decision) && signal != null) {
-            actionValue.setText("NE PAS EXÉCUTER — OBSERVATION");
+            actionValue.setText("NE PAS EXÉCUTER — RECHERCHE");
             actionValue.setTextColor(ORANGE);
             actionDetails.setText("Signal observé seulement après 2 stops réels consécutifs"
                     + "\nPrix théorique : " + formatPrice(number(signal, "entry"))
@@ -516,7 +516,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_24_3_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_25_0_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -564,9 +564,9 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.24.3 Android natif\n");
+        b.append("Version app: v2.25.0 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
-        b.append("Mode: OBSERVATION_ONLY — signaux non exécutables en réel\n\n");
+        b.append("Mode: RESEARCH_ONLY — collecte de données, aucun trade réel\n\n");
 
         b.append("STATUT\n");
         b.append("- connected: ").append(s.optBoolean("connected", false)).append("\n");
@@ -701,7 +701,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.24.3\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.25.0\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -754,7 +754,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("OBSERVATION JOURNAL — ETH SCALPER v2.24.3\n\n");
+        b.append("RESEARCH JOURNAL — ETH SCALPER v2.25.0\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
