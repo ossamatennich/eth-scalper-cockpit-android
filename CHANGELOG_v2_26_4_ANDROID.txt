@@ -1,0 +1,15 @@
+ETH Scalper Cockpit Android v2.26.4
+
+Hypothesis Lab :
+- Aucun trade réel.
+- Ne transforme pas encore les hypothèses en moteur d’entrée.
+- Le learnedCandidate v2.26.3 est conservé mais n’est plus seul.
+- Ajout de plusieurs hypothèses parallèles :
+  ENGINE_SIGNAL_INVERSE_TEST,
+  C1_EXHAUSTION_INVERSE_TEST,
+  C2_EXHAUSTION_INVERSE_TEST,
+  RANGE_FADE_TEST,
+  MOVE1_REVERSAL_TEST,
+  CONTINUATION_CONTROL.
+- Chaque frame exporte le côté, le type et le score des hypothèses.
+- Objectif : mesurer hors-échantillon quelle famille attrape réellement les mouvements gagnants.

@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.26.3 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.26.4 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -516,7 +516,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_26_3_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_26_4_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -572,9 +572,9 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.26.3 Android natif\n");
+        b.append("Version app: v2.26.4 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
-        b.append("Mode: CANDIDATE_LAB — candidat appris du playback, aucun trade réel\n\n");
+        b.append("Mode: HYPOTHESIS_LAB — test hypothèses marché, aucun trade réel\n\n");
 
         b.append("STATUT\n");
         b.append("- connected: ").append(s.optBoolean("connected", false)).append("\n");
@@ -709,7 +709,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.26.3\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.26.4\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -762,7 +762,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("CANDIDATE LAB — ETH SCALPER v2.26.3\n\n");
+        b.append("HYPOTHESIS LAB — ETH SCALPER v2.26.4\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -793,7 +793,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("CANDIDATE LAB — MARKET RECORDER v2.26.3\n\n");
+        StringBuilder b = new StringBuilder("HYPOTHESIS LAB — MARKET RECORDER v2.26.4\n\n");
         b.append("mode=").append(s.optString("mode", "—")).append("\n");
         b.append("frames=").append(s.optInt("frames", 0)).append("\n");
         b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");
@@ -807,7 +807,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketFramesCsv(JSONArray arr) {
-        StringBuilder b = new StringBuilder("at,eth,bid,ask,spread,btc,avgRange20,avgVolume20,lastVolume,volumeRatio,flowNorm,btcMove5,move1,move3,move8,recentHigh,recentLow,recentRange,longMfe5,shortMfe5,longMfe10,shortMfe10,longMfe15,shortMfe15,bestSide5,bestSide10,bestSide15,longHit2Sec,longHit28Sec,longHit35Sec,shortHit2Sec,shortHit28Sec,shortHit35Sec,longAdverseBefore2,longAdverseBefore28,longAdverseBefore35,shortAdverseBefore2,shortAdverseBefore28,shortAdverseBefore35,oracleLongClean28,oracleShortClean28,learnedCandidateSide,learnedCandidateType,learnedCandidateScore,learnedOppositeMove8,learnedDirectionalMove3,learnedBtcDir,learnedRecentRangeRatio,setupCandidate,decision,decisionCode,isSignal,side,family,score,qty,entry,tp,sl,targetMove,stopDistance\n");
+        StringBuilder b = new StringBuilder("at,eth,bid,ask,spread,btc,avgRange20,avgVolume20,lastVolume,volumeRatio,flowNorm,btcMove5,move1,move3,move8,recentHigh,recentLow,recentRange,longMfe5,shortMfe5,longMfe10,shortMfe10,longMfe15,shortMfe15,bestSide5,bestSide10,bestSide15,longHit2Sec,longHit28Sec,longHit35Sec,shortHit2Sec,shortHit28Sec,shortHit35Sec,longAdverseBefore2,longAdverseBefore28,longAdverseBefore35,shortAdverseBefore2,shortAdverseBefore28,shortAdverseBefore35,oracleLongClean28,oracleShortClean28,learnedCandidateSide,learnedCandidateType,learnedCandidateScore,learnedOppositeMove8,learnedDirectionalMove3,learnedBtcDir,learnedRecentRangeRatio,hypothesisPrimarySide,hypothesisPrimaryType,hypothesisPrimaryScore,hypEngineInverseSide,hypEngineInverseScore,hypC1InverseSide,hypC1InverseScore,hypC2InverseSide,hypC2InverseScore,hypRangeFadeSide,hypRangeFadeScore,hypMove1ReversalSide,hypMove1ReversalScore,hypContinuationSide,hypContinuationScore,setupCandidate,decision,decisionCode,isSignal,side,family,score,qty,entry,tp,sl,targetMove,stopDistance\n");
         if (arr == null) return b.toString();
         for (int i = 0; i < arr.length(); i++) {
             JSONObject o = arr.optJSONObject(i);
@@ -860,6 +860,21 @@ public class MainActivity extends Activity {
                     .append(o.optString("learnedDirectionalMove3", "")).append(',')
                     .append(o.optString("learnedBtcDir", "")).append(',')
                     .append(o.optString("learnedRecentRangeRatio", "")).append(',')
+                    .append(csv(o.optString("hypothesisPrimarySide", ""))).append(',')
+                    .append(csv(o.optString("hypothesisPrimaryType", ""))).append(',')
+                    .append(o.optInt("hypothesisPrimaryScore", 0)).append(',')
+                    .append(csv(o.optString("hypEngineInverseSide", ""))).append(',')
+                    .append(o.optInt("hypEngineInverseScore", 0)).append(',')
+                    .append(csv(o.optString("hypC1InverseSide", ""))).append(',')
+                    .append(o.optInt("hypC1InverseScore", 0)).append(',')
+                    .append(csv(o.optString("hypC2InverseSide", ""))).append(',')
+                    .append(o.optInt("hypC2InverseScore", 0)).append(',')
+                    .append(csv(o.optString("hypRangeFadeSide", ""))).append(',')
+                    .append(o.optInt("hypRangeFadeScore", 0)).append(',')
+                    .append(csv(o.optString("hypMove1ReversalSide", ""))).append(',')
+                    .append(o.optInt("hypMove1ReversalScore", 0)).append(',')
+                    .append(csv(o.optString("hypContinuationSide", ""))).append(',')
+                    .append(o.optInt("hypContinuationScore", 0)).append(',')
                     .append(csv(o.optString("setupCandidate", ""))).append(',')
                     .append(csv(o.optString("decision", ""))).append(',')
                     .append(csv(o.optString("decisionCode", ""))).append(',')

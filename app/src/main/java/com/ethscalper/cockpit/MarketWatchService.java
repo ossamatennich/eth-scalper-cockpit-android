@@ -50,11 +50,11 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22603";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22603";
+    private static final String CH_WATCH = "eth_scalper_watch_v22604";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22604";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 22603;
+    private static final int NOTIF_WATCH_ID = 22604;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
@@ -201,7 +201,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — candidate lab v2.26.3",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — hypothesis lab v2.26.4",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -781,6 +781,23 @@ public class MarketWatchService extends Service {
         putMetric(o, "learnedBtcDir", f.learnedBtcDir);
         putMetric(o, "learnedRecentRangeRatio", f.learnedRecentRangeRatio);
 
+        o.put("hypothesisPrimarySide", f.hypothesisPrimarySide);
+        o.put("hypothesisPrimaryType", f.hypothesisPrimaryType);
+        o.put("hypothesisPrimaryScore", f.hypothesisPrimaryScore);
+
+        o.put("hypEngineInverseSide", f.hypEngineInverseSide);
+        o.put("hypEngineInverseScore", f.hypEngineInverseScore);
+        o.put("hypC1InverseSide", f.hypC1InverseSide);
+        o.put("hypC1InverseScore", f.hypC1InverseScore);
+        o.put("hypC2InverseSide", f.hypC2InverseSide);
+        o.put("hypC2InverseScore", f.hypC2InverseScore);
+        o.put("hypRangeFadeSide", f.hypRangeFadeSide);
+        o.put("hypRangeFadeScore", f.hypRangeFadeScore);
+        o.put("hypMove1ReversalSide", f.hypMove1ReversalSide);
+        o.put("hypMove1ReversalScore", f.hypMove1ReversalScore);
+        o.put("hypContinuationSide", f.hypContinuationSide);
+        o.put("hypContinuationScore", f.hypContinuationScore);
+
         o.put("setupCandidate", f.setupCandidate);
         o.put("decision", f.decision);
         o.put("decisionCode", f.decisionCode);
@@ -1134,7 +1151,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.26.3 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.26.4 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1209,7 +1226,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.26.3-android");
+            state.put("version", "2.26.4-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1346,7 +1363,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.26.3-candidate-lab");
+        m.put("rulesProfile", "ETH Scalper sessions v2.26.4-hypothesis-lab");
 
         return m;
     }
@@ -1440,6 +1457,23 @@ public class MarketWatchService extends Service {
         final double learnedBtcDir;
         final double learnedRecentRangeRatio;
 
+        final String hypothesisPrimarySide;
+        final String hypothesisPrimaryType;
+        final int hypothesisPrimaryScore;
+
+        final String hypEngineInverseSide;
+        final int hypEngineInverseScore;
+        final String hypC1InverseSide;
+        final int hypC1InverseScore;
+        final String hypC2InverseSide;
+        final int hypC2InverseScore;
+        final String hypRangeFadeSide;
+        final int hypRangeFadeScore;
+        final String hypMove1ReversalSide;
+        final int hypMove1ReversalScore;
+        final String hypContinuationSide;
+        final int hypContinuationScore;
+
         double futureMax5, futureMin5;
         double futureMax10, futureMin10;
         double futureMax15, futureMin15;
@@ -1489,6 +1523,24 @@ public class MarketWatchService extends Service {
             this.learnedDirectionalMove3 = candidate.directionalMove3;
             this.learnedBtcDir = candidate.btcDir;
             this.learnedRecentRangeRatio = candidate.recentRangeRatio;
+
+            HypothesisPack hypotheses = HypothesisPack.from(s, d, setupCandidate);
+            this.hypothesisPrimarySide = hypotheses.primary.side;
+            this.hypothesisPrimaryType = hypotheses.primary.type;
+            this.hypothesisPrimaryScore = hypotheses.primary.score;
+
+            this.hypEngineInverseSide = hypotheses.engineInverse.side;
+            this.hypEngineInverseScore = hypotheses.engineInverse.score;
+            this.hypC1InverseSide = hypotheses.c1Inverse.side;
+            this.hypC1InverseScore = hypotheses.c1Inverse.score;
+            this.hypC2InverseSide = hypotheses.c2Inverse.side;
+            this.hypC2InverseScore = hypotheses.c2Inverse.score;
+            this.hypRangeFadeSide = hypotheses.rangeFade.side;
+            this.hypRangeFadeScore = hypotheses.rangeFade.score;
+            this.hypMove1ReversalSide = hypotheses.move1Reversal.side;
+            this.hypMove1ReversalScore = hypotheses.move1Reversal.score;
+            this.hypContinuationSide = hypotheses.continuation.side;
+            this.hypContinuationScore = hypotheses.continuation.score;
 
             this.futureMax5 = s.ethLast;
             this.futureMin5 = s.ethLast;
@@ -1592,6 +1644,159 @@ public class MarketWatchService extends Service {
 
         static int clamp(int value, int min, int max) {
             return Math.max(min, Math.min(max, value));
+        }
+    }
+
+    static final class HypothesisPack {
+        final HypothesisCandidate primary;
+        final HypothesisCandidate engineInverse;
+        final HypothesisCandidate c1Inverse;
+        final HypothesisCandidate c2Inverse;
+        final HypothesisCandidate rangeFade;
+        final HypothesisCandidate move1Reversal;
+        final HypothesisCandidate continuation;
+
+        HypothesisPack(HypothesisCandidate primary,
+                       HypothesisCandidate engineInverse,
+                       HypothesisCandidate c1Inverse,
+                       HypothesisCandidate c2Inverse,
+                       HypothesisCandidate rangeFade,
+                       HypothesisCandidate move1Reversal,
+                       HypothesisCandidate continuation) {
+            this.primary = primary;
+            this.engineInverse = engineInverse;
+            this.c1Inverse = c1Inverse;
+            this.c2Inverse = c2Inverse;
+            this.rangeFade = rangeFade;
+            this.move1Reversal = move1Reversal;
+            this.continuation = continuation;
+        }
+
+        static HypothesisPack from(MarketSnapshot s, SignalDecision d, String setupCandidate) {
+            HypothesisCandidate engineInverse = engineInverse(s, d);
+            HypothesisCandidate c1Inverse = setupInverse(s, setupCandidate, "C1", "C1_EXHAUSTION_INVERSE_TEST");
+            HypothesisCandidate c2Inverse = setupInverse(s, setupCandidate, "C2", "C2_EXHAUSTION_INVERSE_TEST");
+            HypothesisCandidate rangeFade = rangeFade(s);
+            HypothesisCandidate move1Reversal = move1Reversal(s);
+            HypothesisCandidate continuation = continuation(s, setupCandidate);
+
+            HypothesisCandidate primary = best(engineInverse, c1Inverse, c2Inverse, rangeFade, move1Reversal);
+            if (primary.score <= 0) primary = continuation;
+
+            return new HypothesisPack(primary, engineInverse, c1Inverse, c2Inverse,
+                    rangeFade, move1Reversal, continuation);
+        }
+
+        static HypothesisCandidate engineInverse(MarketSnapshot s, SignalDecision d) {
+            if (d == null || !d.isSignal()) return HypothesisCandidate.none();
+            String side = opposite(d.side);
+            if ("NONE".equals(side)) return HypothesisCandidate.none();
+
+            int score = 68;
+            score += clamp(d.score / 5, 0, 18);
+            score += clamp((int)Math.round(Math.abs(s.move8) * 1.5), 0, 10);
+            score += clamp((int)Math.round(Math.abs(s.flowNorm) * 4.0), 0, 8);
+            return new HypothesisCandidate(side, "ENGINE_SIGNAL_INVERSE_TEST", clamp(score, 0, 96));
+        }
+
+        static HypothesisCandidate setupInverse(MarketSnapshot s, String setup, String prefix, String type) {
+            if (setup == null || !setup.startsWith(prefix)) return HypothesisCandidate.none();
+            String setupSide = setupSide(setup);
+            String side = opposite(setupSide);
+            if ("NONE".equals(side)) return HypothesisCandidate.none();
+
+            double avgRange = Math.max(0.35, s.avgRange20);
+            double recentRange = Math.max(0, s.recentHigh - s.recentLow);
+            double recentRangeRatio = recentRange / avgRange;
+            double extension = Math.abs(s.move8);
+            if (extension < 1.60) return HypothesisCandidate.none();
+
+            int score = "C1".equals(prefix) ? 58 : 52;
+            score += clamp((int)Math.round(extension * 3.0), 0, 18);
+            score += recentRangeRatio >= 2.6 ? 8 : 0;
+            score += recentRangeRatio >= 3.4 ? 5 : 0;
+            score += clamp((int)Math.round(Math.abs(s.move3) * 1.5), 0, 8);
+            return new HypothesisCandidate(side, type, clamp(score, 0, 94));
+        }
+
+        static HypothesisCandidate rangeFade(MarketSnapshot s) {
+            double avgRange = Math.max(0.35, s.avgRange20);
+            double recentRange = Math.max(0, s.recentHigh - s.recentLow);
+            double ratio = recentRange / avgRange;
+            if (ratio < 3.0 || Math.abs(s.move8) < 1.50) return HypothesisCandidate.none();
+
+            String side = s.move8 > 0 ? "SHORT" : s.move8 < 0 ? "LONG" : "NONE";
+            if ("NONE".equals(side)) return HypothesisCandidate.none();
+
+            int score = 54;
+            score += clamp((int)Math.round((ratio - 3.0) * 6.0), 0, 18);
+            score += clamp((int)Math.round(Math.abs(s.move8) * 1.2), 0, 10);
+            return new HypothesisCandidate(side, "RANGE_FADE_TEST", clamp(score, 0, 92));
+        }
+
+        static HypothesisCandidate move1Reversal(MarketSnapshot s) {
+            if (Math.abs(s.move8) < 2.50) return HypothesisCandidate.none();
+            if (s.move1 * s.move8 >= 0) return HypothesisCandidate.none();
+
+            String side = s.move8 > 0 ? "SHORT" : s.move8 < 0 ? "LONG" : "NONE";
+            if ("NONE".equals(side)) return HypothesisCandidate.none();
+
+            int score = 56;
+            score += clamp((int)Math.round(Math.abs(s.move8) * 1.3), 0, 10);
+            score += clamp((int)Math.round(Math.abs(s.move1) * 2.0), 0, 10);
+            return new HypothesisCandidate(side, "MOVE1_REVERSAL_TEST", clamp(score, 0, 92));
+        }
+
+        static HypothesisCandidate continuation(MarketSnapshot s, String setup) {
+            String side = setupSide(setup);
+            if ("NONE".equals(side)) return HypothesisCandidate.none();
+
+            int score = 45;
+            score += setup != null && setup.startsWith("C1") ? 8 : 4;
+            score += clamp((int)Math.round(Math.abs(s.move3) * 1.5), 0, 10);
+            score += clamp((int)Math.round(Math.abs(s.flowNorm) * 3.0), 0, 8);
+            return new HypothesisCandidate(side, "CONTINUATION_CONTROL", clamp(score, 0, 80));
+        }
+
+        static HypothesisCandidate best(HypothesisCandidate... candidates) {
+            HypothesisCandidate best = HypothesisCandidate.none();
+            for (HypothesisCandidate c : candidates) {
+                if (c != null && c.score > best.score) best = c;
+            }
+            return best;
+        }
+
+        static String setupSide(String setup) {
+            if (setup == null) return "NONE";
+            if (setup.endsWith("_LONG")) return "LONG";
+            if (setup.endsWith("_SHORT")) return "SHORT";
+            return "NONE";
+        }
+
+        static String opposite(String side) {
+            if ("LONG".equals(side)) return "SHORT";
+            if ("SHORT".equals(side)) return "LONG";
+            return "NONE";
+        }
+
+        static int clamp(int value, int min, int max) {
+            return Math.max(min, Math.min(max, value));
+        }
+    }
+
+    static final class HypothesisCandidate {
+        final String side;
+        final String type;
+        final int score;
+
+        HypothesisCandidate(String side, String type, int score) {
+            this.side = side;
+            this.type = type;
+            this.score = score;
+        }
+
+        static HypothesisCandidate none() {
+            return new HypothesisCandidate("NONE", "NONE", 0);
         }
     }
 
