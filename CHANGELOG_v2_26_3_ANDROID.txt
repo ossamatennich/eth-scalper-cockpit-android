@@ -1,0 +1,16 @@
+ETH Scalper Cockpit Android v2.26.3
+
+Candidate Lab :
+- Aucun trade réel.
+- Le moteur actuel reste inchangé.
+- Ajout d’un candidat parallèle appris du playback v2.26.2.
+- Pattern testé sur le dernier ZIP :
+  retournement après move8 opposé,
+  move3 qui commence à repartir,
+  BTC qui ne pousse plus clairement,
+  range récent utile.
+- Ajoute dans market_frames :
+  learnedCandidateSide,
+  learnedCandidateType,
+  learnedCandidateScore.
+- Objectif : valider ce candidat hors-échantillon avant d’en faire un vrai moteur d’entrée.

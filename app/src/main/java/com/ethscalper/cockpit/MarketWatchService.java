@@ -50,11 +50,11 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22602";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22602";
+    private static final String CH_WATCH = "eth_scalper_watch_v22603";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22603";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 22601;
+    private static final int NOTIF_WATCH_ID = 22603;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
@@ -201,7 +201,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — oracle path v2.26.2",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — candidate lab v2.26.3",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -773,6 +773,14 @@ public class MarketWatchService extends Service {
         o.put("oracleLongClean28", f.longHit28Sec >= 0 && f.longAdverseBefore28 <= 1.35);
         o.put("oracleShortClean28", f.shortHit28Sec >= 0 && f.shortAdverseBefore28 <= 1.35);
 
+        o.put("learnedCandidateSide", f.learnedCandidateSide);
+        o.put("learnedCandidateType", f.learnedCandidateType);
+        o.put("learnedCandidateScore", f.learnedCandidateScore);
+        putMetric(o, "learnedOppositeMove8", f.learnedOppositeMove8);
+        putMetric(o, "learnedDirectionalMove3", f.learnedDirectionalMove3);
+        putMetric(o, "learnedBtcDir", f.learnedBtcDir);
+        putMetric(o, "learnedRecentRangeRatio", f.learnedRecentRangeRatio);
+
         o.put("setupCandidate", f.setupCandidate);
         o.put("decision", f.decision);
         o.put("decisionCode", f.decisionCode);
@@ -1126,7 +1134,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.26.2 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.26.3 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1201,7 +1209,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.26.2-android");
+            state.put("version", "2.26.3-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1338,7 +1346,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.26.2-oracle-path");
+        m.put("rulesProfile", "ETH Scalper sessions v2.26.3-candidate-lab");
 
         return m;
     }
@@ -1424,6 +1432,14 @@ public class MarketWatchService extends Service {
         final int score, qty;
         final double entry, tp, sl, targetMove, stopDistance;
 
+        final String learnedCandidateSide;
+        final String learnedCandidateType;
+        final int learnedCandidateScore;
+        final double learnedOppositeMove8;
+        final double learnedDirectionalMove3;
+        final double learnedBtcDir;
+        final double learnedRecentRangeRatio;
+
         double futureMax5, futureMin5;
         double futureMax10, futureMin10;
         double futureMax15, futureMin15;
@@ -1465,6 +1481,15 @@ public class MarketWatchService extends Service {
             this.recentRange = Math.max(0, s.recentHigh - s.recentLow);
             this.setupCandidate = setupCandidate;
 
+            PlaybackCandidate candidate = PlaybackCandidate.from(s);
+            this.learnedCandidateSide = candidate.side;
+            this.learnedCandidateType = candidate.type;
+            this.learnedCandidateScore = candidate.score;
+            this.learnedOppositeMove8 = candidate.oppositeMove8;
+            this.learnedDirectionalMove3 = candidate.directionalMove3;
+            this.learnedBtcDir = candidate.btcDir;
+            this.learnedRecentRangeRatio = candidate.recentRangeRatio;
+
             this.futureMax5 = s.ethLast;
             this.futureMin5 = s.ethLast;
             this.futureMax10 = s.ethLast;
@@ -1485,6 +1510,88 @@ public class MarketWatchService extends Service {
             this.sl = isSignal ? d.stopLoss : Double.NaN;
             this.targetMove = isSignal ? d.targetMove : Double.NaN;
             this.stopDistance = isSignal ? d.stopDistance : Double.NaN;
+        }
+    }
+
+    static final class PlaybackCandidate {
+        final String side;
+        final String type;
+        final int score;
+        final double oppositeMove8;
+        final double directionalMove3;
+        final double btcDir;
+        final double recentRangeRatio;
+
+        PlaybackCandidate(String side, String type, int score,
+                          double oppositeMove8, double directionalMove3,
+                          double btcDir, double recentRangeRatio) {
+            this.side = side;
+            this.type = type;
+            this.score = score;
+            this.oppositeMove8 = oppositeMove8;
+            this.directionalMove3 = directionalMove3;
+            this.btcDir = btcDir;
+            this.recentRangeRatio = recentRangeRatio;
+        }
+
+        static PlaybackCandidate none() {
+            return new PlaybackCandidate("NONE", "NONE", 0,
+                    Double.NaN, Double.NaN, Double.NaN, Double.NaN);
+        }
+
+        static PlaybackCandidate from(MarketSnapshot s) {
+            PlaybackCandidate longC = forSide("LONG", 1, s);
+            PlaybackCandidate shortC = forSide("SHORT", -1, s);
+
+            if (longC.score <= 0 && shortC.score <= 0) return none();
+            if (longC.score > 0 && shortC.score > 0 && Math.abs(longC.score - shortC.score) < 4) {
+                return new PlaybackCandidate("NONE", "CONFLICT", 0,
+                        Double.NaN, Double.NaN, Double.NaN, Double.NaN);
+            }
+            return longC.score >= shortC.score ? longC : shortC;
+        }
+
+        static PlaybackCandidate forSide(String sideName, int side, MarketSnapshot s) {
+            double avgRange = Math.max(0.35, s.avgRange20);
+            double recentRange = Math.max(0, s.recentHigh - s.recentLow);
+            double recentRangeRatio = avgRange > 0 ? recentRange / avgRange : Double.NaN;
+
+            double oppositeMove8 = -side * s.move8;
+            double directionalMove3 = side * s.move3;
+            double btcDir = side * s.btcMove5;
+
+            boolean btcExhaustionOk = Double.isFinite(btcDir) && btcDir <= 0.00010;
+
+            boolean reversalLaunch =
+                    oppositeMove8 > 0.95
+                            && recentRangeRatio <= 5.96
+                            && directionalMove3 > 0.98
+                            && avgRange <= 1.06
+                            && btcExhaustionOk;
+
+            boolean extremeExhaustion =
+                    oppositeMove8 > 0.95
+                            && recentRangeRatio > 5.96
+                            && btcExhaustionOk;
+
+            if (!reversalLaunch && !extremeExhaustion) {
+                return none();
+            }
+
+            int score = reversalLaunch ? 82 : 78;
+            score += clamp((int)Math.round((oppositeMove8 - 0.95) * 4.0), 0, 8);
+            score += clamp((int)Math.round((directionalMove3 - 0.98) * 3.0), 0, 6);
+            score += btcDir <= 0 ? 4 : 0;
+            score += recentRangeRatio > 5.96 ? 4 : 0;
+            score = clamp(score, 0, 96);
+
+            return new PlaybackCandidate(sideName,
+                    reversalLaunch ? "REVERSAL_LAUNCH_PLAYBACK" : "EXTREME_EXHAUSTION_PLAYBACK",
+                    score, oppositeMove8, directionalMove3, btcDir, recentRangeRatio);
+        }
+
+        static int clamp(int value, int min, int max) {
+            return Math.max(min, Math.min(max, value));
         }
     }
 
