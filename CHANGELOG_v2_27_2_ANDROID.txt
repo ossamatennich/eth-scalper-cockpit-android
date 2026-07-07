@@ -1,0 +1,20 @@
+ETH Scalper Cockpit Android v2.27.2
+
+Clean C1 A+ Quality Gate :
+- Aucun trade réel.
+- Corrige le moteur v2.27.1 trop permissif.
+- Mauvais signal v2.27.1 identifié :
+  volume moyen, BTC légèrement opposé, flow pas assez fort.
+- Nouvelle porte qualité :
+  1) volumeRatio >= 1.20
+  OU
+  2) volumeRatio >= 0.45 + BTC confirme + flow confirme + move3 >= 1.00.
+- Playback offline v2.26.0 à v2.27.1 :
+  14 entrées théoriques,
+  14 TP,
+  0 SL,
+  0 TIME,
+  +12.18 $ / ETH après frais théoriques.
+- Corrige aussi l'enregistrement market_frames :
+  une frame de signal n'est plus perdue si elle arrive moins d'une seconde après la frame précédente.
+- Toujours RESEARCH_ONLY.

@@ -21,7 +21,7 @@ public final class SignalEngine {
             return reject(s, "NO_DATA", "Historique de range ou volume incomplet", 0, movement);
 
         if (s.lastSignalAt > 0 && s.now - s.lastSignalAt < COOLDOWN_MS)
-            return reject(s, "COOLDOWN_20M", "Cooldown Clean C1 20 minutes", 0, movement);
+            return reject(s, "COOLDOWN_20M", "Cooldown Clean C1 A+ 20 minutes", 0, movement);
 
         double spread = positive(s.ethBid) && positive(s.ethAsk) ? s.ethAsk - s.ethBid : Double.NaN;
         if (Double.isFinite(spread) && spread > Math.max(0.75, s.avgRange20 * 0.55))
@@ -36,12 +36,12 @@ public final class SignalEngine {
 
         if (s.move1 > threshold && s.move3 > threshold * 1.15) {
             side = 1;
-            family = "C1 continuation propre";
+            family = "C1 A+ continuation propre";
         } else if (s.move1 < -threshold && s.move3 < -threshold * 1.15) {
             side = -1;
-            family = "C1 continuation propre";
+            family = "C1 A+ continuation propre";
         } else {
-            return reject(s, "NO_CLEAN_C1", "Aucun C1 continuation propre", 0, movement);
+            return reject(s, "NO_CLEAN_C1", "Aucun C1 A+ propre", 0, movement);
         }
 
         double volumeRatio = s.lastVolume / s.avgVolume20;
@@ -59,22 +59,27 @@ public final class SignalEngine {
         double sideRangePosition = side > 0 ? rangePosition : 1.0 - rangePosition;
 
         /*
-         * v2.27.0 — CLEAN C1 CANDIDATE
-         * Validé en playback offline sur v2.26.0 → v2.26.4 :
-         * 13 entrées théoriques, 13 TP, 0 SL, 0 TIME.
-         * Recherche uniquement. Aucun trade réel.
+         * v2.27.2 — CLEAN C1 A+ QUALITY GATE
+         *
+         * Playback offline v2.26.0 -> v2.27.1 :
+         * 14 entrées théoriques, 14 TP, 0 SL, 0 TIME.
+         *
+         * But :
+         * - Refuser les C1 faibles comme le mauvais signal v2.27.1.
+         * - Garder seulement les C1 avec volume fort
+         *   OU volume moyen confirmé par BTC + flow + move3.
+         *
+         * RESEARCH_ONLY : aucun ordre réel.
          */
+
         if (directionalMove1 < 0.80)
-            return reject(s, "CLEAN_C1_MOVE1_WEAK", "Move1 insuffisant pour Clean C1", 0, movement);
+            return reject(s, "CLEAN_C1_MOVE1_WEAK", "Move1 insuffisant pour Clean C1 A+", 0, movement);
 
         if (directionalMove3 < 0.60)
-            return reject(s, "CLEAN_C1_MOVE3_WEAK", "Move3 insuffisant pour Clean C1", 0, movement);
+            return reject(s, "CLEAN_C1_MOVE3_WEAK", "Move3 insuffisant pour Clean C1 A+", 0, movement);
 
         if (directionalMove8 < 0.00 || directionalMove8 > 7.00)
             return reject(s, "CLEAN_C1_MOVE8_BAD", "Move8 non aligné ou trop extrême", 0, movement);
-
-        if (volumeRatio < 0.25)
-            return reject(s, "CLEAN_C1_VOLUME_LOW", "Volume minimum absent", 0, movement);
 
         if (recentRangeRatio < 2.00 || recentRangeRatio > 5.00)
             return reject(s, "CLEAN_C1_RANGE_BAD", "Range récent hors zone propre", 0, movement);
@@ -88,8 +93,22 @@ public final class SignalEngine {
         if (directionalFlow < -0.20)
             return reject(s, "CLEAN_C1_FLOW_AGAINST", "Flow trop opposé au sens ETH", 0, movement);
 
+        boolean strongVolumeQuality = volumeRatio >= 1.20;
+
+        boolean confirmedMediumVolumeQuality =
+                volumeRatio >= 0.45
+                        && directionalBtc >= 0.0
+                        && directionalFlow >= 0.15
+                        && directionalMove3 >= 1.00;
+
+        if (!strongVolumeQuality && !confirmedMediumVolumeQuality) {
+            return reject(s, "CLEAN_C1_QUALITY_WEAK",
+                    "Qualité insuffisante : volume moyen non confirmé par BTC/flow/move3", 0, movement);
+        }
+
         int score = cleanC1Score(directionalMove1, directionalMove3, directionalMove8,
-                volumeRatio, recentRangeRatio, sideRangePosition, directionalBtc, directionalFlow);
+                volumeRatio, recentRangeRatio, sideRangePosition,
+                directionalBtc, directionalFlow, strongVolumeQuality, confirmedMediumVolumeQuality);
 
         double target = 2.20;
         double stop = 1.10;
@@ -101,31 +120,39 @@ public final class SignalEngine {
         double sl = entry - side * stop;
         String sideName = side > 0 ? "LONG" : "SHORT";
 
-        int quantity = score >= 88 ? 5 : score >= 82 ? 4 : 3;
+        int quantity = score >= 90 ? 4 : 3;
 
         SignalDecision decision = SignalDecision.signal(sideName, family, score, quantity,
                 round2(entry), round2(tp), round2(sl), target, stop,
                 movement.impulse, true, movement.origin, movement.extreme, movement.distance);
 
         record(s.now, decision.reasonCode,
-                "CLEAN_C1_CANDIDATE · playback v2.26.0-v2.26.4 · score " + score + "/100");
+                "CLEAN_C1_A_PLUS · qualityGate=" +
+                        (strongVolumeQuality ? "STRONG_VOLUME" : "CONFIRMED_MEDIUM_VOLUME") +
+                        " · score " + score + "/100");
         return decision;
     }
 
     private static int cleanC1Score(double move1, double move3, double move8,
                                     double volumeRatio, double recentRangeRatio,
-                                    double sideRangePosition, double btc, double flow) {
-        int score = 72;
+                                    double sideRangePosition, double btc, double flow,
+                                    boolean strongVolumeQuality,
+                                    boolean confirmedMediumVolumeQuality) {
+        int score = 74;
+
         score += clamp((int)Math.round((move1 - 0.80) * 4.0), 0, 8);
         score += clamp((int)Math.round((move3 - 0.60) * 3.5), 0, 8);
         score += clamp((int)Math.round(Math.min(move8, 4.0) * 1.5), 0, 8);
-        score += volumeRatio >= 0.50 ? 4 : 0;
-        score += volumeRatio >= 1.20 ? 4 : 0;
+
+        if (strongVolumeQuality) score += 10;
+        else if (confirmedMediumVolumeQuality) score += 6;
+
         score += recentRangeRatio >= 2.20 && recentRangeRatio <= 4.20 ? 5 : 0;
         score += sideRangePosition <= 0.55 ? 4 : 0;
         score += btc >= 0 ? 4 : 0;
-        score += flow >= 0 ? 4 : 0;
-        return clamp(score, 72, 94);
+        score += flow >= 0.15 ? 4 : flow >= 0 ? 2 : 0;
+
+        return clamp(score, 74, 94);
     }
 
     public synchronized List<DiagnosticEntry> recentDiagnostics(int limit) {
