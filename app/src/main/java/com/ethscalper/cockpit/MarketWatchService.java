@@ -50,11 +50,11 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22700";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22700";
+    private static final String CH_WATCH = "eth_scalper_watch_v22701";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22701";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 22700;
+    private static final int NOTIF_WATCH_ID = 22701;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
@@ -201,7 +201,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — clean c1 candidate v2.27.0",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — clean c1 candidate v2.27.1",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -879,6 +879,7 @@ public class MarketWatchService extends Service {
             if (!"ACTIVE".equals(status) && !"NONE".equals(status) && !"NO_PRICE".equals(status)) {
                 item.status = status;
                 item.closedAt = now;
+                notifyObservationStatus(item, status);
             }
         }
     }
@@ -1131,8 +1132,39 @@ public class MarketWatchService extends Service {
         return Double.isFinite(value) ? String.format(Locale.US, "%.2f", value) : "—";
     }
 
+    private void notifyObservationStatus(ObservedSignal item, String status) {
+        if (item == null || item.signal == null) return;
+
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager == null) return;
+
+        String emoji = "ℹ️";
+        if ("TP_TOUCHED".equals(status)) emoji = "✅";
+        else if ("SL_TOUCHED".equals(status)) emoji = "🛑";
+        else if ("ENTRY_TOO_FAR".equals(status)) emoji = "⚠️";
+
+        String title = emoji + " OBS ETH " + item.signal.side + " · " + status;
+        String body = String.format(Locale.US,
+                "%s · entrée %.2f · TP %.2f · SL %.2f · MFE %.2f · MAE %.2f · AUCUN TRADE RÉEL",
+                item.signal.family, item.signal.entry, item.signal.takeProfit,
+                item.signal.stopLoss, item.mfe, item.mae);
+
+        manager.notify(signalNotificationId++, buildSignalNotification(title, body));
+    }
+
     private void notifyObservationSignal(SignalDecision decision) {
-        updateWatch("Recherche : signal " + decision.side + " enregistré · score "
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        String title = "🔔 OBSERVATION ETH " + decision.side;
+        String body = String.format(Locale.US,
+                "%s · score %d/100 · LIMIT %.2f · TP %.2f · SL %.2f · %d ETH · AUCUN TRADE RÉEL",
+                decision.family, decision.score, decision.entry, decision.takeProfit,
+                decision.stopLoss, decision.quantity);
+
+        if (manager != null) {
+            manager.notify(signalNotificationId++, buildSignalNotification(title, body));
+        }
+
+        updateWatch("Observation : signal " + decision.side + " enregistré · score "
                 + decision.score + "/100 · aucun trade réel", true);
     }
 
@@ -1151,7 +1183,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.27.0 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.27.1 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1226,7 +1258,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.27.0-android");
+            state.put("version", "2.27.1-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1363,7 +1395,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.27.0-clean-c1-candidate");
+        m.put("rulesProfile", "ETH Scalper sessions v2.27.1-alert-fix");
 
         return m;
     }

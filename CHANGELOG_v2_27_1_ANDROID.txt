@@ -1,0 +1,8 @@
+ETH Scalper Cockpit Android v2.27.1
+
+Alert Fix :
+- Aucun changement de logique moteur.
+- Corrige les alertes : un signal d'observation déclenche maintenant une vraie notification sonore forte.
+- Ajoute une alerte sonore sur fermeture du signal : TP_TOUCHED, SL_TOUCHED, ENTRY_TOO_FAR, invalidation.
+- Nouveau canal Android v22701 pour éviter les anciens réglages silencieux du canal précédent.
+- Toujours RESEARCH_ONLY : aucun trade réel.
