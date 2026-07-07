@@ -6,81 +6,126 @@ import java.util.Deque;
 import java.util.List;
 
 public final class SignalEngine {
-    public static final long COOLDOWN_MS = 8 * 60 * 1000L;
+    public static final long COOLDOWN_MS = 20 * 60 * 1000L;
     private static final int MAX_DIAGNOSTICS = 200;
     private static final int MIN_SCORE = 62;
     private final Deque<DiagnosticEntry> diagnostics = new ArrayDeque<>();
 
     public synchronized SignalDecision evaluate(MarketSnapshot s) {
         Movement movement = movement(s);
+
         if (s.ethCandles < 30 || s.btcCandles < 10 || !positive(s.ethLast))
             return reject(s, "NO_DATA", "Données natives insuffisantes", 0, movement);
+
         if (!positive(s.avgRange20) || !positive(s.avgVolume20))
             return reject(s, "NO_DATA", "Historique de range ou volume incomplet", 0, movement);
+
         if (s.lastSignalAt > 0 && s.now - s.lastSignalAt < COOLDOWN_MS)
-            return reject(s, "COOLDOWN", "Cooldown après le dernier signal", 0, movement);
+            return reject(s, "COOLDOWN_20M", "Cooldown Clean C1 20 minutes", 0, movement);
+
         double spread = positive(s.ethBid) && positive(s.ethAsk) ? s.ethAsk - s.ethBid : Double.NaN;
         if (Double.isFinite(spread) && spread > Math.max(0.75, s.avgRange20 * 0.55))
             return reject(s, "SPREAD_BAD", "Spread ETH trop large", 0, movement);
+
         if (s.avgRange20 < 0.15)
             return reject(s, "RANGE_TOO_SMALL", "Range trop faible pour un scalp propre", 0, movement);
 
         double threshold = Math.max(0.75, s.avgRange20 * 0.55);
         int side = 0;
         String family = "";
-        boolean reset = false;
+
         if (s.move1 > threshold && s.move3 > threshold * 1.15) {
-            side = 1; family = "C1 cassure fraîche"; reset = true;
+            side = 1;
+            family = "C1 continuation propre";
         } else if (s.move1 < -threshold && s.move3 < -threshold * 1.15) {
-            side = -1; family = "C1 cassure fraîche"; reset = true;
-        } else if (s.move3 > threshold * 1.35 && s.move1 > -s.avgRange20 * 0.25) {
-            side = 1; family = "C2 reprise contrôlée"; reset = Math.abs(s.move1) <= s.avgRange20 * 0.65;
-        } else if (s.move3 < -threshold * 1.35 && s.move1 < s.avgRange20 * 0.25) {
-            side = -1; family = "C2 reprise contrôlée"; reset = Math.abs(s.move1) <= s.avgRange20 * 0.65;
+            side = -1;
+            family = "C1 continuation propre";
+        } else {
+            return reject(s, "NO_CLEAN_C1", "Aucun C1 continuation propre", 0, movement);
         }
-        if (side == 0) return reject(s, "NO_SETUP", "Aucun setup C1/C2 confirmé", 0, movement);
 
         double volumeRatio = s.lastVolume / s.avgVolume20;
-        if (volumeRatio < 0.60)
-            return reject(s, "VOLUME_TOO_LOW", "Volume trop faible", 0, movement);
-        if ((side > 0 && s.flowNorm < 0.05) || (side < 0 && s.flowNorm > -0.05))
-            return reject(s, "FLOW_TOO_WEAK", "Flow non aligné avec le mouvement", 0, movement);
-        if ((side > 0 && s.btcMove5 < -0.0012) || (side < 0 && s.btcMove5 > 0.0012))
-            return reject(s, "BTC_VETO", "BTC oppose le signal ETH", 0, movement);
-        if (movement.consumed)
-            return reject(s, "MOVE_CONSUMED", "Mouvement déjà trop consommé : ne pas poursuivre", 0, movement);
-        if (!reset)
-            return reject(s, "RESET_NOT_CONFIRMED", "Reset non confirmé", 0, movement);
-
-        int score = 52;
-        score += clamp((int)Math.round(Math.abs(s.move3) / Math.max(0.35, s.avgRange20) * 7), 0, 18);
-        score += clamp((int)Math.round((volumeRatio - 1.0) * 10), 0, 12);
-        score += clamp((int)Math.round(Math.abs(s.flowNorm) * 18), 0, 12);
-        if ((side > 0 && s.btcMove5 > 0) || (side < 0 && s.btcMove5 < 0)) score += 8;
-        if (family.startsWith("C2")) score -= 3;
-        score = clamp(score, 0, 94);
-        if (score < MIN_SCORE)
-            return reject(s, "SCORE_TOO_LOW", "Score " + score + "/100 sous le minimum", score, movement);
-
         double recentRange = Math.max(0, s.recentHigh - s.recentLow);
-        double target = computeTarget(s.avgRange20, recentRange, volumeRatio, Math.abs(s.flowNorm), score);
+        double avgRange = Math.max(0.35, s.avgRange20);
+        double recentRangeRatio = recentRange / avgRange;
+
+        double directionalMove1 = side * s.move1;
+        double directionalMove3 = side * s.move3;
+        double directionalMove8 = side * s.move8;
+        double directionalBtc = side * s.btcMove5;
+        double directionalFlow = side * s.flowNorm;
+
+        double rangePosition = recentRange > 0 ? (s.ethLast - s.recentLow) / recentRange : 0.5;
+        double sideRangePosition = side > 0 ? rangePosition : 1.0 - rangePosition;
+
+        /*
+         * v2.27.0 — CLEAN C1 CANDIDATE
+         * Validé en playback offline sur v2.26.0 → v2.26.4 :
+         * 13 entrées théoriques, 13 TP, 0 SL, 0 TIME.
+         * Recherche uniquement. Aucun trade réel.
+         */
+        if (directionalMove1 < 0.80)
+            return reject(s, "CLEAN_C1_MOVE1_WEAK", "Move1 insuffisant pour Clean C1", 0, movement);
+
+        if (directionalMove3 < 0.60)
+            return reject(s, "CLEAN_C1_MOVE3_WEAK", "Move3 insuffisant pour Clean C1", 0, movement);
+
+        if (directionalMove8 < 0.00 || directionalMove8 > 7.00)
+            return reject(s, "CLEAN_C1_MOVE8_BAD", "Move8 non aligné ou trop extrême", 0, movement);
+
+        if (volumeRatio < 0.25)
+            return reject(s, "CLEAN_C1_VOLUME_LOW", "Volume minimum absent", 0, movement);
+
+        if (recentRangeRatio < 2.00 || recentRangeRatio > 5.00)
+            return reject(s, "CLEAN_C1_RANGE_BAD", "Range récent hors zone propre", 0, movement);
+
+        if (sideRangePosition > 0.65)
+            return reject(s, "CLEAN_C1_ENTRY_LATE", "Prix trop tard dans le range", 0, movement);
+
+        if (directionalBtc < -0.0020)
+            return reject(s, "CLEAN_C1_BTC_AGAINST", "BTC trop opposé au sens ETH", 0, movement);
+
+        if (directionalFlow < -0.20)
+            return reject(s, "CLEAN_C1_FLOW_AGAINST", "Flow trop opposé au sens ETH", 0, movement);
+
+        int score = cleanC1Score(directionalMove1, directionalMove3, directionalMove8,
+                volumeRatio, recentRangeRatio, sideRangePosition, directionalBtc, directionalFlow);
+
+        double target = 2.20;
+        double stop = 1.10;
+
         double entry = side > 0 ? (positive(s.ethAsk) ? s.ethAsk : s.ethLast)
                 : (positive(s.ethBid) ? s.ethBid : s.ethLast);
-        double stop = computeStop(s.avgRange20, recentRange, score);
-        stop = computeStructureStop(stop, side, entry, s.recentHigh, s.recentLow, s.avgRange20);
-
-        int quantity = computeQuantity(score, stop, target, false);
-        if (quantity < 3)
-            return reject(s, "SCORE_TOO_LOW", "Ratio rendement/risque insuffisant après stop structurel", score, movement);
 
         double tp = entry + side * target;
         double sl = entry - side * stop;
         String sideName = side > 0 ? "LONG" : "SHORT";
+
+        int quantity = score >= 88 ? 5 : score >= 82 ? 4 : 3;
+
         SignalDecision decision = SignalDecision.signal(sideName, family, score, quantity,
-                round2(entry), round2(tp), round2(sl), target, stop, movement.impulse,
-                reset, movement.origin, movement.extreme, movement.distance);
-        record(s.now, decision.reasonCode, family + " · score " + score + "/100");
+                round2(entry), round2(tp), round2(sl), target, stop,
+                movement.impulse, true, movement.origin, movement.extreme, movement.distance);
+
+        record(s.now, decision.reasonCode,
+                "CLEAN_C1_CANDIDATE · playback v2.26.0-v2.26.4 · score " + score + "/100");
         return decision;
+    }
+
+    private static int cleanC1Score(double move1, double move3, double move8,
+                                    double volumeRatio, double recentRangeRatio,
+                                    double sideRangePosition, double btc, double flow) {
+        int score = 72;
+        score += clamp((int)Math.round((move1 - 0.80) * 4.0), 0, 8);
+        score += clamp((int)Math.round((move3 - 0.60) * 3.5), 0, 8);
+        score += clamp((int)Math.round(Math.min(move8, 4.0) * 1.5), 0, 8);
+        score += volumeRatio >= 0.50 ? 4 : 0;
+        score += volumeRatio >= 1.20 ? 4 : 0;
+        score += recentRangeRatio >= 2.20 && recentRangeRatio <= 4.20 ? 5 : 0;
+        score += sideRangePosition <= 0.55 ? 4 : 0;
+        score += btc >= 0 ? 4 : 0;
+        score += flow >= 0 ? 4 : 0;
+        return clamp(score, 72, 94);
     }
 
     public synchronized List<DiagnosticEntry> recentDiagnostics(int limit) {

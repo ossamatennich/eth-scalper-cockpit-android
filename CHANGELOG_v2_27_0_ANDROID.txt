@@ -1,0 +1,27 @@
+ETH Scalper Cockpit Android v2.27.0
+
+Clean C1 Candidate :
+- Aucun trade réel.
+- Patch basé sur playback offline des sessions v2.26.0 à v2.26.4.
+- Candidat retenu : C1_CONTINUATION_PROPRE.
+- Test offline :
+  13 entrées théoriques,
+  13 TP,
+  0 SL,
+  0 TIME,
+  +11.31 $ / ETH après frais théoriques.
+- Validation leave-one-session-out passée.
+- Règles :
+  C1 uniquement,
+  move1 directionnel >= 0.80,
+  move3 directionnel >= 0.60,
+  move8 directionnel entre 0 et 7,
+  volumeRatio >= 0.25,
+  recentRangeRatio entre 2.0 et 5.0,
+  sideRangePosition <= 0.65,
+  BTC pas violemment opposé,
+  flow pas violemment opposé,
+  cooldown 20 minutes,
+  TP 2.20,
+  SL 1.10.
+- Cette version sert à valider hors-échantillon en observation.
