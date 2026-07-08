@@ -50,11 +50,11 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22702";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22702";
+    private static final String CH_WATCH = "eth_scalper_watch_v22800";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22800";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 22702;
+    private static final int NOTIF_WATCH_ID = 22800;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
@@ -201,7 +201,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — clean c1 a+ v2.27.2",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — feature replay lab v2.28.0",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -745,6 +745,34 @@ public class MarketWatchService extends Service {
         putMetric(o, "recentLow", f.recentLow);
         putMetric(o, "recentRange", f.recentRange);
 
+        putMetric(o, "move1Norm", f.move1Norm);
+        putMetric(o, "move3Norm", f.move3Norm);
+        putMetric(o, "move8Norm", f.move8Norm);
+        putMetric(o, "moveAccel13", f.moveAccel13);
+        putMetric(o, "moveAccel38", f.moveAccel38);
+        putMetric(o, "rangePosition", f.rangePosition);
+        putMetric(o, "distanceToHigh", f.distanceToHigh);
+        putMetric(o, "distanceToLow", f.distanceToLow);
+        putMetric(o, "roomLong", f.roomLong);
+        putMetric(o, "roomShort", f.roomShort);
+        putMetric(o, "pullbackFromHigh", f.pullbackFromHigh);
+        putMetric(o, "pullbackFromLow", f.pullbackFromLow);
+        putMetric(o, "flow15", f.flow15);
+        putMetric(o, "flow30", f.flow30);
+        putMetric(o, "flow60", f.flow60);
+        putMetric(o, "flow120", f.flow120);
+        putMetric(o, "deltaFlow15_60", f.deltaFlow15_60);
+        putMetric(o, "deltaFlow30_120", f.deltaFlow30_120);
+        putMetric(o, "flowAccel", f.flowAccel);
+        putMetric(o, "btcMove1", f.btcMove1);
+        putMetric(o, "btcMove3", f.btcMove3);
+        putMetric(o, "btcMove8", f.btcMove8);
+        putMetric(o, "btcAccel1_5", f.btcAccel1_5);
+        putMetric(o, "btcAccel3_8", f.btcAccel3_8);
+        putMetric(o, "breakoutHighDistance", f.breakoutHighDistance);
+        putMetric(o, "breakoutLowDistance", f.breakoutLowDistance);
+        putMetric(o, "antiBurstScore", f.antiBurstScore);
+
         putMetric(o, "longMfe5", f.futureMax5 - f.ethLast);
         putMetric(o, "shortMfe5", f.ethLast - f.futureMin5);
         putMetric(o, "longMfe10", f.futureMax10 - f.ethLast);
@@ -1081,10 +1109,16 @@ public class MarketWatchService extends Service {
     private MarketSnapshot buildSnapshot(long now) {
         List<Candle> ethList = new ArrayList<>(ethCandles);
         List<Candle> btcList = new ArrayList<>(btcCandles);
+
         double averageRange = avgRange(ethList, 20);
         double averageVolume = avgVolume(ethList, 20);
+        double avg = Math.max(0.35, averageRange);
+
         double move1 = 0, move3 = 0, move8 = 0, lastVolume = 0, recentHigh = 0, recentLow = 0;
+        double previousHigh8 = 0, previousLow8 = 0;
+
         if (!ethList.isEmpty()) lastVolume = ethList.get(ethList.size() - 1).volume;
+
         if (ethList.size() >= 9) {
             Candle last = ethList.get(ethList.size() - 1);
             move1 = last.close - ethList.get(ethList.size() - 2).close;
@@ -1092,13 +1126,49 @@ public class MarketWatchService extends Service {
             move8 = last.close - ethList.get(ethList.size() - 9).close;
             recentHigh = high(ethList, 8);
             recentLow = low(ethList, 8);
+            previousHigh8 = highBeforeLast(ethList, 8);
+            previousLow8 = lowBeforeLast(ethList, 8);
         }
-        double btcMove5 = 0;
-        if (btcList.size() >= 6) {
-            double previous = btcList.get(btcList.size() - 6).close;
-            if (previous > 0) btcMove5 = (btcList.get(btcList.size() - 1).close - previous) / previous;
-        }
-        double flowNorm = averageVolume > 0 ? signedFlow(now, 60_000) / averageVolume : 0;
+
+        double btcMove1 = percentMove(btcList, 1);
+        double btcMove3 = percentMove(btcList, 3);
+        double btcMove5 = percentMove(btcList, 5);
+        double btcMove8 = percentMove(btcList, 8);
+
+        double flow15 = averageVolume > 0 ? signedFlow(now, 15_000) / averageVolume : 0;
+        double flow30 = averageVolume > 0 ? signedFlow(now, 30_000) / averageVolume : 0;
+        double flow60 = averageVolume > 0 ? signedFlow(now, 60_000) / averageVolume : 0;
+        double flow120 = averageVolume > 0 ? signedFlow(now, 120_000) / averageVolume : 0;
+        double flowNorm = flow60;
+
+        double recentRange = Math.max(0, recentHigh - recentLow);
+        double volumeRatio = averageVolume > 0 ? lastVolume / averageVolume : 0;
+        double rangePosition = recentRange > 0 && Double.isFinite(ethLast)
+                ? (ethLast - recentLow) / recentRange : 0.5;
+        rangePosition = Math.max(-2.0, Math.min(3.0, rangePosition));
+
+        double distanceToHigh = Double.isFinite(ethLast) ? recentHigh - ethLast : Double.NaN;
+        double distanceToLow = Double.isFinite(ethLast) ? ethLast - recentLow : Double.NaN;
+        double roomLong = distanceToHigh;
+        double roomShort = distanceToLow;
+        double pullbackFromHigh = distanceToHigh;
+        double pullbackFromLow = distanceToLow;
+
+        double move1Norm = move1 / avg;
+        double move3Norm = move3 / avg;
+        double move8Norm = move8 / avg;
+        double moveAccel13 = move1 - (move3 / 3.0);
+        double moveAccel38 = (move3 / 3.0) - (move8 / 8.0);
+
+        double breakoutHighDistance = Double.isFinite(ethLast) && previousHigh8 > 0 ? ethLast - previousHigh8 : 0;
+        double breakoutLowDistance = Double.isFinite(ethLast) && previousLow8 > 0 ? previousLow8 - ethLast : 0;
+
+        double antiBurstScore = 0;
+        antiBurstScore += Math.max(0, Math.abs(move1Norm) - 1.0);
+        antiBurstScore += Math.max(0, volumeRatio - 2.0) * 0.35;
+        antiBurstScore += Math.max(0, Math.abs(flow15 - flow60)) * 0.50;
+        antiBurstScore += recentRange > 0 ? Math.max(0, Math.abs(rangePosition - 0.5) - 0.35) * 3.0 : 0;
+
         return MarketSnapshot.builder(now)
                 .lastSignalAt(lastSignalAt)
                 .eth(ethLast, ethBid, ethAsk)
@@ -1108,6 +1178,13 @@ public class MarketWatchService extends Service {
                 .movement(move1, move3, move8, recentHigh, recentLow)
                 .flow(flowNorm, lastVolume)
                 .btcMove5(btcMove5)
+                .flowWindows(flow15, flow30, flow60, flow120)
+                .btcMoves(btcMove1, btcMove3, btcMove5, btcMove8)
+                .professionalFeatures(recentRange, volumeRatio, rangePosition,
+                        distanceToHigh, distanceToLow, roomLong, roomShort,
+                        pullbackFromHigh, pullbackFromLow,
+                        move1Norm, move3Norm, move8Norm, moveAccel13, moveAccel38,
+                        breakoutHighDistance, breakoutLowDistance, antiBurstScore)
                 .build();
     }
 
@@ -1184,7 +1261,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.27.2 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.28.0 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1259,7 +1336,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.27.2-android");
+            state.put("version", "2.28.0-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1396,7 +1473,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.27.2-clean-c1-a-plus");
+        m.put("rulesProfile", "ETH Scalper sessions v2.28.0-feature-replay-lab");
 
         return m;
     }
@@ -1460,6 +1537,30 @@ public class MarketWatchService extends Service {
         return value == Double.MAX_VALUE ? 0 : value;
     }
 
+    private static double highBeforeLast(List<Candle> candles, int count) {
+        int end = Math.max(0, candles.size() - 1);
+        int start = Math.max(0, end - count);
+        double value = 0;
+        for (int i=start; i<end; i++) value = Math.max(value, candles.get(i).high);
+        return value;
+    }
+
+    private static double lowBeforeLast(List<Candle> candles, int count) {
+        int end = Math.max(0, candles.size() - 1);
+        int start = Math.max(0, end - count);
+        double value = Double.MAX_VALUE;
+        for (int i=start; i<end; i++) value = Math.min(value, candles.get(i).low);
+        return value == Double.MAX_VALUE ? 0 : value;
+    }
+
+    private static double percentMove(List<Candle> candles, int periods) {
+        if (candles.size() < periods + 1) return 0;
+        double current = candles.get(candles.size() - 1).close;
+        double previous = candles.get(candles.size() - 1 - periods).close;
+        if (previous <= 0) return 0;
+        return (current - previous) / previous;
+    }
+
     static final class Candle {
         final long openTime; final double open, high, low, close, volume;
         Candle(long openTime, double open, double high, double low, double close, double volume) {
@@ -1475,6 +1576,16 @@ public class MarketWatchService extends Service {
         final double flowNorm, btcMove5;
         final double move1, move3, move8;
         final double recentHigh, recentLow, recentRange;
+
+        final double move1Norm, move3Norm, move8Norm;
+        final double moveAccel13, moveAccel38;
+        final double rangePosition, distanceToHigh, distanceToLow;
+        final double roomLong, roomShort, pullbackFromHigh, pullbackFromLow;
+        final double flow15, flow30, flow60, flow120;
+        final double deltaFlow15_60, deltaFlow30_120, flowAccel;
+        final double btcMove1, btcMove3, btcMove8;
+        final double btcAccel1_5, btcAccel3_8;
+        final double breakoutHighDistance, breakoutLowDistance, antiBurstScore;
         final String setupCandidate;
         final String decision, decisionCode, decisionText;
         final boolean isSignal;
@@ -1546,6 +1657,35 @@ public class MarketWatchService extends Service {
             this.recentHigh = s.recentHigh;
             this.recentLow = s.recentLow;
             this.recentRange = Math.max(0, s.recentHigh - s.recentLow);
+
+            this.move1Norm = s.move1Norm;
+            this.move3Norm = s.move3Norm;
+            this.move8Norm = s.move8Norm;
+            this.moveAccel13 = s.moveAccel13;
+            this.moveAccel38 = s.moveAccel38;
+            this.rangePosition = s.rangePosition;
+            this.distanceToHigh = s.distanceToHigh;
+            this.distanceToLow = s.distanceToLow;
+            this.roomLong = s.roomLong;
+            this.roomShort = s.roomShort;
+            this.pullbackFromHigh = s.pullbackFromHigh;
+            this.pullbackFromLow = s.pullbackFromLow;
+            this.flow15 = s.flow15;
+            this.flow30 = s.flow30;
+            this.flow60 = s.flow60;
+            this.flow120 = s.flow120;
+            this.deltaFlow15_60 = s.deltaFlow15_60;
+            this.deltaFlow30_120 = s.deltaFlow30_120;
+            this.flowAccel = s.flowAccel;
+            this.btcMove1 = s.btcMove1;
+            this.btcMove3 = s.btcMove3;
+            this.btcMove8 = s.btcMove8;
+            this.btcAccel1_5 = s.btcAccel1_5;
+            this.btcAccel3_8 = s.btcAccel3_8;
+            this.breakoutHighDistance = s.breakoutHighDistance;
+            this.breakoutLowDistance = s.breakoutLowDistance;
+            this.antiBurstScore = s.antiBurstScore;
+
             this.setupCandidate = setupCandidate;
 
             PlaybackCandidate candidate = PlaybackCandidate.from(s);

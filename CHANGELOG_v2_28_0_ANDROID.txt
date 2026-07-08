@@ -1,0 +1,21 @@
+ETH Scalper Cockpit Android v2.28.0
+
+Professional Feature Replay Lab :
+- Aucun trade réel.
+- Ne valide aucun moteur de trading.
+- Objectif : enregistrer les variables manquantes pour construire un moteur professionnel hors-ligne.
+- Ajoute dans market_frames :
+  move1Norm, move3Norm, move8Norm,
+  moveAccel13, moveAccel38,
+  rangePosition,
+  distanceToHigh, distanceToLow,
+  roomLong, roomShort,
+  pullbackFromHigh, pullbackFromLow,
+  flow15, flow30, flow60, flow120,
+  deltaFlow15_60, deltaFlow30_120, flowAccel,
+  btcMove1, btcMove3, btcMove8,
+  btcAccel1_5, btcAccel3_8,
+  breakoutHighDistance, breakoutLowDistance,
+  antiBurstScore.
+- But : distinguer vrai départ, faux burst, continuation consommée, pullback propre et retournement.
+- Toujours RESEARCH_ONLY.

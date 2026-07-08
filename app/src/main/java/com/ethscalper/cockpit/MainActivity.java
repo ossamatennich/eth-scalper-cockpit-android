@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.27.2 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.28.0 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -516,7 +516,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_27_2_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_28_0_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -572,7 +572,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.27.2 Android natif\n");
+        b.append("Version app: v2.28.0 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
         b.append("Mode: CLEAN_C1_A_PLUS — recherche uniquement, aucun trade réel\n\n");
 
@@ -709,7 +709,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.27.2\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.28.0\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -762,7 +762,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("CLEAN C1 A+ — ETH SCALPER v2.27.2\n\n");
+        b.append("FEATURE REPLAY LAB — ETH SCALPER v2.28.0\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -793,7 +793,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("HYPOTHESIS LAB — MARKET RECORDER v2.26.4\n\n");
+        StringBuilder b = new StringBuilder("FEATURE REPLAY LAB — MARKET RECORDER v2.28.0\n\n");
         b.append("mode=").append(s.optString("mode", "—")).append("\n");
         b.append("frames=").append(s.optInt("frames", 0)).append("\n");
         b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");
@@ -807,7 +807,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketFramesCsv(JSONArray arr) {
-        StringBuilder b = new StringBuilder("at,eth,bid,ask,spread,btc,avgRange20,avgVolume20,lastVolume,volumeRatio,flowNorm,btcMove5,move1,move3,move8,recentHigh,recentLow,recentRange,longMfe5,shortMfe5,longMfe10,shortMfe10,longMfe15,shortMfe15,bestSide5,bestSide10,bestSide15,longHit2Sec,longHit28Sec,longHit35Sec,shortHit2Sec,shortHit28Sec,shortHit35Sec,longAdverseBefore2,longAdverseBefore28,longAdverseBefore35,shortAdverseBefore2,shortAdverseBefore28,shortAdverseBefore35,oracleLongClean28,oracleShortClean28,learnedCandidateSide,learnedCandidateType,learnedCandidateScore,learnedOppositeMove8,learnedDirectionalMove3,learnedBtcDir,learnedRecentRangeRatio,hypothesisPrimarySide,hypothesisPrimaryType,hypothesisPrimaryScore,hypEngineInverseSide,hypEngineInverseScore,hypC1InverseSide,hypC1InverseScore,hypC2InverseSide,hypC2InverseScore,hypRangeFadeSide,hypRangeFadeScore,hypMove1ReversalSide,hypMove1ReversalScore,hypContinuationSide,hypContinuationScore,setupCandidate,decision,decisionCode,isSignal,side,family,score,qty,entry,tp,sl,targetMove,stopDistance\n");
+        StringBuilder b = new StringBuilder("at,eth,bid,ask,spread,btc,avgRange20,avgVolume20,lastVolume,volumeRatio,flowNorm,btcMove5,move1,move3,move8,recentHigh,recentLow,recentRange,move1Norm,move3Norm,move8Norm,moveAccel13,moveAccel38,rangePosition,distanceToHigh,distanceToLow,roomLong,roomShort,pullbackFromHigh,pullbackFromLow,flow15,flow30,flow60,flow120,deltaFlow15_60,deltaFlow30_120,flowAccel,btcMove1,btcMove3,btcMove8,btcAccel1_5,btcAccel3_8,breakoutHighDistance,breakoutLowDistance,antiBurstScore,longMfe5,shortMfe5,longMfe10,shortMfe10,longMfe15,shortMfe15,bestSide5,bestSide10,bestSide15,longHit2Sec,longHit28Sec,longHit35Sec,shortHit2Sec,shortHit28Sec,shortHit35Sec,longAdverseBefore2,longAdverseBefore28,longAdverseBefore35,shortAdverseBefore2,shortAdverseBefore28,shortAdverseBefore35,oracleLongClean28,oracleShortClean28,learnedCandidateSide,learnedCandidateType,learnedCandidateScore,learnedOppositeMove8,learnedDirectionalMove3,learnedBtcDir,learnedRecentRangeRatio,hypothesisPrimarySide,hypothesisPrimaryType,hypothesisPrimaryScore,hypEngineInverseSide,hypEngineInverseScore,hypC1InverseSide,hypC1InverseScore,hypC2InverseSide,hypC2InverseScore,hypRangeFadeSide,hypRangeFadeScore,hypMove1ReversalSide,hypMove1ReversalScore,hypContinuationSide,hypContinuationScore,setupCandidate,decision,decisionCode,isSignal,side,family,score,qty,entry,tp,sl,targetMove,stopDistance\n");
         if (arr == null) return b.toString();
         for (int i = 0; i < arr.length(); i++) {
             JSONObject o = arr.optJSONObject(i);
@@ -830,6 +830,33 @@ public class MainActivity extends Activity {
                     .append(o.optString("recentHigh", "")).append(',')
                     .append(o.optString("recentLow", "")).append(',')
                     .append(o.optString("recentRange", "")).append(',')
+                    .append(o.optString("move1Norm", "")).append(',')
+                    .append(o.optString("move3Norm", "")).append(',')
+                    .append(o.optString("move8Norm", "")).append(',')
+                    .append(o.optString("moveAccel13", "")).append(',')
+                    .append(o.optString("moveAccel38", "")).append(',')
+                    .append(o.optString("rangePosition", "")).append(',')
+                    .append(o.optString("distanceToHigh", "")).append(',')
+                    .append(o.optString("distanceToLow", "")).append(',')
+                    .append(o.optString("roomLong", "")).append(',')
+                    .append(o.optString("roomShort", "")).append(',')
+                    .append(o.optString("pullbackFromHigh", "")).append(',')
+                    .append(o.optString("pullbackFromLow", "")).append(',')
+                    .append(o.optString("flow15", "")).append(',')
+                    .append(o.optString("flow30", "")).append(',')
+                    .append(o.optString("flow60", "")).append(',')
+                    .append(o.optString("flow120", "")).append(',')
+                    .append(o.optString("deltaFlow15_60", "")).append(',')
+                    .append(o.optString("deltaFlow30_120", "")).append(',')
+                    .append(o.optString("flowAccel", "")).append(',')
+                    .append(o.optString("btcMove1", "")).append(',')
+                    .append(o.optString("btcMove3", "")).append(',')
+                    .append(o.optString("btcMove8", "")).append(',')
+                    .append(o.optString("btcAccel1_5", "")).append(',')
+                    .append(o.optString("btcAccel3_8", "")).append(',')
+                    .append(o.optString("breakoutHighDistance", "")).append(',')
+                    .append(o.optString("breakoutLowDistance", "")).append(',')
+                    .append(o.optString("antiBurstScore", "")).append(',')
                     .append(o.optString("longMfe5", "")).append(',')
                     .append(o.optString("shortMfe5", "")).append(',')
                     .append(o.optString("longMfe10", "")).append(',')
