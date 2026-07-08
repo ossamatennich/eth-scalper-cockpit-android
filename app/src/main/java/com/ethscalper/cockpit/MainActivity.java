@@ -516,7 +516,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_28_0_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_28_1_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -762,7 +762,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("FEATURE REPLAY LAB — ETH SCALPER v2.28.0\n\n");
+        b.append("PRO LABEL LAB — ETH SCALPER v2.28.1\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -793,7 +793,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("FEATURE REPLAY LAB — MARKET RECORDER v2.28.0\n\n");
+        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.28.1\n\n");
         b.append("mode=").append(s.optString("mode", "—")).append("\n");
         b.append("frames=").append(s.optInt("frames", 0)).append("\n");
         b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");
@@ -807,7 +807,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketFramesCsv(JSONArray arr) {
-        StringBuilder b = new StringBuilder("at,eth,bid,ask,spread,btc,avgRange20,avgVolume20,lastVolume,volumeRatio,flowNorm,btcMove5,move1,move3,move8,recentHigh,recentLow,recentRange,move1Norm,move3Norm,move8Norm,moveAccel13,moveAccel38,rangePosition,distanceToHigh,distanceToLow,roomLong,roomShort,pullbackFromHigh,pullbackFromLow,flow15,flow30,flow60,flow120,deltaFlow15_60,deltaFlow30_120,flowAccel,btcMove1,btcMove3,btcMove8,btcAccel1_5,btcAccel3_8,breakoutHighDistance,breakoutLowDistance,antiBurstScore,longMfe5,shortMfe5,longMfe10,shortMfe10,longMfe15,shortMfe15,bestSide5,bestSide10,bestSide15,longHit2Sec,longHit28Sec,longHit35Sec,shortHit2Sec,shortHit28Sec,shortHit35Sec,longAdverseBefore2,longAdverseBefore28,longAdverseBefore35,shortAdverseBefore2,shortAdverseBefore28,shortAdverseBefore35,oracleLongClean28,oracleShortClean28,learnedCandidateSide,learnedCandidateType,learnedCandidateScore,learnedOppositeMove8,learnedDirectionalMove3,learnedBtcDir,learnedRecentRangeRatio,hypothesisPrimarySide,hypothesisPrimaryType,hypothesisPrimaryScore,hypEngineInverseSide,hypEngineInverseScore,hypC1InverseSide,hypC1InverseScore,hypC2InverseSide,hypC2InverseScore,hypRangeFadeSide,hypRangeFadeScore,hypMove1ReversalSide,hypMove1ReversalScore,hypContinuationSide,hypContinuationScore,setupCandidate,decision,decisionCode,isSignal,side,family,score,qty,entry,tp,sl,targetMove,stopDistance\n");
+        StringBuilder b = new StringBuilder("at,eth,bid,ask,spread,btc,avgRange20,avgVolume20,lastVolume,volumeRatio,flowNorm,btcMove5,move1,move3,move8,recentHigh,recentLow,recentRange,move1Norm,move3Norm,move8Norm,moveAccel13,moveAccel38,rangePosition,distanceToHigh,distanceToLow,roomLong,roomShort,pullbackFromHigh,pullbackFromLow,flow15,flow30,flow60,flow120,deltaFlow15_60,deltaFlow30_120,flowAccel,btcMove1,btcMove3,btcMove8,btcAccel1_5,btcAccel3_8,breakoutHighDistance,breakoutLowDistance,antiBurstScore,longMfe5,shortMfe5,longMfe10,shortMfe10,longMfe15,shortMfe15,bestSide5,bestSide10,bestSide15,longHit2Sec,longHit22Sec,longHit28Sec,longHit35Sec,shortHit2Sec,shortHit22Sec,shortHit28Sec,shortHit35Sec,longAdverseBefore2,longAdverseBefore22,longAdverseBefore28,longAdverseBefore35,shortAdverseBefore2,shortAdverseBefore22,shortAdverseBefore28,shortAdverseBefore35,oracleLongClean28,oracleShortClean28,learnedCandidateSide,learnedCandidateType,learnedCandidateScore,learnedOppositeMove8,learnedDirectionalMove3,learnedBtcDir,learnedRecentRangeRatio,hypothesisPrimarySide,hypothesisPrimaryType,hypothesisPrimaryScore,hypEngineInverseSide,hypEngineInverseScore,hypC1InverseSide,hypC1InverseScore,hypC2InverseSide,hypC2InverseScore,hypRangeFadeSide,hypRangeFadeScore,hypMove1ReversalSide,hypMove1ReversalScore,hypContinuationSide,hypContinuationScore,setupCandidate,decision,decisionCode,isSignal,side,family,score,qty,entry,tp,sl,targetMove,stopDistance\n");
         if (arr == null) return b.toString();
         for (int i = 0; i < arr.length(); i++) {
             JSONObject o = arr.optJSONObject(i);
@@ -867,15 +867,19 @@ public class MainActivity extends Activity {
                     .append(csv(o.optString("bestSide10", ""))).append(',')
                     .append(csv(o.optString("bestSide15", ""))).append(',')
                     .append(o.optLong("longHit2Sec", -1)).append(',')
+                    .append(o.optLong("longHit22Sec", -1)).append(',')
                     .append(o.optLong("longHit28Sec", -1)).append(',')
                     .append(o.optLong("longHit35Sec", -1)).append(',')
                     .append(o.optLong("shortHit2Sec", -1)).append(',')
+                    .append(o.optLong("shortHit22Sec", -1)).append(',')
                     .append(o.optLong("shortHit28Sec", -1)).append(',')
                     .append(o.optLong("shortHit35Sec", -1)).append(',')
                     .append(o.optString("longAdverseBefore2", "")).append(',')
+                    .append(o.optString("longAdverseBefore22", "")).append(',')
                     .append(o.optString("longAdverseBefore28", "")).append(',')
                     .append(o.optString("longAdverseBefore35", "")).append(',')
                     .append(o.optString("shortAdverseBefore2", "")).append(',')
+                    .append(o.optString("shortAdverseBefore22", "")).append(',')
                     .append(o.optString("shortAdverseBefore28", "")).append(',')
                     .append(o.optString("shortAdverseBefore35", "")).append(',')
                     .append(o.optBoolean("oracleLongClean28", false)).append(',')

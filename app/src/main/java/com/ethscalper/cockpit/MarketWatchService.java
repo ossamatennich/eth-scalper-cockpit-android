@@ -50,12 +50,13 @@ public class MarketWatchService extends Service {
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
-    private static final String CH_WATCH = "eth_scalper_watch_v22800";
-    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22800";
+    private static final String CH_WATCH = "eth_scalper_watch_v22801";
+    private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22801";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
     private static final int NOTIF_WATCH_ID = 22800;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
+    private static final long OBSERVATION_MAX_AGE_MS = 15 * 60 * 1000L;
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
             "btcusdt@kline_1m/btcusdt@bookTicker";
@@ -201,7 +202,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — feature replay lab v2.28.0",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro label lab v2.28.1",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -578,7 +579,7 @@ public class MarketWatchService extends Service {
         pruneFlows(System.currentTimeMillis());
     }
 
-    private void evaluateSignal(long now) {
+    private synchronized void evaluateSignal(long now) {
         MarketSnapshot snapshot = buildSnapshot(now);
         updateObservedSignals(snapshot, now);
 
@@ -593,6 +594,11 @@ public class MarketWatchService extends Service {
 
         lastDecision = decision;
         if (decision.isSignal()) {
+            if (isDuplicateRecentObservation(decision, now)) {
+                broadcastStatus("signal_duplicate_lock", "Signal doublon ignoré par verrou observation");
+                return;
+            }
+
             lastSignal = decision;
             lastSignalAt = now;
             recordObservedSignal(decision, snapshot, now);
@@ -660,10 +666,12 @@ public class MarketWatchService extends Service {
                 frame.futureMin15 = Math.min(frame.futureMin15, price);
 
                 updateLongTarget(frame, 2.00, longMove, shortMove, ageSec);
+                updateLongTarget(frame, 2.20, longMove, shortMove, ageSec);
                 updateLongTarget(frame, 2.80, longMove, shortMove, ageSec);
                 updateLongTarget(frame, 3.50, longMove, shortMove, ageSec);
 
                 updateShortTarget(frame, 2.00, shortMove, longMove, ageSec);
+                updateShortTarget(frame, 2.20, shortMove, longMove, ageSec);
                 updateShortTarget(frame, 2.80, shortMove, longMove, ageSec);
                 updateShortTarget(frame, 3.50, shortMove, longMove, ageSec);
             } else {
@@ -677,6 +685,11 @@ public class MarketWatchService extends Service {
             if (f.longHit2Sec < 0) {
                 f.longAdverseBefore2 = Math.max(f.longAdverseBefore2, adverse);
                 if (favorable >= target) f.longHit2Sec = ageSec;
+            }
+        } else if (target == 2.20) {
+            if (f.longHit22Sec < 0) {
+                f.longAdverseBefore22 = Math.max(f.longAdverseBefore22, adverse);
+                if (favorable >= target) f.longHit22Sec = ageSec;
             }
         } else if (target == 2.80) {
             if (f.longHit28Sec < 0) {
@@ -696,6 +709,11 @@ public class MarketWatchService extends Service {
             if (f.shortHit2Sec < 0) {
                 f.shortAdverseBefore2 = Math.max(f.shortAdverseBefore2, adverse);
                 if (favorable >= target) f.shortHit2Sec = ageSec;
+            }
+        } else if (target == 2.20) {
+            if (f.shortHit22Sec < 0) {
+                f.shortAdverseBefore22 = Math.max(f.shortAdverseBefore22, adverse);
+                if (favorable >= target) f.shortHit22Sec = ageSec;
             }
         } else if (target == 2.80) {
             if (f.shortHit28Sec < 0) {
@@ -786,16 +804,20 @@ public class MarketWatchService extends Service {
         o.put("bestSide15", bestSide(f.futureMax15 - f.ethLast, f.ethLast - f.futureMin15));
 
         o.put("longHit2Sec", f.longHit2Sec);
+        o.put("longHit22Sec", f.longHit22Sec);
         o.put("longHit28Sec", f.longHit28Sec);
         o.put("longHit35Sec", f.longHit35Sec);
         o.put("shortHit2Sec", f.shortHit2Sec);
+        o.put("shortHit22Sec", f.shortHit22Sec);
         o.put("shortHit28Sec", f.shortHit28Sec);
         o.put("shortHit35Sec", f.shortHit35Sec);
 
         putMetric(o, "longAdverseBefore2", f.longAdverseBefore2);
+        putMetric(o, "longAdverseBefore22", f.longAdverseBefore22);
         putMetric(o, "longAdverseBefore28", f.longAdverseBefore28);
         putMetric(o, "longAdverseBefore35", f.longAdverseBefore35);
         putMetric(o, "shortAdverseBefore2", f.shortAdverseBefore2);
+        putMetric(o, "shortAdverseBefore22", f.shortAdverseBefore22);
         putMetric(o, "shortAdverseBefore28", f.shortAdverseBefore28);
         putMetric(o, "shortAdverseBefore35", f.shortAdverseBefore35);
 
@@ -876,6 +898,21 @@ public class MarketWatchService extends Service {
         return o;
     }
 
+    private boolean isDuplicateRecentObservation(SignalDecision decision, long now) {
+        if (decision == null || !decision.isSignal()) return false;
+
+        for (ObservedSignal item : observedSignals) {
+            if (item == null || item.signal == null) continue;
+            if (now - item.createdAt <= 5000
+                    && decision.side.equals(item.signal.side)
+                    && Math.abs(decision.entry - item.signal.entry) <= 0.05) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void recordObservedSignal(SignalDecision decision, MarketSnapshot snapshot, long now) {
         double price = Double.isFinite(snapshot.ethLast) && snapshot.ethLast > 0 ? snapshot.ethLast : decision.entry;
         ObservedSignal item = new ObservedSignal(++observedSignalId, now, decision, price, snapshot);
@@ -904,7 +941,10 @@ public class MarketWatchService extends Service {
                 item.mae = Math.max(0, item.maxPrice - item.signal.entry);
             }
 
-            String status = marketStatusForSignal(item.signal, snapshot);
+            String status = now - item.createdAt >= OBSERVATION_MAX_AGE_MS
+                    ? "TIMEOUT_15M"
+                    : marketStatusForSignal(item.signal, snapshot);
+
             if (!"ACTIVE".equals(status) && !"NONE".equals(status) && !"NO_PRICE".equals(status)) {
                 item.status = status;
                 item.closedAt = now;
@@ -919,27 +959,15 @@ public class MarketWatchService extends Service {
         double price = snapshot.ethLast;
         if (!Double.isFinite(price) || price <= 0) return "NO_PRICE";
 
-        double avgRange = Math.max(0.20, snapshot.avgRange20);
-        double reversalMove = Math.max(0.75, avgRange * 0.85);
-        double entryDriftLimit = Math.max(1.60, avgRange * 1.35);
-
         if ("LONG".equals(signal.side)) {
             if (price <= signal.stopLoss) return "SL_TOUCHED";
             if (price >= signal.takeProfit) return "TP_TOUCHED";
-            if (price > signal.entry + entryDriftLimit && price < signal.takeProfit) return "ENTRY_TOO_FAR";
-            if (snapshot.btcMove5 < -0.0012) return "BTC_VETO";
-            if (snapshot.flowNorm < -0.20 && snapshot.move1 < -Math.max(0.35, avgRange * 0.40)) return "REVERSAL_FLOW";
-            if (snapshot.move3 < -reversalMove) return "REVERSAL_MOVE";
             return "ACTIVE";
         }
 
         if ("SHORT".equals(signal.side)) {
             if (price >= signal.stopLoss) return "SL_TOUCHED";
             if (price <= signal.takeProfit) return "TP_TOUCHED";
-            if (price < signal.entry - entryDriftLimit && price > signal.takeProfit) return "ENTRY_TOO_FAR";
-            if (snapshot.btcMove5 > 0.0012) return "BTC_VETO";
-            if (snapshot.flowNorm > 0.20 && snapshot.move1 > Math.max(0.35, avgRange * 0.40)) return "REVERSAL_FLOW";
-            if (snapshot.move3 > reversalMove) return "REVERSAL_MOVE";
             return "ACTIVE";
         }
 
@@ -1004,6 +1032,31 @@ public class MarketWatchService extends Service {
         putMetric(m, "recentHigh", item.recentHigh);
         putMetric(m, "recentLow", item.recentLow);
         putMetric(m, "recentRange", item.recentRange);
+
+        putMetric(m, "move1Norm", item.move1Norm);
+        putMetric(m, "move3Norm", item.move3Norm);
+        putMetric(m, "move8Norm", item.move8Norm);
+        putMetric(m, "moveAccel13", item.moveAccel13);
+        putMetric(m, "moveAccel38", item.moveAccel38);
+        putMetric(m, "rangePosition", item.rangePosition);
+        putMetric(m, "distanceToHigh", item.distanceToHigh);
+        putMetric(m, "distanceToLow", item.distanceToLow);
+        putMetric(m, "roomLong", item.roomLong);
+        putMetric(m, "roomShort", item.roomShort);
+        putMetric(m, "flow15", item.flow15);
+        putMetric(m, "flow30", item.flow30);
+        putMetric(m, "flow60", item.flow60);
+        putMetric(m, "flow120", item.flow120);
+        putMetric(m, "deltaFlow15_60", item.deltaFlow15_60);
+        putMetric(m, "deltaFlow30_120", item.deltaFlow30_120);
+        putMetric(m, "flowAccel", item.flowAccel);
+        putMetric(m, "btcMove1", item.btcMove1);
+        putMetric(m, "btcMove3", item.btcMove3);
+        putMetric(m, "btcMove8", item.btcMove8);
+        putMetric(m, "btcAccel1_5", item.btcAccel1_5);
+        putMetric(m, "btcAccel3_8", item.btcAccel3_8);
+        putMetric(m, "antiBurstScore", item.antiBurstScore);
+
         putMetric(m, "targetNetPerEthAfterFees", item.signal.targetMove - 1.33);
         putMetric(m, "stopCostPerEthAfterFees", item.signal.stopDistance + 1.33);
         return m;
@@ -1053,45 +1106,20 @@ public class MarketWatchService extends Service {
 
         long age = now - lastSignalAt;
         if (age < 0) return "NONE";
+        if (age >= OBSERVATION_MAX_AGE_MS) return "TIMEOUT_15M";
 
         double price = snapshot.ethLast;
         if (!Double.isFinite(price) || price <= 0) return "NO_PRICE";
 
-        double avgRange = Math.max(0.20, snapshot.avgRange20);
-        double reversalMove = Math.max(0.75, avgRange * 0.85);
-        double entryDriftLimit = Math.max(1.60, avgRange * 1.35);
-
         if ("LONG".equals(lastSignal.side)) {
             if (price <= lastSignal.stopLoss) return "SL_TOUCHED";
             if (price >= lastSignal.takeProfit) return "TP_TOUCHED";
-
-            if (price > lastSignal.entry + entryDriftLimit && price < lastSignal.takeProfit) {
-                return "ENTRY_TOO_FAR";
-            }
-
-            if (snapshot.btcMove5 < -0.0012) return "BTC_VETO";
-            if (snapshot.flowNorm < -0.20 && snapshot.move1 < -Math.max(0.35, avgRange * 0.40)) {
-                return "REVERSAL_FLOW";
-            }
-            if (snapshot.move3 < -reversalMove) return "REVERSAL_MOVE";
-
             return "ACTIVE";
         }
 
         if ("SHORT".equals(lastSignal.side)) {
             if (price >= lastSignal.stopLoss) return "SL_TOUCHED";
             if (price <= lastSignal.takeProfit) return "TP_TOUCHED";
-
-            if (price < lastSignal.entry - entryDriftLimit && price > lastSignal.takeProfit) {
-                return "ENTRY_TOO_FAR";
-            }
-
-            if (snapshot.btcMove5 > 0.0012) return "BTC_VETO";
-            if (snapshot.flowNorm > 0.20 && snapshot.move1 > Math.max(0.35, avgRange * 0.40)) {
-                return "REVERSAL_FLOW";
-            }
-            if (snapshot.move3 > reversalMove) return "REVERSAL_MOVE";
-
             return "ACTIVE";
         }
 
@@ -1103,7 +1131,9 @@ public class MarketWatchService extends Service {
     }
 
     private long activeSignalRemainingSec(long now) {
-        return -1;
+        if (lastSignalAt <= 0) return -1;
+        long remaining = OBSERVATION_MAX_AGE_MS - Math.max(0, now - lastSignalAt);
+        return Math.max(0, remaining / 1000);
     }
 
     private MarketSnapshot buildSnapshot(long now) {
@@ -1624,16 +1654,20 @@ public class MarketWatchService extends Service {
         boolean futureClosed15;
 
         long longHit2Sec = -1;
+        long longHit22Sec = -1;
         long longHit28Sec = -1;
         long longHit35Sec = -1;
         long shortHit2Sec = -1;
+        long shortHit22Sec = -1;
         long shortHit28Sec = -1;
         long shortHit35Sec = -1;
 
         double longAdverseBefore2;
+        double longAdverseBefore22;
         double longAdverseBefore28;
         double longAdverseBefore35;
         double shortAdverseBefore2;
+        double shortAdverseBefore22;
         double shortAdverseBefore28;
         double shortAdverseBefore35;
 
@@ -1657,6 +1691,30 @@ public class MarketWatchService extends Service {
             this.recentHigh = s.recentHigh;
             this.recentLow = s.recentLow;
             this.recentRange = Math.max(0, s.recentHigh - s.recentLow);
+
+            this.move1Norm = s.move1Norm;
+            this.move3Norm = s.move3Norm;
+            this.move8Norm = s.move8Norm;
+            this.moveAccel13 = s.moveAccel13;
+            this.moveAccel38 = s.moveAccel38;
+            this.rangePosition = s.rangePosition;
+            this.distanceToHigh = s.distanceToHigh;
+            this.distanceToLow = s.distanceToLow;
+            this.roomLong = s.roomLong;
+            this.roomShort = s.roomShort;
+            this.flow15 = s.flow15;
+            this.flow30 = s.flow30;
+            this.flow60 = s.flow60;
+            this.flow120 = s.flow120;
+            this.deltaFlow15_60 = s.deltaFlow15_60;
+            this.deltaFlow30_120 = s.deltaFlow30_120;
+            this.flowAccel = s.flowAccel;
+            this.btcMove1 = s.btcMove1;
+            this.btcMove3 = s.btcMove3;
+            this.btcMove8 = s.btcMove8;
+            this.btcAccel1_5 = s.btcAccel1_5;
+            this.btcAccel3_8 = s.btcAccel3_8;
+            this.antiBurstScore = s.antiBurstScore;
 
             this.move1Norm = s.move1Norm;
             this.move3Norm = s.move3Norm;

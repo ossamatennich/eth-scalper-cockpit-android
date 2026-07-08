@@ -1,0 +1,16 @@
+ETH Scalper Cockpit Android v2.28.1
+
+Pro Label Lab :
+- Aucun trade réel.
+- Ne change pas encore le moteur de signal.
+- Corrige le journal d'observation :
+  * evaluateSignal synchronisé pour éviter les doublons.
+  * verrou anti-doublon sur signaux identiques à moins de 5 secondes.
+  * suppression des fermetures prématurées ENTRY_TOO_FAR / REVERSAL_FLOW / BTC_VETO.
+  * observation propre jusqu'à TP, SL ou TIMEOUT_15M.
+- Ajoute labels futurs 2.20 :
+  longHit22Sec, shortHit22Sec,
+  longAdverseBefore22, shortAdverseBefore22.
+- Ajoute les features v2.28 dans signalMetricsJson.
+- But : obtenir des labels propres avant moteur rentable.
+- Toujours RESEARCH_ONLY.
