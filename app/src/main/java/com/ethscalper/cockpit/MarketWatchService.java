@@ -54,7 +54,7 @@ public class MarketWatchService extends Service {
     private static final String CH_SIGNAL = "eth_scalper_signal_loud_v22801";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
-    private static final int NOTIF_WATCH_ID = 22800;
+    private static final int NOTIF_WATCH_ID = 22801;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final long OBSERVATION_MAX_AGE_MS = 15 * 60 * 1000L;
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
@@ -1702,30 +1702,6 @@ public class MarketWatchService extends Service {
             this.distanceToLow = s.distanceToLow;
             this.roomLong = s.roomLong;
             this.roomShort = s.roomShort;
-            this.flow15 = s.flow15;
-            this.flow30 = s.flow30;
-            this.flow60 = s.flow60;
-            this.flow120 = s.flow120;
-            this.deltaFlow15_60 = s.deltaFlow15_60;
-            this.deltaFlow30_120 = s.deltaFlow30_120;
-            this.flowAccel = s.flowAccel;
-            this.btcMove1 = s.btcMove1;
-            this.btcMove3 = s.btcMove3;
-            this.btcMove8 = s.btcMove8;
-            this.btcAccel1_5 = s.btcAccel1_5;
-            this.btcAccel3_8 = s.btcAccel3_8;
-            this.antiBurstScore = s.antiBurstScore;
-
-            this.move1Norm = s.move1Norm;
-            this.move3Norm = s.move3Norm;
-            this.move8Norm = s.move8Norm;
-            this.moveAccel13 = s.moveAccel13;
-            this.moveAccel38 = s.moveAccel38;
-            this.rangePosition = s.rangePosition;
-            this.distanceToHigh = s.distanceToHigh;
-            this.distanceToLow = s.distanceToLow;
-            this.roomLong = s.roomLong;
-            this.roomShort = s.roomShort;
             this.pullbackFromHigh = s.pullbackFromHigh;
             this.pullbackFromLow = s.pullbackFromLow;
             this.flow15 = s.flow15;
@@ -2062,6 +2038,30 @@ public class MarketWatchService extends Service {
         final double recentLow;
         final double recentRange;
 
+        final double move1Norm;
+        final double move3Norm;
+        final double move8Norm;
+        final double moveAccel13;
+        final double moveAccel38;
+        final double rangePosition;
+        final double distanceToHigh;
+        final double distanceToLow;
+        final double roomLong;
+        final double roomShort;
+        final double flow15;
+        final double flow30;
+        final double flow60;
+        final double flow120;
+        final double deltaFlow15_60;
+        final double deltaFlow30_120;
+        final double flowAccel;
+        final double btcMove1;
+        final double btcMove3;
+        final double btcMove8;
+        final double btcAccel1_5;
+        final double btcAccel3_8;
+        final double antiBurstScore;
+
         ObservedSignal(long id, long createdAt, SignalDecision signal, double price, MarketSnapshot snapshot) {
             this.id = id;
             this.createdAt = createdAt;
@@ -2088,6 +2088,30 @@ public class MarketWatchService extends Service {
             this.recentHigh = snapshot.recentHigh;
             this.recentLow = snapshot.recentLow;
             this.recentRange = Math.max(0, snapshot.recentHigh - snapshot.recentLow);
+
+            this.move1Norm = snapshot.move1Norm;
+            this.move3Norm = snapshot.move3Norm;
+            this.move8Norm = snapshot.move8Norm;
+            this.moveAccel13 = snapshot.moveAccel13;
+            this.moveAccel38 = snapshot.moveAccel38;
+            this.rangePosition = snapshot.rangePosition;
+            this.distanceToHigh = snapshot.distanceToHigh;
+            this.distanceToLow = snapshot.distanceToLow;
+            this.roomLong = snapshot.roomLong;
+            this.roomShort = snapshot.roomShort;
+            this.flow15 = snapshot.flow15;
+            this.flow30 = snapshot.flow30;
+            this.flow60 = snapshot.flow60;
+            this.flow120 = snapshot.flow120;
+            this.deltaFlow15_60 = snapshot.deltaFlow15_60;
+            this.deltaFlow30_120 = snapshot.deltaFlow30_120;
+            this.flowAccel = snapshot.flowAccel;
+            this.btcMove1 = snapshot.btcMove1;
+            this.btcMove3 = snapshot.btcMove3;
+            this.btcMove8 = snapshot.btcMove8;
+            this.btcAccel1_5 = snapshot.btcAccel1_5;
+            this.btcAccel3_8 = snapshot.btcAccel3_8;
+            this.antiBurstScore = snapshot.antiBurstScore;
         }
     }
 
