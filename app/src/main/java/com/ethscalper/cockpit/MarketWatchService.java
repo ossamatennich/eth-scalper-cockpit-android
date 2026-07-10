@@ -202,7 +202,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.29.0",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.29.1",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -1291,7 +1291,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.29.0 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.29.1 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1366,7 +1366,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.29.0-android");
+            state.put("version", "2.29.1-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1503,7 +1503,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.29.0-feature-replay-lab");
+        m.put("rulesProfile", "ETH Scalper sessions v2.29.1-feature-replay-lab");
 
         return m;
     }
