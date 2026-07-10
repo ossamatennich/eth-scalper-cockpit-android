@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.28.0 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.29.0 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -516,7 +516,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_28_1_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_29_0_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -572,7 +572,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.28.0 Android natif\n");
+        b.append("Version app: v2.29.0 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
         b.append("Mode: CLEAN_C1_A_PLUS — recherche uniquement, aucun trade réel\n\n");
 
@@ -709,7 +709,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.28.0\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.29.0\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -762,7 +762,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("PRO LABEL LAB — ETH SCALPER v2.28.1\n\n");
+        b.append("PRO LABEL LAB — ETH SCALPER v2.29.0\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -793,7 +793,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.28.1\n\n");
+        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.29.0\n\n");
         b.append("mode=").append(s.optString("mode", "—")).append("\n");
         b.append("frames=").append(s.optInt("frames", 0)).append("\n");
         b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");
