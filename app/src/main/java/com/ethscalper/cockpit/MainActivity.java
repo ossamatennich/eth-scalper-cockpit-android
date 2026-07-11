@@ -29,6 +29,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.EditText;
+import android.widget.Switch;
+import android.text.InputType;
 
 import androidx.core.content.ContextCompat;
 
@@ -60,7 +63,7 @@ public class MainActivity extends Activity {
     private LinearLayout root;
     private TextView statusPill, feedAge, decisionValue, decisionReason, actionValue, actionDetails;
     private TextView ethPrice, ethQuotes, btcPrice, btcQuotes, movementValue, signalValue;
-    private TextView diagnosticValue, serviceInfo;
+    private TextView diagnosticValue, serviceInfo, aiInfo;
     private boolean showingLegacyCockpit;
     private boolean receiverRegistered;
     private WebView legacyWebView;
@@ -144,7 +147,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.29.1 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.30.0 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -224,6 +227,11 @@ public class MainActivity extends Activity {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.VERTICAL);
         card.addView(buttons);
+        aiInfo = text("IA OpenAI : " + (SecureAiStore.isEnabled(this) ? "ON · " + SecureAiStore.maskedKey(this) : "OFF"), 12, MUTED, false);
+        aiInfo.setPadding(0, 0, 0, dp(10));
+        card.addView(aiInfo);
+        buttons.addView(actionButton("Réglages IA OpenAI", CYAN,
+                this::showAiSettingsDialog));
         buttons.addView(actionButton("Tester alerte forte", RED,
                 () -> sendServiceAction(MarketWatchService.ACTION_TEST_ALERT, "Alerte forte envoyée")));
         buttons.addView(actionButton("Tester vibration", CYAN,
@@ -288,6 +296,72 @@ public class MainActivity extends Activity {
         return button;
     }
 
+    private void showAiSettingsDialog() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(18), dp(8), dp(18), 0);
+
+        Switch enabled = new Switch(this);
+        enabled.setText("IA automatique OpenAI");
+        enabled.setTextColor(TEXT);
+        enabled.setTextSize(15);
+        enabled.setChecked(SecureAiStore.isEnabled(this));
+        box.addView(enabled);
+
+        EditText keyInput = new EditText(this);
+        keyInput.setHint(SecureAiStore.hasKey(this) ? SecureAiStore.maskedKey(this) + " · laisser vide pour conserver" : "Coller clé OpenAI ici");
+        keyInput.setSingleLine(true);
+        keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        keyInput.setTextColor(TEXT);
+        keyInput.setHintTextColor(MUTED);
+        box.addView(keyInput);
+
+        EditText modelInput = new EditText(this);
+        modelInput.setHint("Modèle OpenAI");
+        modelInput.setSingleLine(true);
+        modelInput.setText(SecureAiStore.getModel(this));
+        modelInput.setTextColor(TEXT);
+        modelInput.setHintTextColor(MUTED);
+        box.addView(modelInput);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Réglages IA OpenAI")
+                .setMessage("La clé est stockée localement. Elle n’est pas envoyée dans GitHub.")
+                .setView(box)
+                .setPositiveButton("Enregistrer", null)
+                .setNegativeButton("Annuler", null)
+                .setNeutralButton("Effacer clé", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String key = keyInput.getText() == null ? "" : keyInput.getText().toString().trim();
+                String model = modelInput.getText() == null ? "" : modelInput.getText().toString().trim();
+
+                if (!key.isEmpty()) SecureAiStore.saveKey(this, key);
+                SecureAiStore.saveModel(this, model);
+                SecureAiStore.setEnabled(this, enabled.isChecked());
+
+                if (aiInfo != null) {
+                    aiInfo.setText("IA OpenAI : " + (SecureAiStore.isEnabled(this) ? "ON · " + SecureAiStore.maskedKey(this) : "OFF"));
+                }
+
+                sendServiceAction(MarketWatchService.ACTION_SYNC_NOW, "Réglages IA enregistrés");
+                dialog.dismiss();
+            });
+
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                SecureAiStore.clear(this);
+                if (aiInfo != null) aiInfo.setText("IA OpenAI : OFF");
+                sendServiceAction(MarketWatchService.ACTION_SYNC_NOW, "Clé IA effacée");
+                dialog.dismiss();
+            });
+        });
+
+        dialog.show();
+    }
+
+
     private TextView text(String value, int size, int color, boolean bold) {
         TextView view = new TextView(this);
         view.setText(value);
@@ -345,16 +419,13 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (statusPill == null) return;
                 renderConnection(connected, ageSeconds);
-                if ("ENTRER".equals(decision)) {
-                    renderDecision("ATTENDRE", "MODE OBSERVATION — signal non exécutable en réel");
-                } else {
-                    renderDecision(decision, visibleReason);
-                }
+                renderDecision(decision, visibleReason);
                 renderPrices(eth, bid, ask, btc, btcBid, btcAsk);
                 renderMovement(movement);
                 renderSignal(lastSignal, signalAt, decision, visibleReason, state.optBoolean("activeSignal", false), state.optString("activeSignalStatus", "NONE"));
                 renderAction(action, decision, lastSignal);
                 renderDiagnostics(diagnostics, state.optString("engineReason", "NO_DATA"), reason);
+                if (aiInfo != null) aiInfo.setText("IA OpenAI : " + (state.optBoolean("aiEnabled", false) ? "ON" : "OFF") + " · " + state.optString("aiStatus", "AI_OFF"));
                 serviceInfo.setText(visibleServiceInfo);
             });
         } catch (Exception ignored) {}
@@ -463,9 +534,9 @@ public class MainActivity extends Activity {
 
     private void renderAction(String action, String decision, JSONObject signal) {
         if ("ENTRER".equals(decision) && signal != null) {
-            actionValue.setText("NE PAS EXÉCUTER — RECHERCHE");
-            actionValue.setTextColor(ORANGE);
-            actionDetails.setText("Signal observé seulement après 2 stops réels consécutifs"
+            actionValue.setText("SIGNAL RESEARCH — EXÉCUTION MANUELLE");
+            actionValue.setTextColor(CYAN);
+            actionDetails.setText("Signal confirmé moteur/IA si IA active"
                     + "\nPrix théorique : " + formatPrice(number(signal, "entry"))
                     + "\nTP : " + formatPrice(number(signal, "tp"))
                     + " · SL : " + formatPrice(number(signal, "sl"))
@@ -516,7 +587,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_29_1_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_30_0_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -572,9 +643,9 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.29.1 Android natif\n");
+        b.append("Version app: v2.30.0 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
-        b.append("Mode: V2291_SCORE_ENGINE_ADAPTIVE_ROOM — recherche uniquement, aucun trade réel\n\n");
+        b.append("Mode: V230_HYBRID_AI_SCALP_ENGINE — recherche uniquement, aucun trade réel\n\n");
 
         b.append("STATUT\n");
         b.append("- connected: ").append(s.optBoolean("connected", false)).append("\n");
@@ -709,7 +780,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.29.1\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.30.0\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -762,7 +833,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("PRO LABEL LAB — ETH SCALPER v2.29.1\n\n");
+        b.append("PRO LABEL LAB — ETH SCALPER v2.30.0\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -793,7 +864,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.29.1\n\n");
+        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.30.0\n\n");
         b.append("mode=").append(s.optString("mode", "—")).append("\n");
         b.append("frames=").append(s.optInt("frames", 0)).append("\n");
         b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");

@@ -7,26 +7,22 @@ import java.util.List;
 import java.util.Locale;
 
 public final class SignalEngine {
-    public static final long COOLDOWN_MS = 45 * 60 * 1000L;
-    private static final int MAX_DIAGNOSTICS = 260;
+    public static final long COOLDOWN_MS = 18 * 60 * 1000L;
+    private static final int MAX_DIAGNOSTICS = 320;
 
     private static final double FEE_ROUND_TRIP = 1.33;
     private static final double SLIPPAGE_RESEARCH = 0.10;
     private static final double EFFECTIVE_COST = FEE_ROUND_TRIP + SLIPPAGE_RESEARCH;
 
-    private static final double TARGET_MOVE = 5.50;
-    private static final double STOP_DISTANCE = 2.20;
+    private static final double TP_SCALP = 3.20;
+    private static final double TP_STANDARD = 3.80;
+    private static final double TP_PREMIUM = 5.50;
 
-    private static final double STRICT_ROOM = 3.50;
-    private static final double ADAPTIVE_ROOM = 2.20;
-    private static final double HARD_ROOM_FLOOR = 1.80;
+    private static final double SL_SCALP = 1.35;
+    private static final double SL_STANDARD = 1.65;
+    private static final double SL_PREMIUM = 2.20;
 
-    private static final double MIN_SCORE = 1.55;
-    private static final double MIN_GAP = 0.65;
-    private static final double STRONG_SCORE = 2.08;
-    private static final double STRONG_GAP = 0.95;
-
-    private static final double MAX_SPREAD = 0.50;
+    private static final double MAX_SPREAD = 0.55;
 
     private final Deque<DiagnosticEntry> diagnostics = new ArrayDeque<>();
 
@@ -34,117 +30,67 @@ public final class SignalEngine {
         Movement movement = movement(s);
 
         if (s.ethCandles < 30 || s.btcCandles < 10 || !positive(s.ethLast)) {
-            return reject(s, "V2291_NO_DATA", "Données ETH/BTC insuffisantes", 0, movement);
+            return reject(s, "V230_NO_DATA", "Données ETH/BTC insuffisantes", 0, movement);
         }
 
         if (!positive(s.avgRange20) || !positive(s.avgVolume20)) {
-            return reject(s, "V2291_HISTORY_BAD", "Historique range/volume incomplet", 0, movement);
+            return reject(s, "V230_HISTORY_BAD", "Historique range/volume incomplet", 0, movement);
         }
 
         if (s.lastSignalAt > 0 && s.now - s.lastSignalAt < COOLDOWN_MS) {
-            return reject(s, "V2291_COOLDOWN_45M", "Cooldown global v2.29.1 45 minutes", 0, movement);
+            return reject(s, "V230_COOLDOWN_18M", "Cooldown v2.30 18 minutes", 0, movement);
         }
 
         double spread = liveSpread(s);
         if (Double.isFinite(spread) && spread > MAX_SPREAD) {
-            return reject(s, "V2291_SPREAD_BAD", "Spread trop large pour signal research", 0, movement);
+            return reject(s, "V230_SPREAD_BAD", "Spread trop large pour scalp research", 0, movement);
         }
 
         Scores scores = score(s);
-        double best = Math.max(scores.longScore, scores.shortScore);
-        double gap = Math.abs(scores.longScore - scores.shortScore);
+        Plan premium = premiumContinuationPlan(s, scores);
+        Plan scalp = scalpContinuationPlan(s, scores);
+        Plan fade = rangeFadePlan(s, scores);
 
-        if (best < MIN_SCORE || gap < MIN_GAP) {
+        Plan plan = best(premium, scalp, fade);
+
+        if (!plan.pass) {
+            double bestScore = Math.max(scores.longScore, scores.shortScore);
+            double gap = Math.abs(scores.longScore - scores.shortScore);
             return reject(
                     s,
-                    "V2291_SCORE_WEAK",
-                    fmt("Score insuffisant L=%.2f S=%.2f gap=%.2f", scores.longScore, scores.shortScore, gap),
-                    scoreToInt(best),
+                    "V230_NO_EDGE",
+                    fmt("Aucun edge propre L=%.2f S=%.2f gap=%.2f rp=%.2f roomL=%.2f roomS=%.2f",
+                            scores.longScore, scores.shortScore, gap, finiteOr(s.rangePosition, 0.5), s.roomLong, s.roomShort),
+                    scoreToInt(bestScore),
                     movement
             );
         }
 
-        int side = scores.longScore > scores.shortScore ? 1 : -1;
-        String sideName = side > 0 ? "LONG" : "SHORT";
-        double room = side > 0 ? s.roomLong : s.roomShort;
-        double rangePosition = finiteOr(s.rangePosition, 0.5);
-
-        if (side > 0 && rangePosition > 0.88) {
-            return reject(s, "V2291_TERMINAL_LONG", "LONG refusé : rangePosition trop haute", scoreToInt(best), movement);
-        }
-
-        if (side < 0 && rangePosition < 0.22) {
-            return reject(s, "V2291_TERMINAL_SHORT", "SHORT refusé : rangePosition trop basse", scoreToInt(best), movement);
-        }
-
-        if (side * s.flow60 < -0.02) {
-            return reject(s, "V2291_FLOW60_AGAINST", "Flow60 opposé au sens", scoreToInt(best), movement);
-        }
-
-        if (side * s.flow30 < 0.01) {
-            return reject(s, "V2291_FLOW30_TOO_WEAK", "Flow30 directionnel insuffisant", scoreToInt(best), movement);
-        }
-
-        double directionalMove1Z = side * z(s.move1Norm, 0.0, 0.572559);
-        if (directionalMove1Z > 2.65 && ((side > 0 && rangePosition > 0.72) || (side < 0 && rangePosition < 0.30))) {
-            return reject(s, "V2291_LATE_ENTRY", "Entrée tardive : impulsion déjà consommée", scoreToInt(best), movement);
-        }
-
-        double btc1 = z(s.btcMove1, -0.000052, 0.000926);
-        double btc3 = z(s.btcMove3, -0.000052, 0.000926);
-
-        if (side > 0 && btc1 < -1.60 && btc3 < -0.70) {
-            return reject(s, "V2291_BTC_CONFLICT", "BTC violemment opposé au LONG", scoreToInt(best), movement);
-        }
-
-        if (side < 0 && btc1 > 1.60 && btc3 > 0.70) {
-            return reject(s, "V2291_BTC_CONFLICT", "BTC violemment opposé au SHORT", scoreToInt(best), movement);
-        }
-
-        RoomPolicy roomPolicy = roomPolicy(s, side, room, best, gap, rangePosition);
-
-        if (!roomPolicy.pass) {
-            return reject(
-                    s,
-                    roomPolicy.code,
-                    roomPolicy.message,
-                    scoreToInt(best),
-                    movement
-            );
-        }
-
-        double netTarget = TARGET_MOVE - EFFECTIVE_COST;
-        double riskAfterCost = STOP_DISTANCE + EFFECTIVE_COST;
-
-        if (netTarget <= 0.0 || netTarget / riskAfterCost < 0.95) {
-            return reject(s, "V2291_EV_TOO_LOW", "Ratio net/risk insuffisant après frais", scoreToInt(best), movement);
-        }
-
-        double entry = side > 0 ? (positive(s.ethAsk) ? s.ethAsk : s.ethLast)
+        double entry = plan.side > 0 ? (positive(s.ethAsk) ? s.ethAsk : s.ethLast)
                 : (positive(s.ethBid) ? s.ethBid : s.ethLast);
 
-        double tp = entry + side * TARGET_MOVE;
-        double sl = entry - side * STOP_DISTANCE;
+        double tp = entry + plan.side * plan.target;
+        double sl = entry - plan.side * plan.stop;
 
-        int score = scoreToInt(best);
-        int quantity = computeQuantity(score, STOP_DISTANCE, TARGET_MOVE, movement.consumed);
+        int score = scoreToInt(plan.strength);
+        int quantity = computeQuantity(score, plan.stop, plan.target, movement.consumed, plan.family);
 
         if (quantity <= 0) {
-            return reject(s, "V2291_SIZE_ZERO", "Signal refusé : espérance nette insuffisante", score, movement);
+            return reject(s, "V230_SIZE_ZERO", "Signal refusé : taille research nulle", score, movement);
         }
 
-        String family = "v2.29.1 Pro Score Engine — adaptive room shadow";
+        String family = "v2.30 " + plan.family + " — hybrid AI ready";
 
         SignalDecision decision = SignalDecision.signal(
-                sideName,
+                plan.side > 0 ? "LONG" : "SHORT",
                 family,
                 score,
                 quantity,
                 round2(entry),
                 round2(tp),
                 round2(sl),
-                TARGET_MOVE,
-                STOP_DISTANCE,
+                plan.target,
+                plan.stop,
                 movement.impulse,
                 true,
                 movement.origin,
@@ -155,100 +101,121 @@ public final class SignalEngine {
         record(
                 s.now,
                 decision.reasonCode,
-                fmt(
-                        "V2291_SCORE_ENGINE TP=%.2f SL=%.2f net=%.2f L=%.2f S=%.2f gap=%.2f room=%.2f rp=%.2f policy=%s",
-                        TARGET_MOVE,
-                        STOP_DISTANCE,
-                        netTarget,
+                fmt("V230_SIGNAL family=%s side=%s TP=%.2f SL=%.2f net=%.2f strength=%.2f L=%.2f S=%.2f rp=%.2f roomL=%.2f roomS=%.2f",
+                        plan.family,
+                        plan.side > 0 ? "LONG" : "SHORT",
+                        plan.target,
+                        plan.stop,
+                        plan.target - EFFECTIVE_COST,
+                        plan.strength,
                         scores.longScore,
                         scores.shortScore,
-                        gap,
-                        room,
-                        rangePosition,
-                        roomPolicy.label
-                )
+                        finiteOr(s.rangePosition, 0.5),
+                        s.roomLong,
+                        s.roomShort)
         );
 
         return decision;
     }
 
-    private static RoomPolicy roomPolicy(MarketSnapshot s, int side, double room, double best, double gap, double rangePosition) {
-        String sideName = side > 0 ? "LONG" : "SHORT";
+    private static Plan premiumContinuationPlan(MarketSnapshot s, Scores scores) {
+        int side = scores.longScore >= scores.shortScore ? 1 : -1;
+        double best = Math.max(scores.longScore, scores.shortScore);
+        double gap = Math.abs(scores.longScore - scores.shortScore);
+        double room = side > 0 ? s.roomLong : s.roomShort;
+        double rp = finiteOr(s.rangePosition, 0.5);
 
-        if (!Double.isFinite(room) || room < HARD_ROOM_FLOOR) {
-            return RoomPolicy.reject(
-                    "V2291_ROOM_HARD_TOO_SMALL",
-                    fmt("Room %s trop faible %.2f$ < %.2f$", sideName, room, HARD_ROOM_FLOOR)
-            );
-        }
+        if (best < 2.05 || gap < 0.85) return Plan.no();
+        if (room < 2.60) return Plan.no();
+        if (side > 0 && rp > 0.84) return Plan.no();
+        if (side < 0 && rp < 0.24) return Plan.no();
+        if (side * s.flow30 < 0.025) return Plan.no();
+        if (side * s.flow60 < 0.035) return Plan.no();
+        if (btcHardConflict(s, side)) return Plan.no();
+        if (lateImpulse(s, side, rp, 2.65)) return Plan.no();
+        if (wickRisk(s)) return Plan.no();
 
-        if (room >= STRICT_ROOM) {
-            return RoomPolicy.pass("STRICT_ROOM_OK");
-        }
-
-        boolean strongScore = best >= STRONG_SCORE && gap >= STRONG_GAP;
-        boolean continuation = strongContinuation(s, side, rangePosition);
-        boolean wickRisk = wickRisk(s);
-
-        if (room >= ADAPTIVE_ROOM && strongScore && continuation && !wickRisk) {
-            return RoomPolicy.pass("ADAPTIVE_ROOM_CONTINUATION");
-        }
-
-        if (room >= HARD_ROOM_FLOOR
-                && best >= 2.35
-                && gap >= 1.15
-                && veryStrongContinuation(s, side, rangePosition)
-                && !wickRisk) {
-            return RoomPolicy.pass("ADAPTIVE_ROOM_PREMIUM");
-        }
-
-        return RoomPolicy.reject(
-                "V2291_ROOM_SOFT_BLOCK",
-                fmt("Room %s %.2f$ insuffisante sans continuation premium", sideName, room)
-        );
+        double strength = best + gap * 0.45 + clamp(room / 5.0, 0.0, 0.45);
+        return Plan.pass(side, "PREMIUM_CONTINUATION", TP_PREMIUM, SL_PREMIUM, strength);
     }
 
-    private static boolean strongContinuation(MarketSnapshot s, int side, double rangePosition) {
+    private static Plan scalpContinuationPlan(MarketSnapshot s, Scores scores) {
+        int side = scores.longScore >= scores.shortScore ? 1 : -1;
+        double best = Math.max(scores.longScore, scores.shortScore);
+        double gap = Math.abs(scores.longScore - scores.shortScore);
+        double room = side > 0 ? s.roomLong : s.roomShort;
+        double rp = finiteOr(s.rangePosition, 0.5);
+
+        if (best < 1.32 || gap < 0.42) return Plan.no();
+        if (room < 1.55) return Plan.no();
+        if (side > 0 && rp > 0.78) return Plan.no();
+        if (side < 0 && rp < 0.30) return Plan.no();
+        if (side * s.flow30 < 0.005) return Plan.no();
+        if (side * s.flow60 < -0.035) return Plan.no();
+        if (btcSoftConflict(s, side)) return Plan.no();
+        if (lateImpulse(s, side, rp, 2.95)) return Plan.no();
+
         double move3 = side * z(s.move3Norm, -0.078585, 1.36059);
         double move8 = side * z(s.move8Norm, -0.10989, 2.58921);
-        double flow30 = side * s.flow30;
-        double flow60 = side * s.flow60;
-        double flow120 = side * s.flow120;
-        double btc3 = side * z(s.btcMove3, -0.000052, 0.000926);
+        if (move3 < 0.18 && move8 < -0.25) return Plan.no();
 
-        if (side > 0 && (rangePosition < 0.18 || rangePosition > 0.84)) return false;
-        if (side < 0 && (rangePosition < 0.25 || rangePosition > 0.92)) return false;
+        double target = best >= 1.72 && gap >= 0.55 && room >= 2.45 ? TP_STANDARD : TP_SCALP;
+        double stop = target >= TP_STANDARD ? SL_STANDARD : SL_SCALP;
 
-        return move3 > 0.35
-                && move8 > -0.15
-                && flow30 > 0.03
-                && flow60 > 0.04
-                && flow120 > -0.08
-                && btc3 > -0.90;
+        double strength = best + gap * 0.55 + clamp(side * s.flow30, 0.0, 0.35) + clamp(room / 6.0, 0.0, 0.35);
+        return Plan.pass(side, target >= TP_STANDARD ? "SCALP_CONTINUATION_PLUS" : "SCALP_CONTINUATION", target, stop, strength);
     }
 
-    private static boolean veryStrongContinuation(MarketSnapshot s, int side, double rangePosition) {
-        double move3 = side * z(s.move3Norm, -0.078585, 1.36059);
-        double move8 = side * z(s.move8Norm, -0.10989, 2.58921);
-        double flow30 = side * s.flow30;
-        double flow60 = side * s.flow60;
-        double flow120 = side * s.flow120;
-        double btc3 = side * z(s.btcMove3, -0.000052, 0.000926);
+    private static Plan rangeFadePlan(MarketSnapshot s, Scores scores) {
+        double rp = finiteOr(s.rangePosition, 0.5);
 
-        if (side > 0 && (rangePosition < 0.20 || rangePosition > 0.80)) return false;
-        if (side < 0 && (rangePosition < 0.30 || rangePosition > 0.90)) return false;
+        Plan shortFade = Plan.no();
+        if (rp >= 0.74 && s.roomShort >= 2.05) {
+            double exhaustion = 0.0;
+            exhaustion += clamp((rp - 0.74) / 0.20, 0.0, 1.4);
+            exhaustion += clamp(-z(s.move1Norm, 0.0, 0.572559), 0.0, 1.0) * 0.35;
+            exhaustion += clamp(-s.flow15, 0.0, 0.45);
+            exhaustion += clamp(-s.flow30, 0.0, 0.40);
+            exhaustion += clamp(s.antiBurstScore - 0.35, 0.0, 0.80) * 0.35;
+            exhaustion += clamp(-z(s.btcMove3, -0.000052, 0.000926), 0.0, 1.0) * 0.18;
+            exhaustion += clamp(scores.shortScore - scores.longScore + 0.30, 0.0, 0.80) * 0.30;
 
-        return move3 > 0.65
-                && move8 > 0.05
-                && flow30 > 0.06
-                && flow60 > 0.08
-                && flow120 > -0.03
-                && btc3 > -0.40;
-    }
+            boolean rejection = s.move1 <= Math.max(0.10, s.avgRange20 * 0.20)
+                    || s.flow15 < -0.015
+                    || s.flow30 < -0.020
+                    || s.antiBurstScore > 0.70;
 
-    private static boolean wickRisk(MarketSnapshot s) {
-        double vr = z(s.volumeRatio, 0.351660, 0.5404845);
-        return vr > 2.50 && s.antiBurstScore < 0.25;
+            if (exhaustion >= 0.95 && rejection && !btcHardConflict(s, -1)) {
+                double target = s.roomShort >= 3.20 && exhaustion >= 1.55 ? TP_STANDARD : TP_SCALP;
+                double stop = target >= TP_STANDARD ? SL_STANDARD : SL_SCALP;
+                shortFade = Plan.pass(-1, target >= TP_STANDARD ? "RANGE_FADE_SHORT_PLUS" : "RANGE_FADE_SHORT", target, stop, 1.35 + exhaustion);
+            }
+        }
+
+        Plan longFade = Plan.no();
+        if (rp <= 0.26 && s.roomLong >= 2.05) {
+            double exhaustion = 0.0;
+            exhaustion += clamp((0.26 - rp) / 0.20, 0.0, 1.4);
+            exhaustion += clamp(z(s.move1Norm, 0.0, 0.572559), 0.0, 1.0) * 0.35;
+            exhaustion += clamp(s.flow15, 0.0, 0.45);
+            exhaustion += clamp(s.flow30, 0.0, 0.40);
+            exhaustion += clamp(s.antiBurstScore - 0.35, 0.0, 0.80) * 0.35;
+            exhaustion += clamp(z(s.btcMove3, -0.000052, 0.000926), 0.0, 1.0) * 0.18;
+            exhaustion += clamp(scores.longScore - scores.shortScore + 0.30, 0.0, 0.80) * 0.30;
+
+            boolean rejection = s.move1 >= -Math.max(0.10, s.avgRange20 * 0.20)
+                    || s.flow15 > 0.015
+                    || s.flow30 > 0.020
+                    || s.antiBurstScore > 0.70;
+
+            if (exhaustion >= 0.95 && rejection && !btcHardConflict(s, 1)) {
+                double target = s.roomLong >= 3.20 && exhaustion >= 1.55 ? TP_STANDARD : TP_SCALP;
+                double stop = target >= TP_STANDARD ? SL_STANDARD : SL_SCALP;
+                longFade = Plan.pass(1, target >= TP_STANDARD ? "RANGE_FADE_LONG_PLUS" : "RANGE_FADE_LONG", target, stop, 1.35 + exhaustion);
+            }
+        }
+
+        return best(shortFade, longFade);
     }
 
     private static Scores score(MarketSnapshot s) {
@@ -265,17 +232,17 @@ public final class SignalEngine {
                 + 0.08 * z(s.btcMove8, -0.000019, 0.001892)
                 + 0.06 * z(s.btcAccel3_8, 0.000041, 0.001404);
 
-        double rangePosition = finiteOr(s.rangePosition, 0.5);
+        double rp = finiteOr(s.rangePosition, 0.5);
 
         double longContext = 0.10 * z(s.roomLong, 1.975, 2.30)
-                - 0.08 * z(s.roomShort, 1.485, 2.06)
-                - 0.40 * Math.max(0.0, rangePosition - 0.82);
+                - 0.07 * z(s.roomShort, 1.485, 2.06)
+                - 0.35 * Math.max(0.0, rp - 0.82);
 
         double shortContext = 0.10 * z(s.roomShort, 1.485, 2.06)
-                - 0.08 * z(s.roomLong, 1.975, 2.30)
-                - 0.40 * Math.max(0.0, 0.18 - rangePosition);
+                - 0.07 * z(s.roomLong, 1.975, 2.30)
+                - 0.35 * Math.max(0.0, 0.18 - rp);
 
-        double wickPenalty = wickRisk(s) ? 0.45 : 0.0;
+        double wickPenalty = wickRisk(s) ? 0.35 : 0.0;
 
         double longScore = p + f + b + longContext - wickPenalty;
         double shortScore = -p - f - b + shortContext - wickPenalty;
@@ -299,29 +266,35 @@ public final class SignalEngine {
     }
 
     public static double computeTarget(double avgRange, double recentRange, double volumeRatio, double flowPower, int score) {
-        return TARGET_MOVE;
+        if (score >= 88) return TP_PREMIUM;
+        if (score >= 82) return TP_STANDARD;
+        return TP_SCALP;
     }
 
     public static double computeStop(double avgRange, double recentRange, int score) {
-        return STOP_DISTANCE;
+        if (score >= 88) return SL_PREMIUM;
+        if (score >= 82) return SL_STANDARD;
+        return SL_SCALP;
     }
 
     public static double computeStructureStop(double baseStop, int side, double entry, double recentHigh, double recentLow, double avgRange) {
-        return STOP_DISTANCE;
+        return baseStop;
     }
 
     public static int computeQuantity(int score, double stop, double target, boolean consumed) {
-        double riskPerEth = stop + FEE_ROUND_TRIP;
+        return computeQuantity(score, stop, target, consumed, "");
+    }
+
+    public static int computeQuantity(int score, double stop, double target, boolean consumed, String family) {
         double netPerEth = target - FEE_ROUND_TRIP;
+        if (netPerEth <= 0.0) return 0;
 
-        if (netPerEth <= 0.0 || netPerEth / riskPerEth < 0.95) return 0;
+        int quantity;
+        if (family != null && family.contains("PREMIUM")) quantity = score >= 90 ? 4 : 3;
+        else if (score >= 86) quantity = 3;
+        else quantity = 2;
 
-        int quantity = score >= 92 && netPerEth / riskPerEth >= 1.20 ? 5
-                : score >= 86 ? 4
-                : score >= 78 ? 3
-                : 2;
-
-        return consumed ? Math.min(quantity, 3) : quantity;
+        return consumed ? Math.min(quantity, 2) : quantity;
     }
 
     private SignalDecision reject(MarketSnapshot s, String code, String text, int score, Movement m) {
@@ -345,16 +318,48 @@ public final class SignalEngine {
         double recentRange = Math.max(0.0, s.recentHigh - s.recentLow);
 
         boolean consumed = positive(s.avgRange20)
-                && (vertical > 5.8 || recentRange > s.avgRange20 * 7.5)
-                && Math.abs(s.move1) > s.avgRange20 * 1.1;
+                && (vertical > 6.2 || recentRange > s.avgRange20 * 8.0)
+                && Math.abs(s.move1) > s.avgRange20 * 1.25;
 
-        String impulse = Math.abs(s.move3) > Math.max(0.75, s.avgRange20 * 0.8)
+        String impulse = Math.abs(s.move3) > Math.max(0.75, s.avgRange20 * 0.80)
                 ? "ACTIVE"
                 : Math.abs(s.move3) > Math.max(0.30, s.avgRange20 * 0.35) ? "FAIBLE" : "NEUTRE";
 
-        boolean reset = positive(s.avgRange20) && Math.abs(s.move1) <= s.avgRange20 * 0.65;
+        boolean reset = positive(s.avgRange20) && Math.abs(s.move1) <= s.avgRange20 * 0.70;
 
         return new Movement(impulse, reset, origin, extreme, distance, consumed);
+    }
+
+    private static boolean lateImpulse(MarketSnapshot s, int side, double rp, double limit) {
+        double directionalMove1Z = side * z(s.move1Norm, 0.0, 0.572559);
+        return directionalMove1Z > limit && ((side > 0 && rp > 0.70) || (side < 0 && rp < 0.32));
+    }
+
+    private static boolean btcHardConflict(MarketSnapshot s, int side) {
+        double btc1 = z(s.btcMove1, -0.000052, 0.000926);
+        double btc3 = z(s.btcMove3, -0.000052, 0.000926);
+        if (side > 0) return btc1 < -1.85 && btc3 < -0.85;
+        return btc1 > 1.85 && btc3 > 0.85;
+    }
+
+    private static boolean btcSoftConflict(MarketSnapshot s, int side) {
+        double btc1 = z(s.btcMove1, -0.000052, 0.000926);
+        double btc3 = z(s.btcMove3, -0.000052, 0.000926);
+        if (side > 0) return btc1 < -2.25 && btc3 < -1.15;
+        return btc1 > 2.25 && btc3 > 1.15;
+    }
+
+    private static boolean wickRisk(MarketSnapshot s) {
+        double vr = z(s.volumeRatio, 0.351660, 0.5404845);
+        return vr > 2.80 && s.antiBurstScore < 0.20;
+    }
+
+    private static Plan best(Plan... plans) {
+        Plan best = Plan.no();
+        for (Plan p : plans) {
+            if (p != null && p.pass && (!best.pass || p.strength > best.strength)) best = p;
+        }
+        return best;
     }
 
     private static double z(double value, double median, double iqr) {
@@ -374,8 +379,8 @@ public final class SignalEngine {
     }
 
     private static int scoreToInt(double score) {
-        int mapped = (int) Math.round(70.0 + Math.max(0.0, Math.min(3.4, score)) * 7.5);
-        return clamp(mapped, 70, 96);
+        int mapped = (int) Math.round(70.0 + Math.max(0.0, Math.min(3.8, score)) * 7.0);
+        return clampInt(mapped, 70, 96);
     }
 
     private static String fmt(String pattern, Object... args) {
@@ -390,7 +395,11 @@ public final class SignalEngine {
         return Double.isFinite(value) && value > 0.0;
     }
 
-    private static int clamp(int value, int min, int max) {
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
 
@@ -408,25 +417,29 @@ public final class SignalEngine {
         }
     }
 
-    private static final class RoomPolicy {
+    private static final class Plan {
         final boolean pass;
-        final String code;
-        final String message;
-        final String label;
+        final int side;
+        final String family;
+        final double target;
+        final double stop;
+        final double strength;
 
-        private RoomPolicy(boolean pass, String code, String message, String label) {
+        private Plan(boolean pass, int side, String family, double target, double stop, double strength) {
             this.pass = pass;
-            this.code = code;
-            this.message = message;
-            this.label = label;
+            this.side = side;
+            this.family = family;
+            this.target = target;
+            this.stop = stop;
+            this.strength = strength;
         }
 
-        static RoomPolicy pass(String label) {
-            return new RoomPolicy(true, "OK", "", label);
+        static Plan pass(int side, String family, double target, double stop, double strength) {
+            return new Plan(true, side, family, target, stop, strength);
         }
 
-        static RoomPolicy reject(String code, String message) {
-            return new RoomPolicy(false, code, message, code);
+        static Plan no() {
+            return new Plan(false, 0, "NO_PLAN", Double.NaN, Double.NaN, Double.NEGATIVE_INFINITY);
         }
     }
 

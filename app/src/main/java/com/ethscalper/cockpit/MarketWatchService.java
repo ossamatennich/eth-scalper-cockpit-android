@@ -66,6 +66,14 @@ public class MarketWatchService extends Service {
     private final Deque<Candle> btcCandles = new ArrayDeque<>();
     private final Deque<TradeFlow> flows = new ArrayDeque<>();
     private final SignalEngine signalEngine = new SignalEngine();
+    private AiAdvisor aiAdvisor;
+    private String aiStatus = "AI_OFF";
+    private String aiPendingSignature = "";
+    private String aiApprovedSignature = "";
+    private String lastAiDecisionJson = "{}";
+    private long aiPendingAt;
+    private long aiApprovedUntil;
+    private SignalDecision aiPendingDecision;
     private final Deque<ObservedSignal> observedSignals = new ArrayDeque<>();
     private final Deque<MarketFrame> marketFrames = new ArrayDeque<>();
     private long observedSignalId;
@@ -132,6 +140,7 @@ public class MarketWatchService extends Service {
                 .pingInterval(20, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
                 .build();
+        aiAdvisor = new AiAdvisor(this);
         acquireWakeLock();
     }
 
@@ -202,7 +211,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.29.1",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.30.0",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -583,7 +592,9 @@ public class MarketWatchService extends Service {
         MarketSnapshot snapshot = buildSnapshot(now);
         updateObservedSignals(snapshot, now);
 
-        SignalDecision decision = signalEngine.evaluate(snapshot);
+        SignalDecision rawDecision = signalEngine.evaluate(snapshot);
+        SignalDecision decision = applyAiGate(snapshot, rawDecision, now);
+
         recordMarketFrame(snapshot, decision, now);
 
         if (!decision.isSignal() && isLastSignalStillActionable(snapshot, now)) {
@@ -594,20 +605,194 @@ public class MarketWatchService extends Service {
 
         lastDecision = decision;
         if (decision.isSignal()) {
-            if (isDuplicateRecentObservation(decision, now)) {
-                broadcastStatus("signal_duplicate_lock", "Signal doublon ignoré par verrou observation");
-                return;
-            }
-
-            lastSignal = decision;
-            lastSignalAt = now;
-            recordObservedSignal(decision, snapshot, now);
-            notifyObservationSignal(decision);
-            broadcastStatus("signal_observation", decision.reasonCode);
+            activateSignalDecision(decision, snapshot, now, "signal_observation", decision.reasonCode);
         }
     }
 
+    private SignalDecision applyAiGate(MarketSnapshot snapshot, SignalDecision decision, long now) {
+        if (decision == null || !decision.isSignal()) return decision;
 
+        if (!AiAdvisor.isEnabled(this)) {
+            aiStatus = "AI_OFF_ENGINE_ONLY";
+            return decision;
+        }
+
+        if (aiAdvisor == null) aiAdvisor = new AiAdvisor(this);
+
+        String signature = aiSignature(decision, snapshot);
+
+        if (signature.equals(aiApprovedSignature) && now <= aiApprovedUntil) {
+            aiStatus = "AI_APPROVED_CACHE";
+            return decision;
+        }
+
+        if (signature.equals(aiPendingSignature) && now - aiPendingAt <= AiAdvisor.TIMEOUT_MS + 600L) {
+            aiStatus = "AI_PENDING";
+            return SignalDecision.waiting("V230_AI_PENDING",
+                    "IA automatique en confirmation rapide",
+                    decision.score,
+                    decision.impulse,
+                    decision.resetConfirmed,
+                    decision.movementOrigin,
+                    decision.movementExtreme,
+                    decision.movementDistance,
+                    decision.movementConsumed);
+        }
+
+        aiStatus = "AI_PENDING";
+        aiPendingSignature = signature;
+        aiPendingDecision = decision;
+        aiPendingAt = now;
+
+        aiAdvisor.confirmAsync(snapshot, decision, result ->
+                handler.post(() -> handleAiResult(signature, result)));
+
+        handler.postDelayed(() -> handleAiTimeout(signature), AiAdvisor.TIMEOUT_MS);
+
+        return SignalDecision.waiting("V230_AI_PENDING",
+                "IA automatique en confirmation rapide",
+                decision.score,
+                decision.impulse,
+                decision.resetConfirmed,
+                decision.movementOrigin,
+                decision.movementExtreme,
+                decision.movementDistance,
+                decision.movementConsumed);
+    }
+
+    private synchronized void handleAiTimeout(String signature) {
+        if (!signature.equals(aiPendingSignature) || aiPendingDecision == null) return;
+        handleAiResult(signature, AiAdvisor.AiResult.fallback("AI_TIMEOUT_FALLBACK"));
+    }
+
+    private synchronized void handleAiResult(String signature, AiAdvisor.AiResult result) {
+        if (!signature.equals(aiPendingSignature) || aiPendingDecision == null) return;
+
+        long now = System.currentTimeMillis();
+        SignalDecision original = aiPendingDecision;
+        aiPendingSignature = "";
+        aiPendingDecision = null;
+
+        lastAiDecisionJson = result == null ? "{}" : result.rawJson;
+
+        if (result == null) {
+            result = AiAdvisor.AiResult.fallback("AI_EMPTY_RESULT");
+        }
+
+        MarketSnapshot fresh = buildSnapshot(now);
+
+        if (!result.approved) {
+            aiStatus = "AI_REJECTED";
+            lastDecision = SignalDecision.waiting("V230_AI_REJECTED",
+                    "IA refuse le setup : " + result.reason,
+                    original.score,
+                    original.impulse,
+                    original.resetConfirmed,
+                    original.movementOrigin,
+                    original.movementExtreme,
+                    original.movementDistance,
+                    original.movementConsumed);
+            recordMarketFrame(fresh, lastDecision, now);
+            broadcastStatus("ai_rejected", result.reason);
+            return;
+        }
+
+        if (isAiSignalTooLate(original, fresh)) {
+            aiStatus = "AI_LATE_REJECT";
+            lastDecision = SignalDecision.waiting("V230_AI_LATE_REJECT",
+                    "Signal annulé : prix parti pendant confirmation IA",
+                    original.score,
+                    original.impulse,
+                    original.resetConfirmed,
+                    original.movementOrigin,
+                    original.movementExtreme,
+                    original.movementDistance,
+                    original.movementConsumed);
+            recordMarketFrame(fresh, lastDecision, now);
+            broadcastStatus("ai_late_reject", "Prix trop loin après IA");
+            return;
+        }
+
+        SignalDecision finalDecision = repriceWithAi(original, fresh, result);
+
+        aiApprovedSignature = aiSignature(finalDecision, fresh);
+        aiApprovedUntil = now + 5000L;
+        aiStatus = result.fallback ? "AI_FALLBACK_ENGINE" : "AI_APPROVED_" + result.confidence;
+
+        recordMarketFrame(fresh, finalDecision, now);
+        lastDecision = finalDecision;
+        activateSignalDecision(finalDecision, fresh, now,
+                result.fallback ? "signal_engine_fallback" : "signal_ai_confirmed",
+                result.reason);
+    }
+
+    private boolean isAiSignalTooLate(SignalDecision decision, MarketSnapshot snapshot) {
+        double price = snapshot.ethLast;
+        if (!Double.isFinite(price) || price <= 0) return true;
+
+        double favorable = "LONG".equals(decision.side)
+                ? price - decision.entry
+                : decision.entry - price;
+
+        double adverse = "LONG".equals(decision.side)
+                ? decision.entry - price
+                : price - decision.entry;
+
+        if (favorable > Math.max(0.55, decision.targetMove * 0.28)) return true;
+        return adverse > Math.max(0.45, decision.stopDistance * 0.40);
+    }
+
+    private SignalDecision repriceWithAi(SignalDecision original, MarketSnapshot snapshot, AiAdvisor.AiResult result) {
+        int side = "LONG".equals(original.side) ? 1 : -1;
+        double entry = side > 0 ? (snapshot.ethAsk > 0 ? snapshot.ethAsk : snapshot.ethLast)
+                : (snapshot.ethBid > 0 ? snapshot.ethBid : snapshot.ethLast);
+
+        double target = original.targetMove;
+        double stop = original.stopDistance;
+
+        if (!result.fallback) {
+            if (Double.isFinite(result.targetMove) && result.targetMove >= 3.20 && result.targetMove <= 5.50) {
+                target = result.targetMove;
+            }
+            if (Double.isFinite(result.stopDistance) && result.stopDistance >= 1.35 && result.stopDistance <= 2.20) {
+                stop = result.stopDistance;
+            }
+        }
+
+        double tp = entry + side * target;
+        double sl = entry - side * stop;
+
+        String family = original.family + (result.fallback ? " · AI fallback" : " · AI confirm " + result.confidence + "%");
+
+        return SignalDecision.signal(original.side, family, original.score, original.quantity,
+                round2(entry), round2(tp), round2(sl), target, stop,
+                original.impulse, original.resetConfirmed,
+                original.movementOrigin, original.movementExtreme, original.movementDistance);
+    }
+
+    private String aiSignature(SignalDecision decision, MarketSnapshot snapshot) {
+        long entryBucket = Math.round(decision.entry * 10.0);
+        long rpBucket = Math.round(snapshot.rangePosition * 20.0);
+        return decision.side + "|" + entryBucket + "|" + Math.round(decision.targetMove * 10.0)
+                + "|" + Math.round(decision.stopDistance * 10.0) + "|" + rpBucket + "|" + decision.family;
+    }
+
+    private void activateSignalDecision(SignalDecision decision, MarketSnapshot snapshot, long now, String type, String message) {
+        if (isDuplicateRecentObservation(decision, now)) {
+            broadcastStatus("signal_duplicate_lock", "Signal doublon ignoré par verrou observation");
+            return;
+        }
+
+        lastSignal = decision;
+        lastSignalAt = now;
+        recordObservedSignal(decision, snapshot, now);
+        notifyObservationSignal(decision);
+        broadcastStatus(type, message == null || message.trim().isEmpty() ? decision.reasonCode : message);
+    }
+
+    private static double round2(double value) {
+        return Math.round(value * 100.0) / 100.0;
+    }
 
     private void recordMarketFrame(MarketSnapshot snapshot, SignalDecision decision, long now) {
         if (lastMarketFrameAt > 0 && now - lastMarketFrameAt < 1000
@@ -1291,7 +1476,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.29.1 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.30.0 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1366,7 +1551,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.29.1-android");
+            state.put("version", "2.30.0-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1397,6 +1582,9 @@ public class MarketWatchService extends Service {
             state.put("activeSignalValidity", "RESEARCH_UNTIL_MARKET_INVALIDATION");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", false);
+            state.put("aiEnabled", AiAdvisor.isEnabled(this));
+            state.put("aiStatus", aiStatus);
+            try { state.put("aiLastDecision", new JSONObject(lastAiDecisionJson)); } catch (Exception ignored) { state.put("aiLastDecision", JSONObject.NULL); }
             state.put("marketFramesInMemory", marketFrames.size());
             state.put("marketRecorderSummary", marketRecorderSummaryJson());
             state.put("observationSummary", observationSummaryJson());
@@ -1503,7 +1691,9 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.29.1-feature-replay-lab");
+        m.put("rulesProfile", "ETH Scalper sessions v2.30.0-hybrid-ai-scalp-engine");
+        m.put("aiEnabled", AiAdvisor.isEnabled(this));
+        m.put("aiStatus", aiStatus);
 
         return m;
     }
