@@ -211,7 +211,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.30.0",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.30.1",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -697,6 +697,22 @@ public class MarketWatchService extends Service {
             return;
         }
 
+        if (result.fallback && shouldRejectAiFallback(original)) {
+            aiStatus = "AI_FALLBACK_REJECTED";
+            lastDecision = SignalDecision.waiting("V230_AI_FALLBACK_REJECTED",
+                    "IA indisponible : fallback refusé pour setup non premium",
+                    original.score,
+                    original.impulse,
+                    original.resetConfirmed,
+                    original.movementOrigin,
+                    original.movementExtreme,
+                    original.movementDistance,
+                    original.movementConsumed);
+            recordMarketFrame(fresh, lastDecision, now);
+            broadcastStatus("ai_fallback_rejected", result.reason);
+            return;
+        }
+
         if (isAiSignalTooLate(original, fresh)) {
             aiStatus = "AI_LATE_REJECT";
             lastDecision = SignalDecision.waiting("V230_AI_LATE_REJECT",
@@ -724,6 +740,14 @@ public class MarketWatchService extends Service {
         activateSignalDecision(finalDecision, fresh, now,
                 result.fallback ? "signal_engine_fallback" : "signal_ai_confirmed",
                 result.reason);
+    }
+
+    private boolean shouldRejectAiFallback(SignalDecision decision) {
+        if (decision == null) return true;
+        String family = decision.family == null ? "" : decision.family;
+        if (family.contains("RANGE_FADE")) return true;
+        if (decision.score < 95) return true;
+        return false;
     }
 
     private boolean isAiSignalTooLate(SignalDecision decision, MarketSnapshot snapshot) {
@@ -1476,7 +1500,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.30.0 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.30.1 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1551,7 +1575,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.30.0-android");
+            state.put("version", "2.30.1-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1691,7 +1715,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.30.0-hybrid-ai-scalp-engine");
+        m.put("rulesProfile", "ETH Scalper sessions v2.30.1-hybrid-ai-scalp-engine");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 

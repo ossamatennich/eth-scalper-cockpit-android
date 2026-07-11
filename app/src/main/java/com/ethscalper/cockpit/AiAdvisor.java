@@ -18,7 +18,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public final class AiAdvisor {
-    public static final long TIMEOUT_MS = 1500L;
+    public static final long TIMEOUT_MS = 4000L;
 
     private static final String ENDPOINT = "https://api.openai.com/v1/responses";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
@@ -29,9 +29,9 @@ public final class AiAdvisor {
     public AiAdvisor(Context context) {
         this.context = context.getApplicationContext();
         this.client = new OkHttpClient.Builder()
-                .connectTimeout(650, TimeUnit.MILLISECONDS)
-                .readTimeout(1250, TimeUnit.MILLISECONDS)
-                .writeTimeout(650, TimeUnit.MILLISECONDS)
+                .connectTimeout(1500, TimeUnit.MILLISECONDS)
+                .readTimeout(3500, TimeUnit.MILLISECONDS)
+                .writeTimeout(1500, TimeUnit.MILLISECONDS)
                 .callTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .retryOnConnectionFailure(false)
                 .build();
@@ -39,6 +39,52 @@ public final class AiAdvisor {
 
     public static boolean isEnabled(Context context) {
         return SecureAiStore.isEnabled(context);
+    }
+
+
+    public void testKeyAsync(ResultCallback callback) {
+        String key = SecureAiStore.getKey(context);
+        if (key == null || key.trim().length() < 12) {
+            callback.onResult(AiResult.fallback("AI_KEY_MISSING"));
+            return;
+        }
+
+        try {
+            JSONObject body = new JSONObject();
+            body.put("model", SecureAiStore.getModel(context));
+            body.put("max_output_tokens", 80);
+            body.put("input", "Return ONLY compact JSON: {\"decision\":\"APPROVE\",\"confidence\":90,\"targetMove\":3.2,\"stopDistance\":1.35,\"reason\":\"TEST_OK\"}");
+
+            Request request = new Request.Builder()
+                    .url(ENDPOINT)
+                    .addHeader("Authorization", "Bearer " + key.trim())
+                    .addHeader("Content-Type", "application/json")
+                    .post(RequestBody.create(body.toString(), JSON))
+                    .build();
+
+            client.newCall(request).enqueue(new Callback() {
+                @Override public void onFailure(Call call, IOException e) {
+                    callback.onResult(AiResult.fallback("AI_TIMEOUT_OR_NETWORK"));
+                }
+
+                @Override public void onResponse(Call call, Response response) {
+                    try {
+                        String raw = response.body() == null ? "" : response.body().string();
+                        if (!response.isSuccessful()) {
+                            callback.onResult(AiResult.fallback("AI_HTTP_" + response.code()));
+                            return;
+                        }
+                        callback.onResult(parse(raw));
+                    } catch (Exception e) {
+                        callback.onResult(AiResult.fallback("AI_PARSE_ERROR"));
+                    } finally {
+                        try { response.close(); } catch (Exception ignored) {}
+                    }
+                }
+            });
+        } catch (Exception e) {
+            callback.onResult(AiResult.fallback("AI_REQUEST_ERROR"));
+        }
     }
 
     public void confirmAsync(MarketSnapshot s, SignalDecision decision, ResultCallback callback) {
