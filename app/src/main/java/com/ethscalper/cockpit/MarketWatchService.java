@@ -211,7 +211,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.30.4",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.30.5",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -644,7 +644,7 @@ public class MarketWatchService extends Service {
         aiPendingDecision = decision;
         aiPendingAt = now;
 
-        aiAdvisor.confirmAsync(snapshot, decision, result ->
+        aiAdvisor.confirmAsync(snapshot, decision, aiMicroContextJson(), result ->
                 handler.post(() -> handleAiResult(signature, result)));
 
         handler.postDelayed(() -> handleAiTimeout(signature), AiAdvisor.TIMEOUT_MS);
@@ -1403,6 +1403,42 @@ public class MarketWatchService extends Service {
         return Math.max(0, remaining / 1000);
     }
 
+    private String aiMicroContextJson() {
+        JSONArray out = new JSONArray();
+        try {
+            int size = marketFrames.size();
+            int skip = Math.max(0, size - 18);
+            int index = 0;
+
+            for (MarketFrame f : marketFrames) {
+                if (index++ < skip) continue;
+
+                JSONObject o = new JSONObject();
+                o.put("ageMs", Math.max(0, System.currentTimeMillis() - f.at));
+                putMetric(o, "eth", f.ethLast);
+                putMetric(o, "spread", f.spread);
+                putMetric(o, "move1", f.move1);
+                putMetric(o, "move3", f.move3);
+                putMetric(o, "move8", f.move8);
+                putMetric(o, "rangePosition", f.rangePosition);
+                putMetric(o, "roomLong", f.roomLong);
+                putMetric(o, "roomShort", f.roomShort);
+                putMetric(o, "flow15", f.flow15);
+                putMetric(o, "flow30", f.flow30);
+                putMetric(o, "flow60", f.flow60);
+                putMetric(o, "flowAccel", f.flowAccel);
+                putMetric(o, "btcMove1", f.btcMove1);
+                putMetric(o, "btcMove3", f.btcMove3);
+                putMetric(o, "antiBurstScore", f.antiBurstScore);
+                o.put("setupCandidate", f.setupCandidate);
+                o.put("decisionCode", f.decisionCode);
+                out.put(o);
+            }
+        } catch (Exception ignored) {}
+
+        return out.toString();
+    }
+
     private MarketSnapshot buildSnapshot(long now) {
         List<Candle> ethList = new ArrayList<>(ethCandles);
         List<Candle> btcList = new ArrayList<>(btcCandles);
@@ -1558,7 +1594,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.30.4 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.30.5 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1633,7 +1669,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.30.4-android");
+            state.put("version", "2.30.5-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1787,7 +1823,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.30.4-hybrid-ai-scalp-engine");
+        m.put("rulesProfile", "ETH Scalper sessions v2.30.5-ai-expert-arbiter");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 
