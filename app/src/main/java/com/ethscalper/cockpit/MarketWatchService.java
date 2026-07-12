@@ -212,7 +212,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.31.1",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.31.2",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -784,6 +784,10 @@ public class MarketWatchService extends Service {
         int side = "LONG".equals(decision.side) ? 1 : "SHORT".equals(decision.side) ? -1 : 0;
         if (side == 0) return true;
 
+        if (family.contains("CONTINUATION") && aiApprovedExhaustedContinuationTrap(decision, s)) {
+            return true;
+        }
+
         if (family.contains("RANGE_FADE") && (aiApprovedRangeFadeCounterTrendTrap(decision, s) || aiApprovedWeakExtremeRangeFadeTrap(decision, s))) {
             return true;
         }
@@ -805,6 +809,32 @@ public class MarketWatchService extends Service {
         }
 
         return false;
+    }
+
+    private boolean aiApprovedExhaustedContinuationTrap(SignalDecision decision, MarketSnapshot s) {
+        if (decision == null || s == null) return true;
+        String family = decision.family == null ? "" : decision.family;
+        if (!family.contains("CONTINUATION")) return false;
+
+        int side = "LONG".equals(decision.side) ? 1 : "SHORT".equals(decision.side) ? -1 : 0;
+        if (side == 0) return true;
+
+        double avg = Math.max(0.35, s.avgRange20);
+        double rp = Double.isFinite(s.rangePosition) ? s.rangePosition : 0.5;
+        double room = side > 0 ? s.roomLong : s.roomShort;
+        double target = Math.max(2.80, decision.targetMove);
+
+        boolean extension = side * s.move3 > avg * 2.05 && side * s.move8 > avg * 1.75;
+        boolean badZone = side > 0 ? rp >= 0.72 : rp <= 0.28;
+
+        boolean microStall = side * s.move1 <= avg * 0.04;
+        boolean flowCrowded = side * s.flow60 > 0.45 && side * s.flow120 > 0.45;
+        boolean flowDivergence = side * s.flow15 < 0.08 || side * s.flowAccel < -0.45;
+
+        boolean roomWeak = room < Math.max(1.75, target * 0.82);
+        boolean lowFreshVolume = s.volumeRatio > 0 && s.volumeRatio < 0.25;
+
+        return extension && badZone && flowCrowded && (microStall || flowDivergence) && (roomWeak || lowFreshVolume);
     }
 
     private boolean aiApprovedWeakExtremeRangeFadeTrap(SignalDecision decision, MarketSnapshot s) {
@@ -906,10 +936,24 @@ public class MarketWatchService extends Service {
         String family = original.family + (result.fallback ? " · AI fallback" : " · AI confirm " + result.confidence + "%");
 
         int quantity = original.quantity;
+
+        if (!result.fallback) {
+            if (result.confidence < 75) {
+                quantity = Math.min(quantity, 3);
+            } else if (result.confidence < 80) {
+                quantity = Math.min(quantity, 4);
+            } else if (result.confidence < 85) {
+                quantity = Math.min(quantity, 5);
+            }
+        }
+
         if (!result.fallback && family.contains("RANGE_FADE") && result.confidence < 75) {
             quantity = Math.min(quantity, 3);
         }
         if (!result.fallback && aiApprovedWeakExtremeRangeFadeTrap(original, snapshot)) {
+            quantity = Math.min(quantity, 3);
+        }
+        if (!result.fallback && aiApprovedExhaustedContinuationTrap(original, snapshot)) {
             quantity = Math.min(quantity, 3);
         }
 
@@ -1695,6 +1739,7 @@ public class MarketWatchService extends Service {
         JSONArray recommendations = new JSONArray();
 
         int total = 0, rangeFade = 0, rangeFadeSl = 0, rangeFadeInvalid = 0;
+        int continuation = 0, continuationSl = 0, continuationLateSl = 0;
         int timeoutTooEarlyRisk = 0, pendingNeverTriggered = 0;
 
         for (ObservedSignal item : observedSignals) {
@@ -1703,11 +1748,40 @@ public class MarketWatchService extends Service {
 
             String family = item.signal.family == null ? "" : item.signal.family;
             boolean isRangeFade = family.contains("RANGE_FADE");
+            boolean isContinuation = family.contains("CONTINUATION");
 
             if (isRangeFade) {
                 rangeFade++;
                 if ("SL_TOUCHED".equals(item.status)) rangeFadeSl++;
                 if ("SCENARIO_INVALIDATED".equals(item.status)) rangeFadeInvalid++;
+            }
+
+            if (isContinuation) {
+                continuation++;
+                if ("SL_TOUCHED".equals(item.status)) continuationSl++;
+
+                double avg = Math.max(0.35, item.avgRange20);
+                boolean lateLong = "LONG".equals(item.signal.side)
+                        && item.move3 > avg * 2.05
+                        && item.move8 > avg * 1.75
+                        && item.rangePosition >= 0.72
+                        && item.roomLong < Math.max(1.75, item.signal.targetMove * 0.82)
+                        && item.flow60 > 0.45
+                        && item.flow120 > 0.45
+                        && (item.flow15 < 0.08 || item.flowAccel < -0.45 || item.volumeRatio < 0.25);
+
+                boolean lateShort = "SHORT".equals(item.signal.side)
+                        && item.move3 < -avg * 2.05
+                        && item.move8 < -avg * 1.75
+                        && item.rangePosition <= 0.28
+                        && item.roomShort < Math.max(1.75, item.signal.targetMove * 0.82)
+                        && item.flow60 < -0.45
+                        && item.flow120 < -0.45
+                        && (item.flow15 > -0.08 || item.flowAccel > 0.45 || item.volumeRatio < 0.25);
+
+                if ("SL_TOUCHED".equals(item.status) && (lateLong || lateShort)) {
+                    continuationLateSl++;
+                }
             }
 
             if ("TIMEOUT_15M".equals(item.status) && scenarioProgress(item) >= 0.55 && scenarioRisk(item) <= 0.85) {
@@ -1721,6 +1795,12 @@ public class MarketWatchService extends Service {
 
         if (rangeFadeSl > 0) {
             recommendations.put("Durcir les RANGE_FADE faibles : extrême insuffisant, IA faible, ou retour violent après progression.");
+        }
+
+        if (continuationLateSl > 0) {
+            recommendations.put("Durcir les CONTINUATION tardives : mouvement déjà consommé, flow court qui ralentit, room TP trop faible.");
+        } else if (continuationSl > 0) {
+            recommendations.put("Surveiller les CONTINUATION en SL : limiter quantité si IA < 80% ou room TP faible.");
         }
 
         if (timeoutTooEarlyRisk > 0) {
@@ -1740,6 +1820,9 @@ public class MarketWatchService extends Service {
         o.put("rangeFade", rangeFade);
         o.put("rangeFadeSl", rangeFadeSl);
         o.put("rangeFadeInvalidated", rangeFadeInvalid);
+        o.put("continuation", continuation);
+        o.put("continuationSl", continuationSl);
+        o.put("continuationLateSl", continuationLateSl);
         o.put("timeoutTooEarlyRisk", timeoutTooEarlyRisk);
         o.put("pendingNeverTriggered15m", pendingNeverTriggered);
         o.put("recommendations", recommendations);
@@ -2019,7 +2102,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.31.1 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.31.2 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -2094,7 +2177,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.31.1-android");
+            state.put("version", "2.31.2-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -2250,7 +2333,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.31.1-rangefade-strict-replay");
+        m.put("rulesProfile", "ETH Scalper sessions v2.31.2-continuation-late-filter");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 

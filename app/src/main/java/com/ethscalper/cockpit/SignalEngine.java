@@ -75,6 +75,7 @@ public final class SignalEngine {
         int score = scoreToInt(plan.strength);
         int quantity = computeQuantity(score, plan.stop, plan.target, movement.consumed, plan.family);
         quantity = capRiskyRangeFadeQuantity(quantity, s, plan);
+        quantity = capRiskyContinuationQuantity(quantity, s, plan);
 
         if (quantity <= 0) {
             return reject(s, "V230_SIZE_ZERO", "Signal refusé : taille research nulle", score, movement);
@@ -134,6 +135,7 @@ public final class SignalEngine {
         if (side * s.flow60 < 0.035) return Plan.no();
         if (btcHardConflict(s, side)) return Plan.no();
         if (lateImpulse(s, side, rp, 2.65)) return Plan.no();
+        if (exhaustedContinuationTrap(s, side, TP_PREMIUM)) return Plan.no();
         if (wickRisk(s)) return Plan.no();
 
         double strength = best + gap * 0.45 + clamp(room / 5.0, 0.0, 0.45);
@@ -155,6 +157,7 @@ public final class SignalEngine {
         if (side * s.flow60 < -0.035) return Plan.no();
         if (btcSoftConflict(s, side)) return Plan.no();
         if (lateImpulse(s, side, rp, 2.95)) return Plan.no();
+        if (exhaustedContinuationTrap(s, side, TP_SCALP)) return Plan.no();
 
         double move3 = side * z(s.move3Norm, -0.078585, 1.36059);
         double move8 = side * z(s.move8Norm, -0.10989, 2.58921);
@@ -231,6 +234,54 @@ public final class SignalEngine {
         return best(shortFade, longFade);
     }
 
+    private static int capRiskyContinuationQuantity(int quantity, MarketSnapshot s, Plan plan) {
+        if (s == null || plan == null || plan.family == null || !plan.family.contains("CONTINUATION")) {
+            return quantity;
+        }
+
+        if (exhaustedContinuationTrap(s, plan.side, plan.target)) {
+            return Math.min(quantity, 3);
+        }
+
+        if (weakContinuationSizingContext(s, plan.side, plan.target)) {
+            return Math.min(quantity, 4);
+        }
+
+        return quantity;
+    }
+
+    private static boolean weakContinuationSizingContext(MarketSnapshot s, int side, double target) {
+        double avg = Math.max(0.35, s.avgRange20);
+        double rp = finiteOr(s.rangePosition, 0.5);
+        double room = side > 0 ? s.roomLong : s.roomShort;
+
+        boolean roomNeedsBreakout = room < Math.max(1.75, target * 0.88);
+        boolean freshFlowWeak = side * s.flow15 < 0.08 && side * s.flow30 < 0.25;
+        boolean lowVolume = s.volumeRatio > 0 && s.volumeRatio < 0.35;
+        boolean moveAlreadyExtended = side * s.move3 > avg * 1.45 && side * s.move8 > avg * 1.45;
+        boolean badZone = side > 0 ? rp > 0.68 : rp < 0.32;
+
+        return roomNeedsBreakout && badZone && moveAlreadyExtended && (freshFlowWeak || lowVolume);
+    }
+
+    private static boolean exhaustedContinuationTrap(MarketSnapshot s, int side, double target) {
+        double avg = Math.max(0.35, s.avgRange20);
+        double rp = finiteOr(s.rangePosition, 0.5);
+        double room = side > 0 ? s.roomLong : s.roomShort;
+
+        boolean extension = side * s.move3 > avg * 2.05 && side * s.move8 > avg * 1.75;
+        boolean badZone = side > 0 ? rp >= 0.72 : rp <= 0.28;
+
+        boolean microStall = side * s.move1 <= avg * 0.04;
+        boolean flowCrowded = side * s.flow60 > 0.45 && side * s.flow120 > 0.45;
+        boolean flowDivergence = side * s.flow15 < 0.08 || side * s.flowAccel < -0.45;
+
+        boolean roomWeak = room < Math.max(1.75, target * 0.82);
+        boolean lowFreshVolume = s.volumeRatio > 0 && s.volumeRatio < 0.25;
+
+        return extension && badZone && flowCrowded && (microStall || flowDivergence) && (roomWeak || lowFreshVolume);
+    }
+
     private static int capRiskyRangeFadeQuantity(int quantity, MarketSnapshot s, Plan plan) {
         if (s == null || plan == null || plan.family == null || !plan.family.contains("RANGE_FADE")) {
             return quantity;
@@ -271,7 +322,7 @@ public final class SignalEngine {
         double rp = finiteOr(s.rangePosition, 0.5);
 
         if (fadeSide < 0) {
-            // Correction v2.31.1 :
+            // Correction v2.31.2 :
             // Ne pas shorter un range fade si le prix n'est pas vraiment en haut du range
             // et que le mouvement 8 bougies reste une extension LONG.
             // Cas ZIP corrigé : SHORT à rp≈0.80, move8 très long, IA 72%, SL ensuite.

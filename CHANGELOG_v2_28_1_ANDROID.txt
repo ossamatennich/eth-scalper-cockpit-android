@@ -1,4 +1,4 @@
-ETH Scalper Cockpit Android v2.31.1
+ETH Scalper Cockpit Android v2.31.2
 
 Pro Label Lab :
 - Aucun trade réel.
