@@ -302,11 +302,21 @@ public final class SignalEngine {
         if (netPerEth <= 0.0) return 0;
 
         int quantity;
-        if (family != null && family.contains("PREMIUM")) quantity = score >= 90 ? 4 : 3;
-        else if (score >= 86) quantity = 3;
-        else quantity = 2;
+        if (score >= 94) quantity = 7;
+        else if (score >= 90) quantity = 6;
+        else if (score >= 86) quantity = 5;
+        else if (score >= 82) quantity = 4;
+        else quantity = 3;
 
-        return consumed ? Math.min(quantity, 2) : quantity;
+        if (family != null && family.contains("PREMIUM") && score >= 88) {
+            quantity = Math.max(quantity, 5);
+        }
+
+        if (consumed) {
+            quantity = Math.max(3, quantity - 1);
+        }
+
+        return Math.max(3, Math.min(7, quantity));
     }
 
     private SignalDecision reject(MarketSnapshot s, String code, String text, int score, Movement m) {
