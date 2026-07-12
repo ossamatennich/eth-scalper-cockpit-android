@@ -74,6 +74,7 @@ public final class SignalEngine {
 
         int score = scoreToInt(plan.strength);
         int quantity = computeQuantity(score, plan.stop, plan.target, movement.consumed, plan.family);
+        quantity = capRiskyRangeFadeQuantity(quantity, s, plan);
 
         if (quantity <= 0) {
             return reject(s, "V230_SIZE_ZERO", "Signal refusé : taille research nulle", score, movement);
@@ -189,7 +190,7 @@ public final class SignalEngine {
                     || s.flow15 < -0.020
                     || s.flow30 < 0.000);
 
-            if (strongLongContinuation) return Plan.no();
+            if (strongLongContinuation || rangeFadeCounterTrendTrap(s, -1)) return Plan.no();
 
             if (exhaustion >= 0.95 && rejection && !btcHardConflict(s, -1) && !btcFadeConflict(s, -1)) {
                 double target = s.roomShort >= 3.20 && exhaustion >= 1.55 ? TP_STANDARD : TP_SCALP;
@@ -218,7 +219,7 @@ public final class SignalEngine {
                     || s.flow15 > 0.020
                     || s.flow30 > 0.000);
 
-            if (strongShortContinuation) return Plan.no();
+            if (strongShortContinuation || rangeFadeCounterTrendTrap(s, 1)) return Plan.no();
 
             if (exhaustion >= 0.95 && rejection && !btcHardConflict(s, 1) && !btcFadeConflict(s, 1)) {
                 double target = s.roomLong >= 3.20 && exhaustion >= 1.55 ? TP_STANDARD : TP_SCALP;
@@ -228,6 +229,64 @@ public final class SignalEngine {
         }
 
         return best(shortFade, longFade);
+    }
+
+    private static int capRiskyRangeFadeQuantity(int quantity, MarketSnapshot s, Plan plan) {
+        if (s == null || plan == null || plan.family == null || !plan.family.contains("RANGE_FADE")) {
+            return quantity;
+        }
+
+        if (riskyRangeFadeSizingContext(s, plan.side)) {
+            return Math.min(quantity, 3);
+        }
+
+        return quantity;
+    }
+
+    private static boolean riskyRangeFadeSizingContext(MarketSnapshot s, int fadeSide) {
+        double avg = Math.max(0.35, s.avgRange20);
+        double rp = finiteOr(s.rangePosition, 0.5);
+
+        if (fadeSide < 0) {
+            boolean ethStillPushingLong = s.move3 > avg * 0.90 && s.move8 > avg * 1.65 && rp >= 0.86;
+            boolean btcOrFlowStillLong = s.btcMove3 > 0.00020 || s.btcMove8 > 0.00035
+                    || s.flow60 > 0.03 || s.flow120 > 0.25;
+            boolean notARealRejectionYet = s.move1 > -avg * 0.45 && s.flow15 > -0.26;
+            return ethStillPushingLong && btcOrFlowStillLong && notARealRejectionYet;
+        }
+
+        if (fadeSide > 0) {
+            boolean ethStillPushingShort = s.move3 < -avg * 0.90 && s.move8 < -avg * 1.65 && rp <= 0.14;
+            boolean btcOrFlowStillShort = s.btcMove3 < -0.00020 || s.btcMove8 < -0.00035
+                    || s.flow60 < -0.03 || s.flow120 < -0.25;
+            boolean notARealRejectionYet = s.move1 < avg * 0.45 && s.flow15 < 0.26;
+            return ethStillPushingShort && btcOrFlowStillShort && notARealRejectionYet;
+        }
+
+        return false;
+    }
+
+    private static boolean rangeFadeCounterTrendTrap(MarketSnapshot s, int fadeSide) {
+        double avg = Math.max(0.35, s.avgRange20);
+        double rp = finiteOr(s.rangePosition, 0.5);
+
+        if (fadeSide < 0) {
+            boolean ethLongPush = s.move3 > avg * 1.25 && s.move8 > avg * 2.35 && rp >= 0.88;
+            boolean btcLongConfirm = s.btcMove3 > 0.00022 || s.btcMove8 > 0.00035;
+            boolean mediumFlowLong = s.flow60 > 0.03 || s.flow120 > 0.30;
+            boolean noImmediateRejection = s.move1 > -avg * 0.35 && s.flow15 > -0.24;
+            return ethLongPush && btcLongConfirm && mediumFlowLong && noImmediateRejection;
+        }
+
+        if (fadeSide > 0) {
+            boolean ethShortPush = s.move3 < -avg * 1.25 && s.move8 < -avg * 2.35 && rp <= 0.12;
+            boolean btcShortConfirm = s.btcMove3 < -0.00022 || s.btcMove8 < -0.00035;
+            boolean mediumFlowShort = s.flow60 < -0.03 || s.flow120 < -0.30;
+            boolean noImmediateRejection = s.move1 < avg * 0.35 && s.flow15 < 0.24;
+            return ethShortPush && btcShortConfirm && mediumFlowShort && noImmediateRejection;
+        }
+
+        return false;
     }
 
     private static Scores score(MarketSnapshot s) {
