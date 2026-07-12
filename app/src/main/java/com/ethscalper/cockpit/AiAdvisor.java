@@ -138,7 +138,7 @@ public final class AiAdvisor {
         JSONObject x = new JSONObject();
         try {
             x.put("role", "fast_scalping_confirmation");
-            x.put("instruction", "Return ONLY a compact JSON object. No markdown. No reasoning text. First character must be { and last character must be }. Approve only if entry is not late and setup has clean ETH/BTC context.");
+            x.put("instruction", "Return ONLY a compact JSON object. No markdown. No reasoning text. First character must be { and last character must be }. Never approve RANGE_FADE_LONG if ETH is still falling with negative move1/move3/flow30 or BTC is falling. Never approve RANGE_FADE_SHORT if ETH is still rising with positive move1/move3/flow30 or BTC is rising. Approve only if entry is not late and setup has clean ETH/BTC context.");
             x.put("schema", "{\"decision\":\"APPROVE|REJECT\",\"confidence\":0-100,\"targetMove\":3.2|3.8|5.5,\"stopDistance\":1.35|1.65|2.2,\"reason\":\"short text\"}");
             x.put("side", d.side);
             x.put("family", d.family);

@@ -211,7 +211,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.30.2",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.30.4",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -713,6 +713,22 @@ public class MarketWatchService extends Service {
             return;
         }
 
+        if (shouldRejectAiApprovedFresh(original, fresh)) {
+            aiStatus = "AI_POST_VETO_REJECT";
+            lastDecision = SignalDecision.waiting("V230_AI_POST_VETO_REJECT",
+                    "IA refusée après veto moteur : continuation opposée active",
+                    original.score,
+                    original.impulse,
+                    original.resetConfirmed,
+                    original.movementOrigin,
+                    original.movementExtreme,
+                    original.movementDistance,
+                    original.movementConsumed);
+            recordMarketFrame(fresh, lastDecision, now);
+            broadcastStatus("ai_post_veto_reject", "Continuation opposée active");
+            return;
+        }
+
         if (isAiSignalTooLate(original, fresh)) {
             aiStatus = "AI_LATE_REJECT";
             lastDecision = SignalDecision.waiting("V230_AI_LATE_REJECT",
@@ -744,6 +760,32 @@ public class MarketWatchService extends Service {
 
     private boolean shouldRejectAiFallback(SignalDecision decision) {
         return true;
+    }
+
+    private boolean shouldRejectAiApprovedFresh(SignalDecision decision, MarketSnapshot s) {
+        if (decision == null || s == null) return true;
+
+        String family = decision.family == null ? "" : decision.family;
+        int side = "LONG".equals(decision.side) ? 1 : "SHORT".equals(decision.side) ? -1 : 0;
+        if (side == 0) return true;
+
+        if (family.contains("RANGE_FADE")) {
+            if (side > 0) {
+                boolean fallingKnife = s.rangePosition < 0.02
+                        || (s.move1 < -s.avgRange20 * 0.45 && s.move3 < -s.avgRange20 * 0.85 && s.flow30 < -0.04)
+                        || (s.flow15 < -0.10 && s.flow30 < -0.08)
+                        || (s.btcMove1 < -0.00045 && s.btcMove3 < -0.00040);
+                if (fallingKnife) return true;
+            } else {
+                boolean risingKnife = s.rangePosition > 0.98
+                        || (s.move1 > s.avgRange20 * 0.45 && s.move3 > s.avgRange20 * 0.85 && s.flow30 > 0.04)
+                        || (s.flow15 > 0.10 && s.flow30 > 0.08)
+                        || (s.btcMove1 > 0.00045 && s.btcMove3 > 0.00040);
+                if (risingKnife) return true;
+            }
+        }
+
+        return false;
     }
 
     private boolean isAiSignalTooLate(SignalDecision decision, MarketSnapshot snapshot) {
@@ -1316,19 +1358,39 @@ public class MarketWatchService extends Service {
         double price = snapshot.ethLast;
         if (!Double.isFinite(price) || price <= 0) return "NO_PRICE";
 
+        if (age > 35_000L) return "ENTRY_TOO_FAR";
+
+        double chaseLimit = Math.min(0.45, Math.max(0.32, lastSignal.targetMove * 0.14));
+        double adverseLimit = Math.min(0.55, Math.max(0.30, lastSignal.stopDistance * 0.25));
+
         if ("LONG".equals(lastSignal.side)) {
             if (price <= lastSignal.stopLoss) return "SL_TOUCHED";
             if (price >= lastSignal.takeProfit) return "TP_TOUCHED";
+            double favorable = price - lastSignal.entry;
+            double adverse = lastSignal.entry - price;
+            if (favorable > chaseLimit || adverse > adverseLimit) return "ENTRY_TOO_FAR";
             return "ACTIVE";
         }
 
         if ("SHORT".equals(lastSignal.side)) {
             if (price >= lastSignal.stopLoss) return "SL_TOUCHED";
             if (price <= lastSignal.takeProfit) return "TP_TOUCHED";
+            double favorable = lastSignal.entry - price;
+            double adverse = price - lastSignal.entry;
+            if (favorable > chaseLimit || adverse > adverseLimit) return "ENTRY_TOO_FAR";
             return "ACTIVE";
         }
 
         return "NONE";
+    }
+
+    private String executionStateForLastSignal(MarketSnapshot snapshot, long now) {
+        String status = activeSignalStatus(snapshot, now);
+        if ("ACTIVE".equals(status)) return "ENTRER_MAINTENANT";
+        if ("ENTRY_TOO_FAR".equals(status)) return "TROP_TARD";
+        if ("TP_TOUCHED".equals(status) || "SL_TOUCHED".equals(status) || "TIMEOUT_15M".equals(status)) return "TERMINE";
+        if ("NO_PRICE".equals(status)) return "PRIX_INDISPONIBLE";
+        return "ATTENDRE";
     }
 
     private long activeSignalAgeSec(long now) {
@@ -1496,7 +1558,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.30.2 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.30.4 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1571,7 +1633,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.30.2-android");
+            state.put("version", "2.30.4-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1597,9 +1659,10 @@ public class MarketWatchService extends Service {
             MarketSnapshot snapshot = statusSnapshot;
             state.put("activeSignal", activeSignal);
             state.put("activeSignalStatus", activeStatus);
+            state.put("signalExecutionState", executionStateForLastSignal(statusSnapshot, now));
             state.put("activeSignalAgeSec", activeSignalAgeSec(now));
             state.put("activeSignalRemainingSec", activeSignalRemainingSec(now));
-            state.put("activeSignalValidity", "RESEARCH_UNTIL_MARKET_INVALIDATION");
+            state.put("activeSignalValidity", "FAST_EXECUTION_WINDOW_THEN_OBSERVATION");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", false);
             state.put("aiEnabled", AiAdvisor.isEnabled(this));
@@ -1611,12 +1674,25 @@ public class MarketWatchService extends Service {
             state.put("observedSignals", observedSignalsJson());
             state.put("engineMetrics", engineMetricsJson(snapshot, decision));
             state.put("lastSignalAt", lastSignalAt);
-            state.put("decision", decision == null ? "ATTENDRE" : decision.decision);
-            state.put("decisionReason", decision == null ? "Initialisation du moteur" : decision.reasonText);
-            state.put("engineReason", decision == null ? "NO_DATA" : decision.reasonCode);
-            state.put("score", decision == null ? 0 : decision.score);
-            state.put("action", decision != null && decision.isSignal()
-                    ? "ENTRER " + decision.side + " LIMIT" : "NE PAS ENTRER");
+
+            String publicDecision = decision == null ? "ATTENDRE" : decision.decision;
+            String publicReason = decision == null ? "Initialisation du moteur" : decision.reasonText;
+            String publicEngineReason = decision == null ? "NO_DATA" : decision.reasonCode;
+            int publicScore = decision == null ? 0 : decision.score;
+
+            if (lastSignal != null && !"ACTIVE".equals(activeStatus)) {
+                publicDecision = "ATTENDRE";
+                publicReason = "Signal non exécutable : " + activeStatus;
+                publicEngineReason = "V230_SIGNAL_NOT_ACTIONABLE";
+                publicScore = lastSignal.score;
+            }
+
+            state.put("decision", publicDecision);
+            state.put("decisionReason", publicReason);
+            state.put("engineReason", publicEngineReason);
+            state.put("score", publicScore);
+            state.put("action", publicDecision.equals("ENTRER") && decision != null && decision.isSignal()
+                    ? "ENTRER " + decision.side + " MAINTENANT" : "NE PAS ENTRER");
             if (decision != null) state.put("movement", movementJson(decision));
             if (lastSignal != null) {
                 JSONObject signal = signalJson(lastSignal);
@@ -1711,7 +1787,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.30.2-hybrid-ai-scalp-engine");
+        m.put("rulesProfile", "ETH Scalper sessions v2.30.4-hybrid-ai-scalp-engine");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 

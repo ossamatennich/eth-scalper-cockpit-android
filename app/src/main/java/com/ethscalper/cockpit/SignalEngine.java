@@ -180,12 +180,18 @@ public final class SignalEngine {
             exhaustion += clamp(-z(s.btcMove3, -0.000052, 0.000926), 0.0, 1.0) * 0.18;
             exhaustion += clamp(scores.shortScore - scores.longScore + 0.30, 0.0, 0.80) * 0.30;
 
-            boolean rejection = s.move1 <= Math.max(0.10, s.avgRange20 * 0.20)
-                    || s.flow15 < -0.015
-                    || s.flow30 < -0.020
-                    || s.antiBurstScore > 0.70;
+            boolean strongLongContinuation = s.move1 > s.avgRange20 * 0.45
+                    && s.move3 > s.avgRange20 * 0.85
+                    && s.flow30 > 0.04;
 
-            if (exhaustion >= 0.95 && rejection && !btcHardConflict(s, -1)) {
+            boolean rejection = rp <= 0.98
+                    && (s.move1 <= -Math.max(0.08, s.avgRange20 * 0.08)
+                    || s.flow15 < -0.020
+                    || s.flow30 < 0.000);
+
+            if (strongLongContinuation) return Plan.no();
+
+            if (exhaustion >= 0.95 && rejection && !btcHardConflict(s, -1) && !btcFadeConflict(s, -1)) {
                 double target = s.roomShort >= 3.20 && exhaustion >= 1.55 ? TP_STANDARD : TP_SCALP;
                 double stop = target >= TP_STANDARD ? SL_STANDARD : SL_SCALP;
                 shortFade = Plan.pass(-1, target >= TP_STANDARD ? "RANGE_FADE_SHORT_PLUS" : "RANGE_FADE_SHORT", target, stop, 1.35 + exhaustion);
@@ -203,12 +209,18 @@ public final class SignalEngine {
             exhaustion += clamp(z(s.btcMove3, -0.000052, 0.000926), 0.0, 1.0) * 0.18;
             exhaustion += clamp(scores.longScore - scores.shortScore + 0.30, 0.0, 0.80) * 0.30;
 
-            boolean rejection = s.move1 >= -Math.max(0.10, s.avgRange20 * 0.20)
-                    || s.flow15 > 0.015
-                    || s.flow30 > 0.020
-                    || s.antiBurstScore > 0.70;
+            boolean strongShortContinuation = s.move1 < -s.avgRange20 * 0.45
+                    && s.move3 < -s.avgRange20 * 0.85
+                    && s.flow30 < -0.04;
 
-            if (exhaustion >= 0.95 && rejection && !btcHardConflict(s, 1)) {
+            boolean rejection = rp >= 0.02
+                    && (s.move1 >= Math.max(0.08, s.avgRange20 * 0.08)
+                    || s.flow15 > 0.020
+                    || s.flow30 > 0.000);
+
+            if (strongShortContinuation) return Plan.no();
+
+            if (exhaustion >= 0.95 && rejection && !btcHardConflict(s, 1) && !btcFadeConflict(s, 1)) {
                 double target = s.roomLong >= 3.20 && exhaustion >= 1.55 ? TP_STANDARD : TP_SCALP;
                 double stop = target >= TP_STANDARD ? SL_STANDARD : SL_SCALP;
                 longFade = Plan.pass(1, target >= TP_STANDARD ? "RANGE_FADE_LONG_PLUS" : "RANGE_FADE_LONG", target, stop, 1.35 + exhaustion);
@@ -333,6 +345,11 @@ public final class SignalEngine {
     private static boolean lateImpulse(MarketSnapshot s, int side, double rp, double limit) {
         double directionalMove1Z = side * z(s.move1Norm, 0.0, 0.572559);
         return directionalMove1Z > limit && ((side > 0 && rp > 0.70) || (side < 0 && rp < 0.32));
+    }
+
+    private static boolean btcFadeConflict(MarketSnapshot s, int side) {
+        if (side > 0) return s.btcMove1 < -0.00045 && s.btcMove3 < -0.00040;
+        return s.btcMove1 > 0.00045 && s.btcMove3 > 0.00040;
     }
 
     private static boolean btcHardConflict(MarketSnapshot s, int side) {

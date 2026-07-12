@@ -147,7 +147,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.30.2 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.30.4 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -445,7 +445,10 @@ public class MainActivity extends Activity {
                 renderPrices(eth, bid, ask, btc, btcBid, btcAsk);
                 renderMovement(movement);
                 renderSignal(lastSignal, signalAt, decision, visibleReason, state.optBoolean("activeSignal", false), state.optString("activeSignalStatus", "NONE"));
-                renderAction(action, decision, lastSignal);
+                renderAction(action, decision, lastSignal, eth, signalAt,
+                        state.optBoolean("activeSignal", false),
+                        state.optString("activeSignalStatus", "NONE"),
+                        state.optString("signalExecutionState", "ATTENDRE"));
                 renderDiagnostics(diagnostics, state.optString("engineReason", "NO_DATA"), reason);
                 if (aiInfo != null) aiInfo.setText("IA OpenAI : " + (state.optBoolean("aiEnabled", false) ? "ON" : "OFF") + " · " + state.optString("aiStatus", "AI_OFF"));
                 serviceInfo.setText(visibleServiceInfo);
@@ -554,24 +557,57 @@ public class MainActivity extends Activity {
         return hours + "h " + remMin + "min";
     }
 
-    private void renderAction(String action, String decision, JSONObject signal) {
-        if ("ENTRER".equals(decision) && signal != null) {
-            actionValue.setText("SIGNAL RESEARCH — EXÉCUTION MANUELLE");
+    private void renderAction(String action, String decision, JSONObject signal, double eth, long signalAt,
+                              boolean activeSignal, String activeStatus, String executionState) {
+        if ("ENTRER_MAINTENANT".equals(executionState) && "ENTRER".equals(decision) && signal != null && activeSignal) {
+            String side = signal.optString("side", "");
+            double entry = number(signal, "entry");
+            double tp = number(signal, "tp");
+            double sl = number(signal, "sl");
+            double target = Math.abs(number(signal, "targetMove"));
+            if (!Double.isFinite(target) || target <= 0) target = Math.abs(tp - entry);
+
+            double chaseLimit = Math.min(0.45, Math.max(0.32, target * 0.14));
+            double maxEntry = "LONG".equals(side) ? entry + chaseLimit : entry - chaseLimit;
+
+            long ageSec = signalAt > 0 ? Math.max(0, (System.currentTimeMillis() - signalAt) / 1000) : 0;
+            long remain = Math.max(0, 35 - ageSec);
+
+            actionValue.setText("ENTRER " + side + " MAINTENANT");
             actionValue.setTextColor(CYAN);
-            actionDetails.setText("Signal confirmé moteur/IA si IA active"
-                    + "\nPrix théorique : " + formatPrice(number(signal, "entry"))
-                    + "\nTP : " + formatPrice(number(signal, "tp"))
-                    + " · SL : " + formatPrice(number(signal, "sl"))
-                    + "\nTélécharger le ZIP après résultat TP/SL pour recalibrage.");
-        } else {
-            actionValue.setText(action);
-            actionValue.setTextColor(TEXT);
-            if ("ATTENDRE".equals(decision)) {
-                actionDetails.setText("Ne pas poursuivre un ancien signal · attendre le prochain signal actif");
-            } else {
-                actionDetails.setText("Aucun ordre automatique · " + decision.toLowerCase(Locale.FRANCE));
-            }
+            actionDetails.setText("Prix actuel : " + formatPrice(eth)
+                    + "\nEntrée théorique : " + formatPrice(entry)
+                    + "\nLimite à ne pas dépasser : " + formatPrice(maxEntry)
+                    + "\nTP : " + formatPrice(tp) + " · SL : " + formatPrice(sl)
+                    + "\nValidité rapide : " + remain + "s"
+                    + "\nSi le prix dépasse la limite, ne poursuis pas.");
+            return;
         }
+
+        if ("TROP_TARD".equals(executionState) || "ENTRY_TOO_FAR".equals(activeStatus)) {
+            actionValue.setText("TROP TARD — NE PAS ENTRER");
+            actionValue.setTextColor(ORANGE);
+            actionDetails.setText("Le signal est gardé seulement pour diagnostic. Attendre le prochain signal actif.");
+            return;
+        }
+
+        if ("TERMINE".equals(executionState) || "TP_TOUCHED".equals(activeStatus) || "SL_TOUCHED".equals(activeStatus)) {
+            actionValue.setText("SIGNAL TERMINÉ — NE PAS ENTRER");
+            actionValue.setTextColor(RED);
+            actionDetails.setText("Résultat : " + activeStatus + ". Attendre le prochain signal.");
+            return;
+        }
+
+        if ("V230_AI_PENDING".equals(decision) || "AI_PENDING".equals(executionState)) {
+            actionValue.setText("ANALYSE IA EN COURS — ATTENDRE");
+            actionValue.setTextColor(ORANGE);
+            actionDetails.setText("Ne rien faire tant que l’IA n’a pas confirmé.");
+            return;
+        }
+
+        actionValue.setText("NE PAS ENTRER");
+        actionValue.setTextColor(TEXT);
+        actionDetails.setText("Aucun signal exécutable maintenant · attendre un signal validé.");
     }
 
     private void renderDiagnostics(JSONArray diagnostics, String fallbackCode, String fallbackReason) {
@@ -609,7 +645,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_30_2_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_30_4_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -665,7 +701,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.30.2 Android natif\n");
+        b.append("Version app: v2.30.4 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
         b.append("Mode: V230_HYBRID_AI_SCALP_ENGINE — recherche uniquement, aucun trade réel\n\n");
 
@@ -802,7 +838,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.30.2\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.30.4\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -855,7 +891,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("PRO LABEL LAB — ETH SCALPER v2.30.2\n\n");
+        b.append("PRO LABEL LAB — ETH SCALPER v2.30.4\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -886,7 +922,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.30.2\n\n");
+        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.30.4\n\n");
         b.append("mode=").append(s.optString("mode", "—")).append("\n");
         b.append("frames=").append(s.optInt("frames", 0)).append("\n");
         b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");
