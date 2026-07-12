@@ -58,6 +58,7 @@ public class MarketWatchService extends Service {
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final long OBSERVATION_MAX_AGE_MS = 15 * 60 * 1000L;
     private static final long LIMIT_ORDER_MAX_AGE_MS = 45 * 60 * 1000L;
+    private static final long LIMIT_MANUAL_ENTRY_DELAY_MS = 15 * 1000L;
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
             "btcusdt@kline_1m/btcusdt@bookTicker";
@@ -212,7 +213,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.0",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.1",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -845,8 +846,8 @@ public class MarketWatchService extends Service {
                 return "RANGE_FADE_CONTRE_TENDANCE_FORTE";
             }
 
-            if (aiConfidence >= 0 && aiConfidence < 75 && weakRangeFadeContext(snapshot, decision)) {
-                return "RANGE_FADE_FAIBLE_IA_BASSE";
+            if (aiConfidence >= 0 && aiConfidence < 75) {
+                return "RANGE_FADE_IA_TROP_BASSE";
             }
         }
 
@@ -1521,7 +1522,7 @@ public class MarketWatchService extends Service {
             item.minPrice = Math.min(item.minPrice, price);
 
             if ("LIMIT_PENDING".equals(item.status)) {
-                if (limitEntryTouched(item.signal, snapshot)) {
+                if (now - item.createdAt >= LIMIT_MANUAL_ENTRY_DELAY_MS && limitEntryTouched(item.signal, snapshot)) {
                     item.status = "ACTIVE";
                     item.entryTriggered = true;
                     item.entryTriggeredAt = now;
@@ -1534,7 +1535,11 @@ public class MarketWatchService extends Service {
                 } else {
                     String pendingStatus = "ACTIVE";
 
-                    if (hardScenarioInvalidation(item, snapshot)) {
+                    if (targetTouchedBeforeManualFill(item.signal, snapshot)) {
+                        pendingStatus = "MISSED_NO_FILL";
+                    }
+
+                    if ("ACTIVE".equals(pendingStatus) && hardScenarioInvalidation(item, snapshot)) {
                         pendingStatus = "SCENARIO_INVALIDATED";
                     }
 
@@ -1593,6 +1598,22 @@ public class MarketWatchService extends Service {
 
         if ("SHORT".equals(signal.side)) {
             return price >= signal.entry - tolerance;
+        }
+
+        return false;
+    }
+
+    private boolean targetTouchedBeforeManualFill(SignalDecision signal, MarketSnapshot snapshot) {
+        if (signal == null || snapshot == null) return false;
+        double price = snapshot.ethLast;
+        if (!Double.isFinite(price) || price <= 0) return false;
+
+        if ("LONG".equals(signal.side)) {
+            return price >= signal.takeProfit;
+        }
+
+        if ("SHORT".equals(signal.side)) {
+            return price <= signal.takeProfit;
         }
 
         return false;
@@ -1914,7 +1935,7 @@ public class MarketWatchService extends Service {
 
     private JSONObject observationSummaryJson() throws Exception {
         JSONObject o = new JSONObject();
-        int total = 0, pending = 0, active = 0, triggered = 0, tp = 0, sl = 0, invalid = 0, timeout15 = 0, timeout45 = 0;
+        int total = 0, pending = 0, active = 0, triggered = 0, tp = 0, sl = 0, invalid = 0, timeout15 = 0, timeout45 = 0, missedNoFill = 0;
 
         for (ObservedSignal item : observedSignals) {
             total++;
@@ -1926,6 +1947,7 @@ public class MarketWatchService extends Service {
             else if ("SL_TOUCHED".equals(item.status)) sl++;
             else if ("TIMEOUT_15M".equals(item.status)) timeout15++;
             else if ("TIMEOUT_45M".equals(item.status)) timeout45++;
+            else if ("MISSED_NO_FILL".equals(item.status)) missedNoFill++;
             else invalid++;
         }
 
@@ -1937,6 +1959,7 @@ public class MarketWatchService extends Service {
         o.put("slTouched", sl);
         o.put("timeout15", timeout15);
         o.put("timeout45", timeout45);
+        o.put("missedNoFill", missedNoFill);
         o.put("invalidated", invalid);
         o.put("mode", "RESEARCH_JOURNAL_LIMIT_AWARE");
         o.put("maxStoredSignals", 200);
@@ -2024,7 +2047,7 @@ public class MarketWatchService extends Service {
             recommendations.put("Continuer collecte : pas assez de nouveaux cas pour modifier les seuils.");
         }
 
-        o.put("mode", "LOCAL_REPLAY_CALIBRATION_STABLE_V232");
+        o.put("mode", "LOCAL_REPLAY_CALIBRATION_STABLE_V2321_MANUAL_FILL");
         o.put("total", total);
         o.put("rangeFade", rangeFade);
         o.put("rangeFadeSl", rangeFadeSl);
@@ -2099,6 +2122,7 @@ public class MarketWatchService extends Service {
 
     private String executionStateForLastSignal(MarketSnapshot snapshot, long now) {
         String status = activeSignalStatus(snapshot, now);
+        if ("MISSED_NO_FILL".equals(status)) return "NON_EXECUTE";
         if ("LIMIT_PENDING".equals(status)) return "LIMIT_EN_ATTENTE";
         if ("ACTIVE".equals(status)) return "LIMIT_DECLENCHE";
         if ("SCENARIO_INVALIDATED".equals(status)) return "ANNULE";
@@ -2269,6 +2293,7 @@ public class MarketWatchService extends Service {
         if ("TP_TOUCHED".equals(status)) emoji = "✅";
         else if ("SL_TOUCHED".equals(status)) emoji = "🛑";
         else if ("LIMIT_TRIGGERED".equals(status)) emoji = "🟢";
+        else if ("MISSED_NO_FILL".equals(status)) emoji = "⚪";
         else if ("ENTRY_TOO_FAR".equals(status)) emoji = "⚠️";
 
         String title = emoji + " OBS ETH " + item.signal.side + " · " + status;
@@ -2311,7 +2336,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.32.0 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.32.1 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -2386,7 +2411,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.32.0-android");
+            state.put("version", "2.32.1-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -2415,7 +2440,7 @@ public class MarketWatchService extends Service {
             state.put("signalExecutionState", executionStateForLastSignal(statusSnapshot, now));
             state.put("activeSignalAgeSec", activeSignalAgeSec(now));
             state.put("activeSignalRemainingSec", activeSignalRemainingSec(now));
-            state.put("activeSignalValidity", "LIMIT_PENDING_THEN_TRIGGERED_REPLAY_RISK_ARBITER");
+            state.put("activeSignalValidity", "LIMIT_PENDING_MANUAL_DELAY_THEN_TRIGGERED_REPLAY_RISK_ARBITER");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", false);
             state.put("aiEnabled", AiAdvisor.isEnabled(this));
@@ -2542,7 +2567,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.32.0-stable-replay-core");
+        m.put("rulesProfile", "ETH Scalper sessions v2.32.1-manual-fill-ai-floor");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 
