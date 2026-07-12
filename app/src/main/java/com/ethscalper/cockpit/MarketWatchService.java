@@ -212,7 +212,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.31.2",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.0",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -627,6 +627,13 @@ public class MarketWatchService extends Service {
     private SignalDecision applyAiGate(MarketSnapshot snapshot, SignalDecision decision, long now) {
         if (decision == null || !decision.isSignal()) return decision;
 
+        SignalDecision replayDecision = applyReplayRiskArbiter(snapshot, decision, -1, false);
+        if (replayDecision == null || !replayDecision.isSignal()) {
+            aiStatus = "REPLAY_RISK_VETO";
+            return replayDecision;
+        }
+        decision = replayDecision;
+
         if (!AiAdvisor.isEnabled(this)) {
             aiStatus = "AI_OFF_ENGINE_ONLY";
             return decision;
@@ -761,6 +768,16 @@ public class MarketWatchService extends Service {
         }
 
         SignalDecision finalDecision = repriceWithAi(original, fresh, result);
+        finalDecision = applyReplayRiskArbiter(fresh, finalDecision,
+                result.fallback ? -1 : result.confidence, true);
+
+        if (finalDecision == null || !finalDecision.isSignal()) {
+            aiStatus = "AI_APPROVED_BUT_REPLAY_RISK_VETO";
+            recordMarketFrame(fresh, finalDecision, now);
+            lastDecision = finalDecision;
+            broadcastStatus("replay_risk_veto", finalDecision == null ? "Replay risk veto" : finalDecision.reasonText);
+            return;
+        }
 
         aiApprovedSignature = aiSignature(finalDecision, fresh);
         aiApprovedUntil = now + 5000L;
@@ -771,6 +788,193 @@ public class MarketWatchService extends Service {
         activateSignalDecision(finalDecision, fresh, now,
                 result.fallback ? "signal_engine_fallback" : "signal_ai_confirmed",
                 result.reason);
+    }
+
+    private SignalDecision applyReplayRiskArbiter(MarketSnapshot snapshot, SignalDecision decision,
+                                                   int aiConfidence, boolean afterAi) {
+        if (decision == null || !decision.isSignal()) return decision;
+
+        String veto = replayRiskVetoCode(snapshot, decision, aiConfidence);
+        if (veto != null && !veto.isEmpty()) {
+            return SignalDecision.waiting("V232_REPLAY_RISK_VETO",
+                    "Veto replay v2.32 : " + veto,
+                    decision.score,
+                    decision.impulse,
+                    decision.resetConfirmed,
+                    decision.movementOrigin,
+                    decision.movementExtreme,
+                    decision.movementDistance,
+                    decision.movementConsumed);
+        }
+
+        int cappedQty = replayRiskQuantity(snapshot, decision, aiConfidence);
+        if (cappedQty <= 0) {
+            return SignalDecision.waiting("V232_REPLAY_SIZE_ZERO",
+                    "Signal refusé : taille replay nulle",
+                    decision.score,
+                    decision.impulse,
+                    decision.resetConfirmed,
+                    decision.movementOrigin,
+                    decision.movementExtreme,
+                    decision.movementDistance,
+                    decision.movementConsumed);
+        }
+
+        if (cappedQty != decision.quantity) {
+            return copySignalWithQuantity(decision, cappedQty);
+        }
+
+        return decision;
+    }
+
+    private String replayRiskVetoCode(MarketSnapshot snapshot, SignalDecision decision, int aiConfidence) {
+        if (snapshot == null || decision == null || !decision.isSignal()) return "NO_SIGNAL";
+
+        String family = decision.family == null ? "" : decision.family;
+
+        if (family.contains("CONTINUATION") && aiApprovedExhaustedContinuationTrap(decision, snapshot)) {
+            return "CONTINUATION_TROP_TARDIVE";
+        }
+
+        if (family.contains("RANGE_FADE")) {
+            if (aiApprovedRangeFadeAgainstLiveC2Trap(decision, snapshot)) {
+                return "RANGE_FADE_CONTRE_C2_ACTIF";
+            }
+
+            if (aiApprovedRangeFadeCounterTrendTrap(decision, snapshot)) {
+                return "RANGE_FADE_CONTRE_TENDANCE_FORTE";
+            }
+
+            if (aiConfidence >= 0 && aiConfidence < 75 && weakRangeFadeContext(snapshot, decision)) {
+                return "RANGE_FADE_FAIBLE_IA_BASSE";
+            }
+        }
+
+        return "";
+    }
+
+    private int replayRiskQuantity(MarketSnapshot snapshot, SignalDecision decision, int aiConfidence) {
+        int qty = Math.max(3, Math.min(5, decision.quantity)); // v2.32 : pas de 6/7 tant que le replay n'a pas validé.
+
+        if (aiConfidence >= 0) {
+            if (aiConfidence < 75) qty = Math.min(qty, 3);
+            else if (aiConfidence < 80) qty = Math.min(qty, 4);
+            else if (aiConfidence < 85) qty = Math.min(qty, 5);
+        }
+
+        String family = decision.family == null ? "" : decision.family;
+
+        if (family.contains("RANGE_FADE")) {
+            if (weakRangeFadeContext(snapshot, decision)
+                    || aiApprovedWeakExtremeRangeFadeTrap(decision, snapshot)
+                    || aiApprovedRangeFadeAgainstLiveC2Trap(decision, snapshot)) {
+                qty = Math.min(qty, 3);
+            }
+        }
+
+        if (family.contains("CONTINUATION") && weakContinuationSizingRisk(snapshot, decision)) {
+            qty = Math.min(qty, 3);
+        }
+
+        return Math.max(3, Math.min(5, qty));
+    }
+
+    private SignalDecision copySignalWithQuantity(SignalDecision decision, int qty) {
+        String family = cleanRiskFamily(decision.family) + " · risk qty " + qty + "ETH";
+        return SignalDecision.signal(decision.side, family, decision.score, qty,
+                decision.entry, decision.takeProfit, decision.stopLoss,
+                decision.targetMove, decision.stopDistance,
+                decision.impulse, decision.resetConfirmed,
+                decision.movementOrigin, decision.movementExtreme, decision.movementDistance);
+    }
+
+    private static String cleanRiskFamily(String family) {
+        if (family == null) return "";
+        return family.replaceAll(" · risk qty [0-9]+ETH", "");
+    }
+
+    private boolean weakRangeFadeContext(MarketSnapshot s, SignalDecision decision) {
+        if (s == null || decision == null) return true;
+        String family = decision.family == null ? "" : decision.family;
+        if (!family.contains("RANGE_FADE")) return false;
+
+        int side = "LONG".equals(decision.side) ? 1 : "SHORT".equals(decision.side) ? -1 : 0;
+        if (side == 0) return true;
+
+        double avg = Math.max(0.35, s.avgRange20);
+        double rp = Double.isFinite(s.rangePosition) ? s.rangePosition : 0.5;
+
+        if (side < 0) {
+            boolean notHighEnough = rp < 0.86;
+            boolean oldLongExtension = s.move8 > avg * 1.60;
+            boolean higherFrameStillLong = s.flow120 > 0.25 || s.btcMove5 > 0.00035 || s.btcMove8 > 0.00035;
+            boolean rejectionWeak = !(s.flow15 < -0.10 && s.flow30 < -0.03);
+            return notHighEnough && oldLongExtension && higherFrameStillLong && rejectionWeak;
+        }
+
+        if (side > 0) {
+            boolean notLowEnough = rp > 0.14;
+            boolean oldShortExtension = s.move8 < -avg * 1.60;
+            boolean higherFrameStillShort = s.flow120 < -0.25 || s.btcMove5 < -0.00035 || s.btcMove8 < -0.00035;
+            boolean reboundWeak = !(s.flow15 > 0.10 && s.flow30 > 0.03);
+            return notLowEnough && oldShortExtension && higherFrameStillShort && reboundWeak;
+        }
+
+        return false;
+    }
+
+    private boolean weakContinuationSizingRisk(MarketSnapshot s, SignalDecision decision) {
+        if (s == null || decision == null) return true;
+        int side = "LONG".equals(decision.side) ? 1 : "SHORT".equals(decision.side) ? -1 : 0;
+        if (side == 0) return true;
+
+        double avg = Math.max(0.35, s.avgRange20);
+        double rp = Double.isFinite(s.rangePosition) ? s.rangePosition : 0.5;
+        double target = Math.max(2.80, decision.targetMove);
+        double room = side > 0 ? s.roomLong : s.roomShort;
+
+        boolean roomWeak = room < Math.max(1.75, target * 0.88);
+        boolean badZone = side > 0 ? rp > 0.68 : rp < 0.32;
+        boolean extended = side * s.move3 > avg * 1.45 && side * s.move8 > avg * 1.45;
+        boolean freshFlowWeak = side * s.flow15 < 0.08 && side * s.flow30 < 0.25;
+        boolean lowVolume = s.volumeRatio > 0 && s.volumeRatio < 0.35;
+
+        return roomWeak && badZone && extended && (freshFlowWeak || lowVolume);
+    }
+
+    private boolean aiApprovedRangeFadeAgainstLiveC2Trap(SignalDecision decision, MarketSnapshot s) {
+        if (decision == null || s == null) return true;
+        String family = decision.family == null ? "" : decision.family;
+        if (!family.contains("RANGE_FADE")) return false;
+
+        int side = "LONG".equals(decision.side) ? 1 : "SHORT".equals(decision.side) ? -1 : 0;
+        if (side == 0) return true;
+
+        double avg = Math.max(0.35, s.avgRange20);
+        double threshold = Math.max(0.75, avg * 0.55);
+        double rp = Double.isFinite(s.rangePosition) ? s.rangePosition : 0.5;
+
+        if (side > 0) {
+            boolean c2ShortActive = s.move3 < -threshold * 1.35 && s.move1 < avg * 0.25;
+            boolean nearLowNotReversal = rp <= 0.10 && s.roomShort < Math.max(0.65, avg * 0.45);
+            boolean flowStillShort = s.flow30 < -0.045 && (s.flow60 < -0.060 || s.flow120 < -0.080);
+            boolean btcStillShort = s.btcMove3 < -0.00022 || s.btcMove8 < -0.00035 || s.btcMove5 < -0.00035;
+            boolean noRealBounceYet = s.move1 < avg * 0.10 && !(s.flow15 > 0.10 && s.flow30 > 0.03);
+
+            return c2ShortActive && nearLowNotReversal && (flowStillShort || btcStillShort) && noRealBounceYet;
+        }
+
+        if (side < 0) {
+            boolean c2LongActive = s.move3 > threshold * 1.35 && s.move1 > -avg * 0.25;
+            boolean nearHighNotReversal = rp >= 0.90 && s.roomLong < Math.max(0.65, avg * 0.45);
+            boolean flowStillLong = s.flow30 > 0.045 && (s.flow60 > 0.060 || s.flow120 > 0.080);
+            boolean btcStillLong = s.btcMove3 > 0.00022 || s.btcMove8 > 0.00035 || s.btcMove5 > 0.00035;
+            boolean noRealRejectionYet = s.move1 > -avg * 0.10 && !(s.flow15 < -0.10 && s.flow30 < -0.03);
+
+            return c2LongActive && nearHighNotReversal && (flowStillLong || btcStillLong) && noRealRejectionYet;
+        }
+
+        return false;
     }
 
     private boolean shouldRejectAiFallback(SignalDecision decision) {
@@ -788,7 +992,7 @@ public class MarketWatchService extends Service {
             return true;
         }
 
-        if (family.contains("RANGE_FADE") && (aiApprovedRangeFadeCounterTrendTrap(decision, s) || aiApprovedWeakExtremeRangeFadeTrap(decision, s))) {
+        if (family.contains("RANGE_FADE") && (aiApprovedRangeFadeCounterTrendTrap(decision, s) || aiApprovedWeakExtremeRangeFadeTrap(decision, s) || aiApprovedRangeFadeAgainstLiveC2Trap(decision, s))) {
             return true;
         }
 
@@ -947,10 +1151,15 @@ public class MarketWatchService extends Service {
             }
         }
 
+        quantity = Math.min(quantity, 5);
+
         if (!result.fallback && family.contains("RANGE_FADE") && result.confidence < 75) {
             quantity = Math.min(quantity, 3);
         }
         if (!result.fallback && aiApprovedWeakExtremeRangeFadeTrap(original, snapshot)) {
+            quantity = Math.min(quantity, 3);
+        }
+        if (!result.fallback && aiApprovedRangeFadeAgainstLiveC2Trap(original, snapshot)) {
             quantity = Math.min(quantity, 3);
         }
         if (!result.fallback && aiApprovedExhaustedContinuationTrap(original, snapshot)) {
@@ -1794,11 +2003,11 @@ public class MarketWatchService extends Service {
         }
 
         if (rangeFadeSl > 0) {
-            recommendations.put("Durcir les RANGE_FADE faibles : extrême insuffisant, IA faible, ou retour violent après progression.");
+            recommendations.put("v2.32 : RANGE_FADE faible = cap 3 ou veto si C2 actif / contre-tendance forte.");
         }
 
         if (continuationLateSl > 0) {
-            recommendations.put("Durcir les CONTINUATION tardives : mouvement déjà consommé, flow court qui ralentit, room TP trop faible.");
+            recommendations.put("v2.32 : CONTINUATION tardive = veto si mouvement consommé, flow court ralentit, room TP faible.");
         } else if (continuationSl > 0) {
             recommendations.put("Surveiller les CONTINUATION en SL : limiter quantité si IA < 80% ou room TP faible.");
         }
@@ -1815,7 +2024,7 @@ public class MarketWatchService extends Service {
             recommendations.put("Continuer collecte : pas assez de nouveaux cas pour modifier les seuils.");
         }
 
-        o.put("mode", "LOCAL_REPLAY_CALIBRATION_ASSIST");
+        o.put("mode", "LOCAL_REPLAY_CALIBRATION_STABLE_V232");
         o.put("total", total);
         o.put("rangeFade", rangeFade);
         o.put("rangeFadeSl", rangeFadeSl);
@@ -2102,7 +2311,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.31.2 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.32.0 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -2177,7 +2386,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.31.2-android");
+            state.put("version", "2.32.0-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -2206,7 +2415,7 @@ public class MarketWatchService extends Service {
             state.put("signalExecutionState", executionStateForLastSignal(statusSnapshot, now));
             state.put("activeSignalAgeSec", activeSignalAgeSec(now));
             state.put("activeSignalRemainingSec", activeSignalRemainingSec(now));
-            state.put("activeSignalValidity", "LIMIT_PENDING_THEN_TRIGGERED_UNTIL_TP_SL_OR_CONFIRMED_INVALIDATION");
+            state.put("activeSignalValidity", "LIMIT_PENDING_THEN_TRIGGERED_REPLAY_RISK_ARBITER");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", false);
             state.put("aiEnabled", AiAdvisor.isEnabled(this));
@@ -2333,7 +2542,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.31.2-continuation-late-filter");
+        m.put("rulesProfile", "ETH Scalper sessions v2.32.0-stable-replay-core");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 

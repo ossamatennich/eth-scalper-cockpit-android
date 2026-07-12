@@ -25,5 +25,5 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ETH-Scalper-Cockpit-v2.31.2-debug-apk
+          name: ETH-Scalper-Cockpit-v2.32.0-debug-apk
           path: app/build/outputs/apk/debug/*.apk
