@@ -212,7 +212,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.30.7",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.30.8",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -1269,20 +1269,37 @@ public class MarketWatchService extends Service {
     private boolean directionalContextStillAcceptable(ObservedSignal item, MarketSnapshot snapshot) {
         if (item == null || item.signal == null || snapshot == null) return false;
 
+        long age = Math.max(0, System.currentTimeMillis() - item.createdAt);
         double avg = Math.max(0.35, snapshot.avgRange20);
+        double adverseNow = adverseMoveFor(item.signal, snapshot.ethLast);
+        double stop = Math.max(0.10, item.signal.stopDistance);
+
+        // Très important : pendant les premières minutes, un ordre LIMIT peut flotter.
+        // On ne l'annule pas sur un simple push temporaire tant que le SL n'est pas touché.
+        if (age <= 180_000L && adverseNow <= stop * 0.82) {
+            return true;
+        }
 
         if ("LONG".equals(item.signal.side)) {
-            boolean strongOppositeMove = snapshot.move3 < -avg * 1.25 && snapshot.flow30 < -0.08;
-            boolean strongOppositeBtc = snapshot.btcMove1 < -0.00080 && snapshot.btcMove3 < -0.00075;
-            boolean noRoom = snapshot.roomLong < 0.70 && snapshot.rangePosition > 0.88;
-            return !strongOppositeMove && !strongOppositeBtc && !noRoom;
+            boolean strongOppositeMove = snapshot.move3 < -avg * 1.65 && snapshot.move8 < -avg * 2.10;
+            boolean strongOppositeFlow = snapshot.flow30 < -0.13 && snapshot.flow60 < -0.08;
+            boolean strongOppositeBtc = snapshot.btcMove1 < -0.00100 && snapshot.btcMove3 < -0.00090;
+            boolean noRoom = snapshot.roomLong < 0.45 && snapshot.rangePosition > 0.92;
+
+            return !(strongOppositeMove && strongOppositeFlow)
+                    && !(strongOppositeBtc && strongOppositeFlow)
+                    && !noRoom;
         }
 
         if ("SHORT".equals(item.signal.side)) {
-            boolean strongOppositeMove = snapshot.move3 > avg * 1.25 && snapshot.flow30 > 0.08;
-            boolean strongOppositeBtc = snapshot.btcMove1 > 0.00080 && snapshot.btcMove3 > 0.00075;
-            boolean noRoom = snapshot.roomShort < 0.70 && snapshot.rangePosition < 0.12;
-            return !strongOppositeMove && !strongOppositeBtc && !noRoom;
+            boolean strongOppositeMove = snapshot.move3 > avg * 1.65 && snapshot.move8 > avg * 2.10;
+            boolean strongOppositeFlow = snapshot.flow30 > 0.13 && snapshot.flow60 > 0.08;
+            boolean strongOppositeBtc = snapshot.btcMove1 > 0.00100 && snapshot.btcMove3 > 0.00090;
+            boolean noRoom = snapshot.roomShort < 0.45 && snapshot.rangePosition < 0.08;
+
+            return !(strongOppositeMove && strongOppositeFlow)
+                    && !(strongOppositeBtc && strongOppositeFlow)
+                    && !noRoom;
         }
 
         return false;
@@ -1320,20 +1337,46 @@ public class MarketWatchService extends Service {
     private boolean hardScenarioInvalidation(ObservedSignal item, MarketSnapshot snapshot) {
         if (item == null || item.signal == null || snapshot == null) return true;
 
+        long age = Math.max(0, System.currentTimeMillis() - item.createdAt);
         double avg = Math.max(0.35, snapshot.avgRange20);
         double adverseNow = adverseMoveFor(item.signal, snapshot.ethLast);
-        if (adverseNow > item.signal.stopDistance * 0.55) return true;
+        double stop = Math.max(0.10, item.signal.stopDistance);
+        String family = item.signal.family == null ? "" : item.signal.family;
+
+        // Le SL réel reste la vraie invalidation principale.
+        // Ici on évite l'annulation nerveuse avant SL.
+        if (adverseNow >= stop * 0.96) return true;
+
+        // Pour un RANGE_FADE, les premiers pushs contre le signal sont normaux.
+        // Exemple corrigé : SHORT invalidé à ~57s avec seulement ~0.90$ contre lui,
+        // puis TP touché ensuite. Cette règle doit rester valide.
+        if (family.contains("RANGE_FADE") && age <= 240_000L && adverseNow <= stop * 0.85) {
+            return false;
+        }
+
+        // Même hors RANGE_FADE, on ne tue pas un ordre LIMIT trop vite.
+        if (age <= 150_000L && adverseNow <= stop * 0.78) {
+            return false;
+        }
 
         if ("LONG".equals(item.signal.side)) {
-            boolean strongOpposite = snapshot.move3 < -avg * 0.95 && snapshot.flow30 < -0.08;
-            boolean btcOpposite = snapshot.btcMove1 < -0.00065 && snapshot.btcMove3 < -0.00060;
-            return strongOpposite || btcOpposite;
+            boolean strongOppositeMove = snapshot.move3 < -avg * 1.75 && snapshot.move8 < -avg * 2.25;
+            boolean strongOppositeFlow = snapshot.flow30 < -0.14 && snapshot.flow60 < -0.10;
+            boolean btcOpposite = snapshot.btcMove1 < -0.00110 && snapshot.btcMove3 < -0.00100;
+            boolean noRecovery = snapshot.move1 < -avg * 0.75 && snapshot.flow15 < -0.10;
+
+            return (strongOppositeMove && strongOppositeFlow && noRecovery)
+                    || (btcOpposite && strongOppositeFlow && age > 120_000L);
         }
 
         if ("SHORT".equals(item.signal.side)) {
-            boolean strongOpposite = snapshot.move3 > avg * 0.95 && snapshot.flow30 > 0.08;
-            boolean btcOpposite = snapshot.btcMove1 > 0.00065 && snapshot.btcMove3 > 0.00060;
-            return strongOpposite || btcOpposite;
+            boolean strongOppositeMove = snapshot.move3 > avg * 1.75 && snapshot.move8 > avg * 2.25;
+            boolean strongOppositeFlow = snapshot.flow30 > 0.14 && snapshot.flow60 > 0.10;
+            boolean btcOpposite = snapshot.btcMove1 > 0.00110 && snapshot.btcMove3 > 0.00100;
+            boolean noRecovery = snapshot.move1 > avg * 0.75 && snapshot.flow15 > 0.10;
+
+            return (strongOppositeMove && strongOppositeFlow && noRecovery)
+                    || (btcOpposite && strongOppositeFlow && age > 120_000L);
         }
 
         return true;
@@ -1742,7 +1785,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.30.7 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.30.8 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -1817,7 +1860,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.30.7-android");
+            state.put("version", "2.30.8-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -1846,7 +1889,7 @@ public class MarketWatchService extends Service {
             state.put("signalExecutionState", executionStateForLastSignal(statusSnapshot, now));
             state.put("activeSignalAgeSec", activeSignalAgeSec(now));
             state.put("activeSignalRemainingSec", activeSignalRemainingSec(now));
-            state.put("activeSignalValidity", "LIMIT_ORDER_UNTIL_TP_SL_OR_INVALIDATION");
+            state.put("activeSignalValidity", "LIMIT_ORDER_UNTIL_TP_SL_OR_CONFIRMED_INVALIDATION");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", false);
             state.put("aiEnabled", AiAdvisor.isEnabled(this));
@@ -1971,7 +2014,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.30.7-limit-order-scenario");
+        m.put("rulesProfile", "ETH Scalper sessions v2.30.8-less-nervous-invalidation");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 
