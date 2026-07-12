@@ -14,8 +14,8 @@ public final class SignalEngine {
     private static final double SLIPPAGE_RESEARCH = 0.10;
     private static final double EFFECTIVE_COST = FEE_ROUND_TRIP + SLIPPAGE_RESEARCH;
 
-    private static final double TP_SCALP = 3.20;
-    private static final double TP_STANDARD = 3.80;
+    private static final double TP_SCALP = 2.80;
+    private static final double TP_STANDARD = 3.50;
     private static final double TP_PREMIUM = 5.50;
 
     private static final double SL_SCALP = 1.35;

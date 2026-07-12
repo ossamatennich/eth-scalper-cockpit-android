@@ -18,7 +18,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public final class AiAdvisor {
-    public static final long TIMEOUT_MS = 4000L;
+    public static final long TIMEOUT_MS = 6500L;
 
     private static final String ENDPOINT = "https://api.openai.com/v1/responses";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
@@ -29,9 +29,9 @@ public final class AiAdvisor {
     public AiAdvisor(Context context) {
         this.context = context.getApplicationContext();
         this.client = new OkHttpClient.Builder()
-                .connectTimeout(1500, TimeUnit.MILLISECONDS)
-                .readTimeout(3500, TimeUnit.MILLISECONDS)
-                .writeTimeout(1500, TimeUnit.MILLISECONDS)
+                .connectTimeout(1800, TimeUnit.MILLISECONDS)
+                .readTimeout(6000, TimeUnit.MILLISECONDS)
+                .writeTimeout(1800, TimeUnit.MILLISECONDS)
                 .callTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .retryOnConnectionFailure(false)
                 .build();
@@ -52,8 +52,9 @@ public final class AiAdvisor {
         try {
             JSONObject body = new JSONObject();
             body.put("model", SecureAiStore.getModel(context));
-            body.put("max_output_tokens", 80);
-            body.put("input", "Return ONLY compact JSON: {\"decision\":\"APPROVE\",\"confidence\":90,\"targetMove\":3.2,\"stopDistance\":1.35,\"reason\":\"TEST_OK\"}");
+            body.put("max_output_tokens", 400);
+            body.put("reasoning", new JSONObject().put("effort", "minimal"));
+            body.put("input", "Return exactly this JSON only, no markdown, no reasoning: {\"decision\":\"APPROVE\",\"confidence\":90,\"targetMove\":2.8,\"stopDistance\":1.35,\"reason\":\"TEST_OK\"}");
 
             Request request = new Request.Builder()
                     .url(ENDPOINT)
@@ -97,7 +98,8 @@ public final class AiAdvisor {
         try {
             JSONObject body = new JSONObject();
             body.put("model", SecureAiStore.getModel(context));
-            body.put("max_output_tokens", 140);
+            body.put("max_output_tokens", 700);
+            body.put("reasoning", new JSONObject().put("effort", "minimal"));
             body.put("input", buildPrompt(s, decision));
 
             Request request = new Request.Builder()
@@ -136,7 +138,7 @@ public final class AiAdvisor {
         JSONObject x = new JSONObject();
         try {
             x.put("role", "fast_scalping_confirmation");
-            x.put("instruction", "Return ONLY compact JSON. Approve only if entry is not late and setup has clean ETH/BTC context. No explanation outside JSON.");
+            x.put("instruction", "Return ONLY a compact JSON object. No markdown. No reasoning text. First character must be { and last character must be }. Approve only if entry is not late and setup has clean ETH/BTC context.");
             x.put("schema", "{\"decision\":\"APPROVE|REJECT\",\"confidence\":0-100,\"targetMove\":3.2|3.8|5.5,\"stopDistance\":1.35|1.65|2.2,\"reason\":\"short text\"}");
             x.put("side", d.side);
             x.put("family", d.family);
@@ -172,6 +174,16 @@ public final class AiAdvisor {
     }
 
     private AiResult parse(String raw) {
+        try {
+            JSONObject root = new JSONObject(raw == null ? "{}" : raw);
+            if ("incomplete".equals(root.optString("status", ""))) {
+                String reason = "AI_INCOMPLETE";
+                JSONObject details = root.optJSONObject("incomplete_details");
+                if (details != null) reason = "AI_INCOMPLETE_" + details.optString("reason", "UNKNOWN");
+                return new AiResult(false, false, 0, Double.NaN, Double.NaN, reason, raw == null ? "{}" : raw);
+            }
+        } catch (Exception ignored) {}
+
         String text = extractText(raw);
         String jsonText = extractJsonObject(text);
 
@@ -266,7 +278,7 @@ public final class AiAdvisor {
 
         static AiResult fallback(String reason) {
             String raw = "{\"decision\":\"FALLBACK\",\"confidence\":0,\"reason\":\"" + reason + "\"}";
-            return new AiResult(true, true, 0, Double.NaN, Double.NaN, reason, raw);
+            return new AiResult(false, true, 0, Double.NaN, Double.NaN, reason, raw);
         }
     }
 }

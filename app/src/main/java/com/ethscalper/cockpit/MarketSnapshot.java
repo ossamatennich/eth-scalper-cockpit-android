@@ -24,7 +24,7 @@ public final class MarketSnapshot {
     public final double recentHigh;
     public final double recentLow;
 
-    // v2.30.1 Professional Feature Replay Lab
+    // v2.30.2 Professional Feature Replay Lab
     public final double recentRange;
     public final double volumeRatio;
     public final double rangePosition;
