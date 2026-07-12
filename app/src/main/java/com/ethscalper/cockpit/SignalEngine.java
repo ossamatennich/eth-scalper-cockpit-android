@@ -190,7 +190,7 @@ public final class SignalEngine {
                     || s.flow15 < -0.020
                     || s.flow30 < 0.000);
 
-            if (strongLongContinuation || rangeFadeCounterTrendTrap(s, -1)) return Plan.no();
+            if (strongLongContinuation || rangeFadeCounterTrendTrap(s, -1) || weakExtremeRangeFadeTrap(s, -1)) return Plan.no();
 
             if (exhaustion >= 0.95 && rejection && !btcHardConflict(s, -1) && !btcFadeConflict(s, -1)) {
                 double target = s.roomShort >= 3.20 && exhaustion >= 1.55 ? TP_STANDARD : TP_SCALP;
@@ -219,7 +219,7 @@ public final class SignalEngine {
                     || s.flow15 > 0.020
                     || s.flow30 > 0.000);
 
-            if (strongShortContinuation || rangeFadeCounterTrendTrap(s, 1)) return Plan.no();
+            if (strongShortContinuation || rangeFadeCounterTrendTrap(s, 1) || weakExtremeRangeFadeTrap(s, 1)) return Plan.no();
 
             if (exhaustion >= 0.95 && rejection && !btcHardConflict(s, 1) && !btcFadeConflict(s, 1)) {
                 double target = s.roomLong >= 3.20 && exhaustion >= 1.55 ? TP_STANDARD : TP_SCALP;
@@ -236,7 +236,7 @@ public final class SignalEngine {
             return quantity;
         }
 
-        if (riskyRangeFadeSizingContext(s, plan.side)) {
+        if (riskyRangeFadeSizingContext(s, plan.side) || weakExtremeRangeFadeTrap(s, plan.side)) {
             return Math.min(quantity, 3);
         }
 
@@ -261,6 +261,33 @@ public final class SignalEngine {
                     || s.flow60 < -0.03 || s.flow120 < -0.25;
             boolean notARealRejectionYet = s.move1 < avg * 0.45 && s.flow15 < 0.26;
             return ethStillPushingShort && btcOrFlowStillShort && notARealRejectionYet;
+        }
+
+        return false;
+    }
+
+    private static boolean weakExtremeRangeFadeTrap(MarketSnapshot s, int fadeSide) {
+        double avg = Math.max(0.35, s.avgRange20);
+        double rp = finiteOr(s.rangePosition, 0.5);
+
+        if (fadeSide < 0) {
+            // Correction v2.31.1 :
+            // Ne pas shorter un range fade si le prix n'est pas vraiment en haut du range
+            // et que le mouvement 8 bougies reste une extension LONG.
+            // Cas ZIP corrigé : SHORT à rp≈0.80, move8 très long, IA 72%, SL ensuite.
+            boolean notHighEnough = rp < 0.86;
+            boolean oldLongExtension = s.move8 > avg * 2.40;
+            boolean higherFrameStillLong = s.flow120 > 0.35 || s.btcMove5 > 0.00035 || s.btcMove8 > 0.00035;
+            boolean rejectionNotBroadEnough = !(s.flow15 < -0.02 && s.flow30 < -0.02) && s.flow60 > -0.35;
+            return notHighEnough && oldLongExtension && higherFrameStillLong && rejectionNotBroadEnough;
+        }
+
+        if (fadeSide > 0) {
+            boolean notLowEnough = rp > 0.14;
+            boolean oldShortExtension = s.move8 < -avg * 2.40;
+            boolean higherFrameStillShort = s.flow120 < -0.35 || s.btcMove5 < -0.00035 || s.btcMove8 < -0.00035;
+            boolean rejectionNotBroadEnough = !(s.flow15 > 0.02 && s.flow30 > 0.02) && s.flow60 < 0.35;
+            return notLowEnough && oldShortExtension && higherFrameStillShort && rejectionNotBroadEnough;
         }
 
         return false;
