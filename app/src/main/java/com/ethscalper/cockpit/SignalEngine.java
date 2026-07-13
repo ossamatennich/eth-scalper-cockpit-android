@@ -350,7 +350,7 @@ public final class SignalEngine {
         double rp = finiteOr(s.rangePosition, 0.5);
 
         if (fadeSide < 0) {
-            // Correction v2.32.1 :
+            // Correction v2.32.2 :
             // Ne pas shorter un range fade si le prix n'est pas vraiment en haut du range
             // et que le mouvement 8 bougies reste une extension LONG.
             // Cas ZIP corrigé : SHORT à rp≈0.80, move8 très long, IA 72%, SL ensuite.

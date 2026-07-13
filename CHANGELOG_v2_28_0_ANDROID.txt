@@ -1,4 +1,4 @@
-ETH Scalper Cockpit Android v2.32.1
+ETH Scalper Cockpit Android v2.32.2
 
 Professional Feature Replay Lab :
 - Aucun trade réel.

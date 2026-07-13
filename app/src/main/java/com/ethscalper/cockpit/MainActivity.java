@@ -147,7 +147,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.32.1 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.32.2 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -684,7 +684,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_32_1_" +
+            String fileName = "ETH_Scalper_Diagnostic_v2_32_2_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -695,6 +695,16 @@ public class MainActivity extends Activity {
                 String marketSummaryRaw = MarketWatchService.getLastMarketSummaryJson();
                 JSONArray marketFrames = new JSONArray(marketFramesRaw == null || marketFramesRaw.trim().isEmpty() ? "[]" : marketFramesRaw);
                 JSONObject marketSummary = new JSONObject(marketSummaryRaw == null || marketSummaryRaw.trim().isEmpty() ? "{}" : marketSummaryRaw);
+
+                String persistentObservedRaw = MarketWatchService.getPersistentObservationJournalJson(this);
+                String persistentObservedJsonl = MarketWatchService.getPersistentObservationJournalJsonl(this);
+                String persistentFramesRaw = MarketWatchService.getPersistentMarketFramesJson(this);
+                String persistentFramesJsonl = MarketWatchService.getPersistentMarketFramesJsonl(this);
+                String overnightSummaryRaw = MarketWatchService.getOvernightRecorderSummaryJson(this);
+
+                JSONArray persistentObserved = new JSONArray(persistentObservedRaw == null || persistentObservedRaw.trim().isEmpty() ? "[]" : persistentObservedRaw);
+                JSONArray persistentFrames = new JSONArray(persistentFramesRaw == null || persistentFramesRaw.trim().isEmpty() ? "[]" : persistentFramesRaw);
+                JSONObject overnightSummary = new JSONObject(overnightSummaryRaw == null || overnightSummaryRaw.trim().isEmpty() ? "{}" : overnightSummaryRaw);
                 addZipText(zip, "status.json", state.toString(2));
                 addZipText(zip, "engine_metrics.json", metrics == null ? "{}" : metrics.toString(2));
                 addZipText(zip, "engine_metrics.txt", buildEngineMetricsText(state));
@@ -705,11 +715,23 @@ public class MainActivity extends Activity {
                 addZipText(zip, "market_frames.csv", buildMarketFramesCsv(marketFrames));
                 addZipText(zip, "market_summary.json", marketSummary.toString(2));
                 addZipText(zip, "market_summary.txt", buildMarketSummaryText(marketSummary));
+
+                addZipText(zip, "persistent_observation_journal.json", persistentObserved.toString(2));
+                addZipText(zip, "persistent_observation_journal.jsonl", persistentObservedJsonl == null ? "" : persistentObservedJsonl);
+                addZipText(zip, "persistent_market_frames.json", persistentFrames.toString(2));
+                addZipText(zip, "persistent_market_frames.jsonl", persistentFramesJsonl == null ? "" : persistentFramesJsonl);
+                addZipText(zip, "overnight_recorder_summary.json", overnightSummary.toString(2));
+                addZipText(zip, "overnight_recorder_summary.txt",
+                        "OVERNIGHT RECORDER v2.32.2\n\n" +
+                        "observationEvents=" + overnightSummary.optInt("observationEvents", 0) + "\n" +
+                        "marketFrames=" + overnightSummary.optInt("marketFrames", 0) + "\n" +
+                        "durationSec=" + overnightSummary.optLong("durationSec", 0) + "\n" +
+                        "resetByButton=" + overnightSummary.optString("resetByButton", "—") + "\n");
                 addZipText(zip, "summary.txt", buildDiagnosticSummary(state));
                 addZipText(zip, "health_check.txt", buildHealthCheck(state));
                 addZipText(zip, "diagnostics.csv", buildDiagnosticsCsv(state.optJSONArray("diagnostics")));
                 addZipText(zip, "instructions.txt",
-                        "Envoyer ce ZIP à ChatGPT pour analyse du moteur ETH Scalper.\n" +
+                        "Envoyer ce ZIP à ChatGPT pour analyse du moteur ETH Scalper.\nDepuis v2.32.2, le ZIP inclut un recorder persistant longue durée.\n" +
                         "Ce fichier ne contient aucune clé API et aucun ordre automatique.\n" +
                         "Le trading reste manuel.\n");
             }
@@ -740,7 +762,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.32.1 Android natif\n");
+        b.append("Version app: v2.32.2 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
         b.append("Mode: V230_HYBRID_AI_SCALP_ENGINE — recherche uniquement, aucun trade réel\n\n");
 
@@ -877,7 +899,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.32.1\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.32.2\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -930,7 +952,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("PRO LABEL LAB — ETH SCALPER v2.32.1\n\n");
+        b.append("PRO LABEL LAB — ETH SCALPER v2.32.2\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -961,7 +983,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.32.1\n\n");
+        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.32.2\n\n");
         b.append("mode=").append(s.optString("mode", "—")).append("\n");
         b.append("frames=").append(s.optInt("frames", 0)).append("\n");
         b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");

@@ -29,6 +29,12 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
 import java.io.IOException;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.Call;
@@ -59,6 +65,10 @@ public class MarketWatchService extends Service {
     private static final long OBSERVATION_MAX_AGE_MS = 15 * 60 * 1000L;
     private static final long LIMIT_ORDER_MAX_AGE_MS = 45 * 60 * 1000L;
     private static final long LIMIT_MANUAL_ENTRY_DELAY_MS = 15 * 1000L;
+    private static final String PERSISTENT_DIR = "eth_scalper_overnight_recorder";
+    private static final String PERSISTENT_OBSERVATIONS_FILE = "persistent_observation_journal.jsonl";
+    private static final String PERSISTENT_MARKET_FRAMES_FILE = "persistent_market_frames.jsonl";
+    private static final long PERSISTENT_MARKET_FRAME_INTERVAL_MS = 5 * 1000L;
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
             "btcusdt@kline_1m/btcusdt@bookTicker";
@@ -81,6 +91,7 @@ public class MarketWatchService extends Service {
     private long observedSignalId;
     private long lastMarketFrameAt;
     private long lastMarketFrameJsonRefreshAt;
+    private long lastPersistentMarketFrameAt;
 
     private OkHttpClient client;
     private WebSocket socket;
@@ -116,6 +127,9 @@ public class MarketWatchService extends Service {
     public static volatile String LAST_STATUS_JSON = "";
     public static volatile String LAST_MARKET_FRAMES_JSON = "[]";
     public static volatile String LAST_MARKET_SUMMARY_JSON = "{}";
+    public static volatile String LAST_PERSISTENT_OBSERVATIONS_JSON = "[]";
+    public static volatile String LAST_PERSISTENT_MARKET_FRAMES_JSON = "[]";
+    public static volatile String LAST_OVERNIGHT_RECORDER_SUMMARY_JSON = "{}";
 
     public static String getLastStatusJson(Context context) {
         String memory = LAST_STATUS_JSON == null ? "" : LAST_STATUS_JSON;
@@ -133,6 +147,151 @@ public class MarketWatchService extends Service {
 
     public static String getLastMarketSummaryJson() {
         return LAST_MARKET_SUMMARY_JSON == null ? "{}" : LAST_MARKET_SUMMARY_JSON;
+    }
+
+    public static String getPersistentObservationJournalJson(Context context) {
+        try {
+            String json = jsonlFileToJsonArrayString(persistentFile(context, PERSISTENT_OBSERVATIONS_FILE));
+            LAST_PERSISTENT_OBSERVATIONS_JSON = json;
+            return json;
+        } catch (Exception ignored) {
+            return LAST_PERSISTENT_OBSERVATIONS_JSON == null ? "[]" : LAST_PERSISTENT_OBSERVATIONS_JSON;
+        }
+    }
+
+    public static String getPersistentObservationJournalJsonl(Context context) {
+        return readTextFile(persistentFile(context, PERSISTENT_OBSERVATIONS_FILE));
+    }
+
+    public static String getPersistentMarketFramesJson(Context context) {
+        try {
+            String json = jsonlFileToJsonArrayString(persistentFile(context, PERSISTENT_MARKET_FRAMES_FILE));
+            LAST_PERSISTENT_MARKET_FRAMES_JSON = json;
+            return json;
+        } catch (Exception ignored) {
+            return LAST_PERSISTENT_MARKET_FRAMES_JSON == null ? "[]" : LAST_PERSISTENT_MARKET_FRAMES_JSON;
+        }
+    }
+
+    public static String getPersistentMarketFramesJsonl(Context context) {
+        return readTextFile(persistentFile(context, PERSISTENT_MARKET_FRAMES_FILE));
+    }
+
+    public static String getOvernightRecorderSummaryJson(Context context) {
+        try {
+            String json = persistentRecorderSummaryJson(context).toString(2);
+            LAST_OVERNIGHT_RECORDER_SUMMARY_JSON = json;
+            return json;
+        } catch (Exception ignored) {
+            return LAST_OVERNIGHT_RECORDER_SUMMARY_JSON == null ? "{}" : LAST_OVERNIGHT_RECORDER_SUMMARY_JSON;
+        }
+    }
+
+    private static File persistentDir(Context context) {
+        File dir = new File(context.getFilesDir(), PERSISTENT_DIR);
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
+    }
+
+    private static File persistentFile(Context context, String name) {
+        return new File(persistentDir(context), name);
+    }
+
+    private static String readTextFile(File file) {
+        if (file == null || !file.exists()) return "";
+        StringBuilder out = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                out.append(line).append('\n');
+            }
+        } catch (Exception ignored) {}
+        return out.toString();
+    }
+
+    private static String jsonlFileToJsonArrayString(File file) throws Exception {
+        JSONArray arr = new JSONArray();
+        if (file == null || !file.exists()) return arr.toString();
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || !line.startsWith("{")) continue;
+                try { arr.put(new JSONObject(line)); } catch (Exception ignored) {}
+            }
+        }
+
+        return arr.toString();
+    }
+
+    private static JSONObject persistentRecorderSummaryJson(Context context) throws Exception {
+        JSONObject o = new JSONObject();
+        File obs = persistentFile(context, PERSISTENT_OBSERVATIONS_FILE);
+        File frames = persistentFile(context, PERSISTENT_MARKET_FRAMES_FILE);
+
+        JSONObject obsStats = jsonlStats(obs);
+        JSONObject frameStats = jsonlStats(frames);
+
+        long oldest = 0;
+        long newest = 0;
+
+        long obsOldest = obsStats.optLong("oldestAt", 0);
+        long obsNewest = obsStats.optLong("newestAt", 0);
+        long frameOldest = frameStats.optLong("oldestAt", 0);
+        long frameNewest = frameStats.optLong("newestAt", 0);
+
+        if (obsOldest > 0) oldest = obsOldest;
+        if (frameOldest > 0 && (oldest == 0 || frameOldest < oldest)) oldest = frameOldest;
+
+        if (obsNewest > 0) newest = obsNewest;
+        if (frameNewest > newest) newest = frameNewest;
+
+        o.put("mode", "PERSISTENT_OVERNIGHT_RECORDER");
+        o.put("version", "2.32.2");
+        o.put("description", "Journal persistant: conserve les signaux et les frames même si l'écran/app est fermé, jusqu'à réinitialisation diagnostic.");
+        o.put("observationEvents", obsStats.optInt("count", 0));
+        o.put("marketFrames", frameStats.optInt("count", 0));
+        o.put("observationFileBytes", obs.exists() ? obs.length() : 0);
+        o.put("marketFileBytes", frames.exists() ? frames.length() : 0);
+        o.put("oldestAt", oldest);
+        o.put("newestAt", newest);
+        o.put("durationSec", oldest > 0 && newest > oldest ? (newest - oldest) / 1000 : 0);
+        o.put("resetByButton", "ACTION_RESET_DIAGNOSTICS");
+        o.put("marketSampleIntervalSec", PERSISTENT_MARKET_FRAME_INTERVAL_MS / 1000);
+        return o;
+    }
+
+    private static JSONObject jsonlStats(File file) throws Exception {
+        JSONObject o = new JSONObject();
+        int count = 0;
+        long oldest = 0;
+        long newest = 0;
+
+        if (file != null && file.exists()) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.isEmpty() || !line.startsWith("{")) continue;
+                    try {
+                        JSONObject item = new JSONObject(line);
+                        long at = item.optLong("at", item.optLong("eventAt", item.optLong("createdAt", 0)));
+                        if (at > 0) {
+                            if (oldest == 0 || at < oldest) oldest = at;
+                            if (at > newest) newest = at;
+                        }
+                        count++;
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+
+        o.put("count", count);
+        o.put("oldestAt", oldest);
+        o.put("newestAt", newest);
+        o.put("durationSec", oldest > 0 && newest > oldest ? (newest - oldest) / 1000 : 0);
+        return o;
     }
 
     @Override public void onCreate() {
@@ -166,8 +325,15 @@ public class MarketWatchService extends Service {
             broadcastStatus("test_vibration", "Vibration longue testée");
         } else if (ACTION_RESET_DIAGNOSTICS.equals(action)) {
             signalEngine.clearDiagnostics();
+            observedSignals.clear();
+            marketFrames.clear();
             lastDecision = null;
-            broadcastStatus("diagnostics_reset", "Diagnostic moteur réinitialisé");
+            lastSignal = null;
+            lastSignalAt = 0;
+            observedSignalId = 0;
+            lastPersistentMarketFrameAt = 0;
+            resetPersistentRecorder();
+            broadcastStatus("diagnostics_reset", "Diagnostic moteur + recorder persistant réinitialisés");
         } else if (ACTION_SYNC_NOW.equals(action)) {
             broadcastStatus("sync", "État du service natif resynchronisé");
         }
@@ -213,7 +379,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.1",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.2",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -1197,6 +1363,101 @@ public class MarketWatchService extends Service {
         return Math.round(value * 100.0) / 100.0;
     }
 
+    private File persistentFile(String name) {
+        return persistentFile(this, name);
+    }
+
+    private void appendPersistentJsonLine(String fileName, JSONObject object) {
+        if (object == null) return;
+        try {
+            File file = persistentFile(fileName);
+            String line = object.toString() + "\n";
+            try (FileOutputStream out = new FileOutputStream(file, true)) {
+                out.write(line.getBytes(StandardCharsets.UTF_8));
+                out.flush();
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void resetPersistentRecorder() {
+        try { persistentFile(PERSISTENT_OBSERVATIONS_FILE).delete(); } catch (Exception ignored) {}
+        try { persistentFile(PERSISTENT_MARKET_FRAMES_FILE).delete(); } catch (Exception ignored) {}
+        LAST_PERSISTENT_OBSERVATIONS_JSON = "[]";
+        LAST_PERSISTENT_MARKET_FRAMES_JSON = "[]";
+        LAST_OVERNIGHT_RECORDER_SUMMARY_JSON = "{}";
+    }
+
+    private void persistMarketFrame(MarketFrame frame, long now, boolean force) {
+        if (frame == null) return;
+        if (!force && lastPersistentMarketFrameAt > 0 && now - lastPersistentMarketFrameAt < PERSISTENT_MARKET_FRAME_INTERVAL_MS) {
+            return;
+        }
+
+        try {
+            JSONObject json = marketFrameJson(frame);
+            json.put("persistedAt", now);
+            appendPersistentJsonLine(PERSISTENT_MARKET_FRAMES_FILE, json);
+            lastPersistentMarketFrameAt = now;
+        } catch (Exception ignored) {}
+    }
+
+    private void persistObservedSignalEvent(ObservedSignal item, String event, MarketSnapshot snapshot, long now) {
+        if (item == null || item.signal == null) return;
+
+        try {
+            JSONObject o = new JSONObject();
+            o.put("event", event);
+            o.put("eventAt", now);
+            o.put("id", item.id);
+            o.put("createdAt", item.createdAt);
+            o.put("lastUpdateAt", item.lastUpdateAt);
+            o.put("closedAt", item.closedAt);
+            o.put("status", item.status);
+            o.put("entryState", item.entryTriggered ? "TRIGGERED" : "PENDING");
+            o.put("entryTriggered", item.entryTriggered);
+            o.put("entryTriggeredAt", item.entryTriggeredAt);
+            putMetric(o, "entryTriggerPrice", item.entryTriggerPrice);
+            o.put("updates", item.updates);
+
+            o.put("side", item.signal.side);
+            o.put("family", item.signal.family);
+            o.put("score", item.signal.score);
+            o.put("qty", item.signal.quantity);
+            o.put("entry", item.signal.entry);
+            o.put("tp", item.signal.takeProfit);
+            o.put("sl", item.signal.stopLoss);
+            o.put("targetMove", item.signal.targetMove);
+            o.put("stopDistance", item.signal.stopDistance);
+
+            putMetric(o, "lastPrice", item.lastPrice);
+            putMetric(o, "maxPrice", item.maxPrice);
+            putMetric(o, "minPrice", item.minPrice);
+            putMetric(o, "mfe", item.mfe);
+            putMetric(o, "mae", item.mae);
+            putMetric(o, "scenarioProgress", scenarioProgress(item));
+            putMetric(o, "scenarioRisk", scenarioRisk(item));
+
+            if (snapshot != null) {
+                putMetric(o, "snapshotEth", snapshot.ethLast);
+                putMetric(o, "snapshotBid", snapshot.ethBid);
+                putMetric(o, "snapshotAsk", snapshot.ethAsk);
+                putMetric(o, "snapshotRangePosition", snapshot.rangePosition);
+                putMetric(o, "snapshotMove1", snapshot.move1);
+                putMetric(o, "snapshotMove3", snapshot.move3);
+                putMetric(o, "snapshotMove8", snapshot.move8);
+                putMetric(o, "snapshotFlow15", snapshot.flow15);
+                putMetric(o, "snapshotFlow30", snapshot.flow30);
+                putMetric(o, "snapshotFlow60", snapshot.flow60);
+                putMetric(o, "snapshotFlow120", snapshot.flow120);
+                putMetric(o, "snapshotBtcMove3", snapshot.btcMove3);
+                putMetric(o, "snapshotBtcMove8", snapshot.btcMove8);
+            }
+
+            try { o.put("signalMetrics", signalMetricsJson(item)); } catch (Exception ignored) {}
+            appendPersistentJsonLine(PERSISTENT_OBSERVATIONS_FILE, o);
+        } catch (Exception ignored) {}
+    }
+
     private void recordMarketFrame(MarketSnapshot snapshot, SignalDecision decision, long now) {
         if (lastMarketFrameAt > 0 && now - lastMarketFrameAt < 1000
                 && (decision == null || !decision.isSignal())) return;
@@ -1205,6 +1466,7 @@ public class MarketWatchService extends Service {
         MarketFrame frame = new MarketFrame(now, snapshot, decision, setupCandidateFor(snapshot));
         marketFrames.addLast(frame);
         updateMarketFrameFutureLabels(snapshot.ethLast, now);
+        persistMarketFrame(frame, now, decision != null && decision.isSignal());
 
         while (marketFrames.size() > 7200) marketFrames.removeFirst();
 
@@ -1506,6 +1768,7 @@ public class MarketWatchService extends Service {
         ObservedSignal item = new ObservedSignal(++observedSignalId, now, decision, price, snapshot);
         observedSignals.addLast(item);
         while (observedSignals.size() > 200) observedSignals.removeFirst();
+        persistObservedSignalEvent(item, "CREATED", snapshot, now);
     }
 
     private void updateObservedSignals(MarketSnapshot snapshot, long now) {
@@ -1532,6 +1795,7 @@ public class MarketWatchService extends Service {
                     item.mfe = 0;
                     item.mae = 0;
                     notifyObservationStatus(item, "LIMIT_TRIGGERED");
+                    persistObservedSignalEvent(item, "LIMIT_TRIGGERED", snapshot, now);
                 } else {
                     String pendingStatus = "ACTIVE";
 
@@ -1551,6 +1815,7 @@ public class MarketWatchService extends Service {
                         item.status = pendingStatus;
                         item.closedAt = now;
                         notifyObservationStatus(item, pendingStatus);
+                        persistObservedSignalEvent(item, pendingStatus, snapshot, now);
                     }
 
                     continue;
@@ -1581,6 +1846,7 @@ public class MarketWatchService extends Service {
                 item.status = status;
                 item.closedAt = now;
                 notifyObservationStatus(item, status);
+                persistObservedSignalEvent(item, status, snapshot, now);
             }
         }
     }
@@ -2336,7 +2602,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.32.1 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.32.2 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -2411,7 +2677,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.32.1-android");
+            state.put("version", "2.32.2-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -2440,7 +2706,7 @@ public class MarketWatchService extends Service {
             state.put("signalExecutionState", executionStateForLastSignal(statusSnapshot, now));
             state.put("activeSignalAgeSec", activeSignalAgeSec(now));
             state.put("activeSignalRemainingSec", activeSignalRemainingSec(now));
-            state.put("activeSignalValidity", "LIMIT_PENDING_MANUAL_DELAY_THEN_TRIGGERED_REPLAY_RISK_ARBITER");
+            state.put("activeSignalValidity", "LIMIT_PENDING_MANUAL_DELAY_REPLAY_RISK_PERSISTENT_RECORDER");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", false);
             state.put("aiEnabled", AiAdvisor.isEnabled(this));
@@ -2448,6 +2714,7 @@ public class MarketWatchService extends Service {
             state.put("aiStatus", aiStatus);
             try { state.put("aiLastDecision", new JSONObject(lastAiDecisionJson)); } catch (Exception ignored) { state.put("aiLastDecision", JSONObject.NULL); }
             state.put("marketFramesInMemory", marketFrames.size());
+            state.put("overnightRecorder", persistentRecorderSummaryJson(this));
             state.put("marketRecorderSummary", marketRecorderSummaryJson());
             state.put("observationSummary", observationSummaryJson());
             state.put("calibrationSummary", calibrationSummaryJson());
@@ -2567,7 +2834,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.32.1-manual-fill-ai-floor");
+        m.put("rulesProfile", "ETH Scalper sessions v2.32.2-persistent-overnight-recorder");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 
