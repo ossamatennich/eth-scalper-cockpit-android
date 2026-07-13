@@ -248,7 +248,7 @@ public class MarketWatchService extends Service {
         if (frameNewest > newest) newest = frameNewest;
 
         o.put("mode", "PERSISTENT_OVERNIGHT_RECORDER");
-        o.put("version", "2.32.2");
+        o.put("version", "2.32.3");
         o.put("description", "Journal persistant: conserve les signaux et les frames même si l'écran/app est fermé, jusqu'à réinitialisation diagnostic.");
         o.put("observationEvents", obsStats.optInt("count", 0));
         o.put("marketFrames", frameStats.optInt("count", 0));
@@ -379,7 +379,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.2",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.3",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -999,8 +999,14 @@ public class MarketWatchService extends Service {
 
         String family = decision.family == null ? "" : decision.family;
 
-        if (family.contains("CONTINUATION") && aiApprovedExhaustedContinuationTrap(decision, snapshot)) {
-            return "CONTINUATION_TROP_TARDIVE";
+        if (family.contains("CONTINUATION")) {
+            if (aiApprovedExhaustedContinuationTrap(decision, snapshot)) {
+                return "CONTINUATION_TROP_TARDIVE";
+            }
+
+            if (continuationStaleOrConflictedTrap(snapshot, decision)) {
+                return "CONTINUATION_SANS_ALIGNEMENT_8M_OU_FLOW";
+            }
         }
 
         if (family.contains("RANGE_FADE")) {
@@ -1058,6 +1064,43 @@ public class MarketWatchService extends Service {
     private static String cleanRiskFamily(String family) {
         if (family == null) return "";
         return family.replaceAll(" · risk qty [0-9]+ETH", "");
+    }
+
+    private boolean continuationStaleOrConflictedTrap(MarketSnapshot s, SignalDecision decision) {
+        if (s == null || decision == null) return true;
+
+        String family = decision.family == null ? "" : decision.family;
+        if (!family.contains("CONTINUATION")) return false;
+
+        int side = "LONG".equals(decision.side) ? 1 : "SHORT".equals(decision.side) ? -1 : 0;
+        if (side == 0) return true;
+
+        double avg = Math.max(0.35, s.avgRange20);
+
+        double move3Aligned = side * s.move3;
+        double move8Aligned = side * s.move8;
+        double flow15Aligned = side * s.flow15;
+        double flow30Aligned = side * s.flow30;
+        double flow60Aligned = side * s.flow60;
+        double btc3Aligned = side * s.btcMove3;
+
+        // Le problème détecté dans le ZIP v2.32.3 :
+        // SCALP_CONTINUATION déclenché sur move3 fort mais move8 pas aligné,
+        // puis retournement rapide en SL. Ce n'est pas une vraie continuation.
+        boolean move3Strong = move3Aligned > avg * 1.15;
+        boolean move8Missing = move8Aligned < avg * 0.75;
+        boolean move8Opposite = move8Aligned < -avg * 0.20;
+
+        boolean freshFlowWeak = flow15Aligned < 0.02 && flow30Aligned < 0.02;
+        boolean mediumFlowWeak = flow60Aligned < 0.30;
+        boolean btcAgainst = btc3Aligned < -0.00020;
+
+        if (move8Opposite) return true;
+        if (move3Strong && move8Missing) return true;
+
+        return move8Aligned < avg * 1.00
+                && freshFlowWeak
+                && (mediumFlowWeak || btcAgainst);
     }
 
     private boolean weakRangeFadeContext(MarketSnapshot s, SignalDecision decision) {
@@ -1409,6 +1452,7 @@ public class MarketWatchService extends Service {
             o.put("event", event);
             o.put("eventAt", now);
             o.put("id", item.id);
+            o.put("signalKey", item.createdAt + "|" + item.signal.side + "|" + item.signal.entry + "|" + item.signal.takeProfit + "|" + item.signal.stopLoss);
             o.put("createdAt", item.createdAt);
             o.put("lastUpdateAt", item.lastUpdateAt);
             o.put("closedAt", item.closedAt);
@@ -2602,7 +2646,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.32.2 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.32.3 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -2677,7 +2721,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.32.2-android");
+            state.put("version", "2.32.3-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -2706,7 +2750,7 @@ public class MarketWatchService extends Service {
             state.put("signalExecutionState", executionStateForLastSignal(statusSnapshot, now));
             state.put("activeSignalAgeSec", activeSignalAgeSec(now));
             state.put("activeSignalRemainingSec", activeSignalRemainingSec(now));
-            state.put("activeSignalValidity", "LIMIT_PENDING_MANUAL_DELAY_REPLAY_RISK_PERSISTENT_RECORDER");
+            state.put("activeSignalValidity", "LIMIT_PENDING_MANUAL_DELAY_PERSISTENT_RECORDER_CONTINUATION_FILTER");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", false);
             state.put("aiEnabled", AiAdvisor.isEnabled(this));
@@ -2834,7 +2878,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.32.2-persistent-overnight-recorder");
+        m.put("rulesProfile", "ETH Scalper sessions v2.32.3-continuation-alignment-filter");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 
