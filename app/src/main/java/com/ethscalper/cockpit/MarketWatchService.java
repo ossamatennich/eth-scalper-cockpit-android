@@ -248,7 +248,7 @@ public class MarketWatchService extends Service {
         if (frameNewest > newest) newest = frameNewest;
 
         o.put("mode", "PERSISTENT_OVERNIGHT_RECORDER");
-        o.put("version", "2.32.4");
+        o.put("version", "2.32.5");
         o.put("description", "Journal persistant: conserve les signaux et les frames même si l'écran/app est fermé, jusqu'à réinitialisation diagnostic.");
         o.put("observationEvents", obsStats.optInt("count", 0));
         o.put("marketFrames", frameStats.optInt("count", 0));
@@ -379,7 +379,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.4",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.5",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -1035,7 +1035,7 @@ public class MarketWatchService extends Service {
     }
 
     private int replayRiskQuantity(MarketSnapshot snapshot, SignalDecision decision, int aiConfidence) {
-        int qty = 3; // v2.32.4 validée replay : max 3 ETH tant que les faux signaux ne sont pas stabilisés.
+        int qty = 3; // v2.32.5 validée replay : max 3 ETH tant que les faux signaux ne sont pas stabilisés.
 
         if (aiConfidence >= 0) {
             if (aiConfidence < 75) qty = Math.min(qty, 3);
@@ -1092,7 +1092,7 @@ public class MarketWatchService extends Service {
         double flow60Aligned = side * s.flow60;
         double btc3Aligned = side * s.btcMove3;
 
-        // Le problème détecté dans le ZIP v2.32.4 :
+        // Le problème détecté dans le ZIP v2.32.5 :
         // SCALP_CONTINUATION déclenché sur move3 fort mais move8 pas aligné,
         // puis retournement rapide en SL. Ce n'est pas une vraie continuation.
         boolean move3Strong = move3Aligned > avg * 1.15;
@@ -1128,7 +1128,7 @@ public class MarketWatchService extends Service {
         double btc3 = side * s.btcMove3;
         double rp = Double.isFinite(s.rangePosition) ? s.rangePosition : 0.5;
 
-        // Replay v2.32.2/v2.32.4 :
+        // Replay v2.32.2/v2.32.5 :
         // les continuations prises en plein burst donnaient souvent un SL rapide.
         if (move1 > avg * 1.15 && s.volumeRatio > 1.50) return true;
 
@@ -1549,6 +1549,12 @@ public class MarketWatchService extends Service {
             o.put("entryTriggered", item.entryTriggered);
             o.put("entryTriggeredAt", item.entryTriggeredAt);
             putMetric(o, "entryTriggerPrice", item.entryTriggerPrice);
+            o.put("entryAgeSec", item.entryTriggeredAt > 0 ? Math.max(0, (now - item.entryTriggeredAt) / 1000) : -1);
+            o.put("timeoutExtended", item.timeoutExtended);
+            o.put("timeoutDecisionAt", item.timeoutDecisionAt);
+            o.put("timeoutExtensionUntil", item.timeoutExtensionUntil);
+            putMetric(o, "unrealizedMove", favorableMoveFor(item.signal, item.lastPrice));
+            putMetric(o, "unrealizedNetAfterFees", favorableMoveFor(item.signal, item.lastPrice) - 1.33);
             o.put("updates", item.updates);
 
             o.put("side", item.signal.side);
@@ -1581,8 +1587,14 @@ public class MarketWatchService extends Service {
                 putMetric(o, "snapshotFlow30", snapshot.flow30);
                 putMetric(o, "snapshotFlow60", snapshot.flow60);
                 putMetric(o, "snapshotFlow120", snapshot.flow120);
+                putMetric(o, "snapshotBtcMove1", snapshot.btcMove1);
                 putMetric(o, "snapshotBtcMove3", snapshot.btcMove3);
                 putMetric(o, "snapshotBtcMove8", snapshot.btcMove8);
+                putMetric(o, "snapshotVolumeRatio", snapshot.volumeRatio);
+                putMetric(o, "snapshotAntiBurstScore", snapshot.antiBurstScore);
+                putMetric(o, "snapshotFlowAccel", snapshot.flowAccel);
+                putMetric(o, "snapshotRoomLong", snapshot.roomLong);
+                putMetric(o, "snapshotRoomShort", snapshot.roomShort);
             }
 
             try { o.put("signalMetrics", signalMetricsJson(item)); } catch (Exception ignored) {}
@@ -1918,6 +1930,15 @@ public class MarketWatchService extends Service {
 
             if ("LIMIT_PENDING".equals(item.status)) {
                 if (now - item.createdAt >= LIMIT_MANUAL_ENTRY_DELAY_MS && limitEntryTouched(item.signal, snapshot)) {
+                    String triggerVeto = entryTriggerRevalidationCode(item, snapshot, price);
+                    if (!triggerVeto.isEmpty()) {
+                        item.status = "ENTRY_REVALIDATION_REJECTED";
+                        item.closedAt = now;
+                        notifyObservationStatus(item, "ENTRY_REVALIDATION_REJECTED");
+                        persistObservedSignalEvent(item, "ENTRY_REVALIDATION_REJECTED_" + triggerVeto, snapshot, now);
+                        continue;
+                    }
+
                     item.status = "ACTIVE";
                     item.entryTriggered = true;
                     item.entryTriggeredAt = now;
@@ -1965,13 +1986,28 @@ public class MarketWatchService extends Service {
             String status = marketStatusForSignal(item.signal, snapshot);
 
             if ("ACTIVE".equals(status) && hardScenarioInvalidation(item, snapshot)) {
-                status = "SCENARIO_INVALIDATED";
+                if (!item.timeoutExtended || hardTimeoutExtensionInvalidation(item, snapshot)) {
+                    status = "SCENARIO_INVALIDATED";
+                }
             }
 
-            if ("ACTIVE".equals(status) && now - item.createdAt >= LIMIT_ORDER_MAX_AGE_MS) {
+            long activeSince = observationClockStart(item);
+            long activeAge = activeSince > 0 ? Math.max(0, now - activeSince) : 0;
+
+            if ("ACTIVE".equals(status) && activeAge >= LIMIT_ORDER_MAX_AGE_MS) {
                 status = "TIMEOUT_45M";
-            } else if ("ACTIVE".equals(status) && now - item.createdAt >= OBSERVATION_MAX_AGE_MS) {
-                status = shouldKeepScenarioAlive(item, snapshot, now) ? "ACTIVE" : "TIMEOUT_15M";
+            } else if ("ACTIVE".equals(status) && activeAge >= OBSERVATION_MAX_AGE_MS) {
+                if (item.timeoutExtended) {
+                    status = "ACTIVE";
+                } else if (shouldExtendAfterRealEntryTimeout(item, snapshot)) {
+                    item.timeoutExtended = true;
+                    item.timeoutDecisionAt = now;
+                    item.timeoutExtensionUntil = activeSince + LIMIT_ORDER_MAX_AGE_MS;
+                    persistObservedSignalEvent(item, "TIMEOUT_15M_EXTENDED", snapshot, now);
+                    status = "ACTIVE";
+                } else {
+                    status = "TIMEOUT_15M";
+                }
             }
 
             if (!"ACTIVE".equals(status) && !"NONE".equals(status) && !"NO_PRICE".equals(status)) {
@@ -1981,6 +2017,162 @@ public class MarketWatchService extends Service {
                 persistObservedSignalEvent(item, status, snapshot, now);
             }
         }
+    }
+
+    private static long observationClockStart(ObservedSignal item) {
+        if (item == null) return 0;
+        if (item.entryTriggered && item.entryTriggeredAt > 0) return item.entryTriggeredAt;
+        return item.createdAt;
+    }
+
+    private static double favorableMoveFor(SignalDecision signal, double price) {
+        if (signal == null || !Double.isFinite(price) || price <= 0) return -99.0;
+        if ("LONG".equals(signal.side)) return price - signal.entry;
+        if ("SHORT".equals(signal.side)) return signal.entry - price;
+        return -99.0;
+    }
+
+    private String entryTriggerRevalidationCode(ObservedSignal item, MarketSnapshot s, double price) {
+        if (item == null || item.signal == null || s == null) return "DONNEES_MANQUANTES";
+
+        int side = "LONG".equals(item.signal.side) ? 1 : "SHORT".equals(item.signal.side) ? -1 : 0;
+        if (side == 0) return "COTE_INVALIDE";
+
+        double stop = Math.max(0.10, item.signal.stopDistance);
+        double adverse = adverseMoveFor(item.signal, price);
+
+        // La LIMIT a été traversée trop loin : le contexte d'entrée n'est plus celui du signal.
+        if (adverse >= Math.min(0.30, stop * 0.24)) {
+            return "PRIX_DEJA_TROP_LOIN";
+        }
+
+        double avg = Math.max(0.35, s.avgRange20);
+        double move1 = side * s.move1;
+        double move3 = side * s.move3;
+        double move8 = side * s.move8;
+        double flow30 = side * s.flow30;
+        double flow60 = side * s.flow60;
+        double btc8 = side * s.btcMove8;
+        double rp = Double.isFinite(s.rangePosition) ? s.rangePosition : 0.5;
+        String family = item.signal.family == null ? "" : item.signal.family;
+
+        if (family.contains("CONTINUATION")) {
+            boolean extendedWithoutFreshFlow = move3 > avg * 2.80
+                    && move8 > avg * 2.50
+                    && flow30 < 0.05;
+            if (extendedWithoutFreshFlow) return "CONTINUATION_CONSOMMEE";
+
+            boolean flowPriceDivergence = flow60 > 1.50
+                    && move3 < avg * 0.60
+                    && move8 < avg * 0.80;
+            if (flowPriceDivergence) return "CONTINUATION_DIVERGENCE_FLOW_PRIX";
+        }
+
+        if (family.contains("RANGE_FADE")) {
+            if (side > 0) {
+                boolean oppositeDrift = move8 < -avg * 1.30
+                        && move3 < 0
+                        && flow30 < 0;
+                if (oppositeDrift) return "RANGE_FADE_LONG_DERIVE_OPPOSEE";
+
+                boolean persistentTrend = move8 < -avg * 2.50
+                        && (flow30 < 0 || btc8 < -0.0020);
+                if (persistentTrend) return "RANGE_FADE_LONG_TENDANCE_PERSISTANTE";
+
+                boolean noReboundWithBtc = move8 < -avg * 2.20
+                        && move1 < 0
+                        && btc8 < -0.0010
+                        && flow60 < 0.10;
+                if (noReboundWithBtc) return "RANGE_FADE_LONG_SANS_REBOND";
+            } else {
+                boolean notExtremeAndTrendAlive = move8 < -avg * 2.00
+                        && rp < 0.85
+                        && flow30 < 0;
+                if (notExtremeAndTrendAlive) return "RANGE_FADE_SHORT_PAS_ASSEZ_EXTREME";
+            }
+        }
+
+        return "";
+    }
+
+    private boolean shouldExtendAfterRealEntryTimeout(ObservedSignal item, MarketSnapshot snapshot) {
+        if (item == null || item.signal == null || snapshot == null || !item.entryTriggered) return false;
+        if (hardTimeoutExtensionInvalidation(item, snapshot)) return false;
+
+        double currentMove = favorableMoveFor(item.signal, snapshot.ethLast);
+        double netAfterFees = currentMove - 1.33;
+        double progress = scenarioProgress(item);
+        double risk = scenarioRisk(item);
+        double remainingToTp = Math.max(0, item.signal.targetMove - currentMove);
+
+        boolean meaningfulMfe = item.mfe >= Math.max(1.80, item.signal.targetMove * 0.55);
+        boolean maeAcceptable = risk <= 0.98;
+        boolean tpStillClose = remainingToTp <= Math.max(1.70, item.signal.targetMove * 0.60);
+
+        boolean positiveNet = netAfterFees >= 0.0;
+        boolean almostCompletedButNearBreakEven = netAfterFees >= -0.20 && progress >= 0.88;
+
+        return meaningfulMfe
+                && maeAcceptable
+                && tpStillClose
+                && timeoutContextStillAcceptable(item, snapshot)
+                && (positiveNet || almostCompletedButNearBreakEven);
+    }
+
+    private boolean timeoutContextStillAcceptable(ObservedSignal item, MarketSnapshot s) {
+        if (item == null || item.signal == null || s == null) return false;
+        int side = "LONG".equals(item.signal.side) ? 1 : "SHORT".equals(item.signal.side) ? -1 : 0;
+        if (side == 0) return false;
+
+        double avg = Math.max(0.35, s.avgRange20);
+        double move1 = side * s.move1;
+        double move3 = side * s.move3;
+        double move8 = side * s.move8;
+        double flow15 = side * s.flow15;
+        double flow30 = side * s.flow30;
+        double flow60 = side * s.flow60;
+        double btc1 = side * s.btcMove1;
+        double btc3 = side * s.btcMove3;
+
+        boolean strongOppositeMove = move3 < -avg * 1.65 && move8 < -avg * 2.10;
+        boolean strongOppositeFlow = flow30 < -0.13 && flow60 < -0.08;
+        boolean strongOppositeBtc = btc1 < -0.00100 && btc3 < -0.00090;
+        boolean violentMicroTurn = move1 < -avg * 0.80 && flow15 < -0.12;
+
+        return !(strongOppositeMove && strongOppositeFlow)
+                && !(strongOppositeBtc && strongOppositeFlow)
+                && !(violentMicroTurn && strongOppositeFlow);
+    }
+
+    private boolean hardTimeoutExtensionInvalidation(ObservedSignal item, MarketSnapshot s) {
+        if (item == null || item.signal == null || s == null) return true;
+
+        double stop = Math.max(0.10, item.signal.stopDistance);
+        double adverseNow = adverseMoveFor(item.signal, s.ethLast);
+        if (adverseNow >= stop * 0.92) return true;
+
+        int side = "LONG".equals(item.signal.side) ? 1 : "SHORT".equals(item.signal.side) ? -1 : 0;
+        if (side == 0) return true;
+
+        double avg = Math.max(0.35, s.avgRange20);
+        double move1 = side * s.move1;
+        double move3 = side * s.move3;
+        double move8 = side * s.move8;
+        double flow15 = side * s.flow15;
+        double flow30 = side * s.flow30;
+        double flow60 = side * s.flow60;
+        double btc1 = side * s.btcMove1;
+        double btc3 = side * s.btcMove3;
+
+        boolean violentOppositeMove = move1 < -avg * 0.85
+                && move3 < -avg * 1.80
+                && move8 < -avg * 2.20;
+        boolean violentOppositeFlow = flow15 < -0.14
+                && flow30 < -0.16
+                && flow60 < -0.12;
+        boolean btcAlsoOpposite = btc1 < -0.00110 || btc3 < -0.00100;
+
+        return violentOppositeMove && violentOppositeFlow && btcAlsoOpposite;
     }
 
     private boolean limitEntryTouched(SignalDecision signal, MarketSnapshot snapshot) {
@@ -2490,7 +2682,8 @@ public class MarketWatchService extends Service {
             return journalStatus;
         }
 
-        long age = now - lastSignalAt;
+        long lifecycleStart = observed == null ? lastSignalAt : observationClockStart(observed);
+        long age = now - lifecycleStart;
         if (age < 0) return "NONE";
 
         double price = snapshot.ethLast;
@@ -2509,8 +2702,13 @@ public class MarketWatchService extends Service {
         if (age >= LIMIT_ORDER_MAX_AGE_MS) return "TIMEOUT_45M";
 
         if (observed != null) {
-            if (hardScenarioInvalidation(observed, snapshot)) return "SCENARIO_INVALIDATED";
-            if (age >= OBSERVATION_MAX_AGE_MS && !shouldKeepScenarioAlive(observed, snapshot, now)) {
+            if (hardScenarioInvalidation(observed, snapshot)
+                    && (!observed.timeoutExtended || hardTimeoutExtensionInvalidation(observed, snapshot))) {
+                return "SCENARIO_INVALIDATED";
+            }
+            if (age >= OBSERVATION_MAX_AGE_MS
+                    && !observed.timeoutExtended
+                    && !shouldExtendAfterRealEntryTimeout(observed, snapshot)) {
                 return "TIMEOUT_15M";
             }
         }
@@ -2523,7 +2721,7 @@ public class MarketWatchService extends Service {
         if ("MISSED_NO_FILL".equals(status)) return "NON_EXECUTE";
         if ("LIMIT_PENDING".equals(status)) return "LIMIT_EN_ATTENTE";
         if ("ACTIVE".equals(status)) return "LIMIT_DECLENCHE";
-        if ("SCENARIO_INVALIDATED".equals(status)) return "ANNULE";
+        if ("SCENARIO_INVALIDATED".equals(status) || "ENTRY_REVALIDATION_REJECTED".equals(status)) return "ANNULE";
         if ("ENTRY_TOO_FAR".equals(status)) return "LIMIT_EN_ATTENTE";
         if ("TP_TOUCHED".equals(status) || "SL_TOUCHED".equals(status)
                 || "TIMEOUT_15M".equals(status) || "TIMEOUT_45M".equals(status)) return "TERMINE";
@@ -2532,12 +2730,16 @@ public class MarketWatchService extends Service {
     }
 
     private long activeSignalAgeSec(long now) {
-        return lastSignalAt <= 0 ? -1 : Math.max(0, (now - lastSignalAt) / 1000);
+        ObservedSignal observed = observedForLastSignal();
+        long start = observed == null ? lastSignalAt : observationClockStart(observed);
+        return start <= 0 ? -1 : Math.max(0, (now - start) / 1000);
     }
 
     private long activeSignalRemainingSec(long now) {
-        if (lastSignalAt <= 0) return -1;
-        long remaining = LIMIT_ORDER_MAX_AGE_MS - Math.max(0, now - lastSignalAt);
+        ObservedSignal observed = observedForLastSignal();
+        long start = observed == null ? lastSignalAt : observationClockStart(observed);
+        if (start <= 0) return -1;
+        long remaining = LIMIT_ORDER_MAX_AGE_MS - Math.max(0, now - start);
         return Math.max(0, remaining / 1000);
     }
 
@@ -2692,7 +2894,7 @@ public class MarketWatchService extends Service {
         else if ("SL_TOUCHED".equals(status)) emoji = "🛑";
         else if ("LIMIT_TRIGGERED".equals(status)) emoji = "🟢";
         else if ("MISSED_NO_FILL".equals(status)) emoji = "⚪";
-        else if ("ENTRY_TOO_FAR".equals(status)) emoji = "⚠️";
+        else if ("ENTRY_TOO_FAR".equals(status) || "ENTRY_REVALIDATION_REJECTED".equals(status)) emoji = "⚠️";
 
         String title = emoji + " OBS ETH " + item.signal.side + " · " + status;
         String body = String.format(Locale.US,
@@ -2734,7 +2936,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.32.4 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.32.5 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -2809,7 +3011,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.32.4-android");
+            state.put("version", "2.32.5-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -2838,7 +3040,7 @@ public class MarketWatchService extends Service {
             state.put("signalExecutionState", executionStateForLastSignal(statusSnapshot, now));
             state.put("activeSignalAgeSec", activeSignalAgeSec(now));
             state.put("activeSignalRemainingSec", activeSignalRemainingSec(now));
-            state.put("activeSignalValidity", "LIMIT_PENDING_MANUAL_DELAY_PERSISTENT_RECORDER_VALIDATED_FILTER");
+            state.put("activeSignalValidity", "LIMIT_PENDING_ENTRY_REVALIDATION_DYNAMIC_TIMEOUT");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", false);
             state.put("aiEnabled", AiAdvisor.isEnabled(this));
@@ -2966,7 +3168,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.32.4-validated-quality-filter");
+        m.put("rulesProfile", "ETH Scalper sessions v2.32.5-validated-quality-filter");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 
@@ -3488,6 +3690,9 @@ public class MarketWatchService extends Service {
         boolean entryTriggered;
         long entryTriggeredAt;
         double entryTriggerPrice = Double.NaN;
+        boolean timeoutExtended;
+        long timeoutDecisionAt;
+        long timeoutExtensionUntil;
 
         final double signalEthLast;
         final double signalBid;
