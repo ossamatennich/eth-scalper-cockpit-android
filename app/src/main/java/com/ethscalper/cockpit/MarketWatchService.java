@@ -65,6 +65,7 @@ public class MarketWatchService extends Service {
     private static final long OBSERVATION_MAX_AGE_MS = 15 * 60 * 1000L;
     private static final long LIMIT_ORDER_MAX_AGE_MS = 45 * 60 * 1000L;
     private static final long LIMIT_MANUAL_ENTRY_DELAY_MS = 15 * 1000L;
+    private static final long ETH_BOOK_MAX_AGE_MS = 8_000L;
     private static final String PERSISTENT_DIR = "eth_scalper_overnight_recorder";
     private static final String PERSISTENT_OBSERVATIONS_FILE = "persistent_observation_journal.jsonl";
     private static final String PERSISTENT_MARKET_FRAMES_FILE = "persistent_market_frames.jsonl";
@@ -107,6 +108,7 @@ public class MarketWatchService extends Service {
     private long klineMessages;
     private long aggTradeMessages;
     private long lastBookTickerAt;
+    private long lastEthBookTickerAt;
     private long lastKlineAt;
     private long lastAggTradeAt;
     private long restKlineRefreshes;
@@ -248,7 +250,7 @@ public class MarketWatchService extends Service {
         if (frameNewest > newest) newest = frameNewest;
 
         o.put("mode", "PERSISTENT_OVERNIGHT_RECORDER");
-        o.put("version", "2.32.5");
+        o.put("version", "2.32.6");
         o.put("description", "Journal persistant: conserve les signaux et les frames même si l'écran/app est fermé, jusqu'à réinitialisation diagnostic.");
         o.put("observationEvents", obsStats.optInt("count", 0));
         o.put("marketFrames", frameStats.optInt("count", 0));
@@ -379,7 +381,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.5",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH — pro score engine v2.32.6",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Signal manuel ETH : son fort, vibration longue et écran verrouillé.");
         signals.enableVibration(true);
@@ -717,8 +719,10 @@ public class MarketWatchService extends Service {
 
     private void handleBookTicker(String stream, JSONObject data) {
         bookTickerMessages++;
-        lastBookTickerAt = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        lastBookTickerAt = now;
         if (stream.startsWith("ethusdt")) {
+            lastEthBookTickerAt = now;
             ethBid = data.optDouble("b", ethBid);
             ethAsk = data.optDouble("a", ethAsk);
             if (ethBid > 0 && ethAsk > 0) ethLast = (ethBid + ethAsk) / 2.0;
@@ -758,6 +762,28 @@ public class MarketWatchService extends Service {
 
     private synchronized void evaluateSignal(long now) {
         MarketSnapshot snapshot = buildSnapshot(now);
+
+        if (!ethExecutionFeedFresh(now)) {
+            SignalDecision staleFeed = SignalDecision.waiting(
+                    "V2326_ETH_FEED_STALE",
+                    "Signal bloqué : prix ETH temps réel trop ancien",
+                    0,
+                    "",
+                    false,
+                    0,
+                    0,
+                    0,
+                    false);
+
+            recordMarketFrame(snapshot, staleFeed, now);
+            lastDecision = staleFeed;
+
+            broadcastStatus(
+                    "eth_feed_stale",
+                    "Prix ETH temps réel trop ancien : aucune décision");
+
+            return;
+        }
         updateObservedSignals(snapshot, now);
 
         SignalDecision rawDecision = signalEngine.evaluate(snapshot);
@@ -789,6 +815,13 @@ public class MarketWatchService extends Service {
         if (decision.isSignal()) {
             activateSignalDecision(decision, snapshot, now, "signal_observation", decision.reasonCode);
         }
+    }
+
+    private boolean ethExecutionFeedFresh(long now) {
+        if (ethBid <= 0 || ethAsk <= 0 || ethLast <= 0) return false;
+        if (lastEthBookTickerAt <= 0) return false;
+
+        return now - lastEthBookTickerAt <= ETH_BOOK_MAX_AGE_MS;
     }
 
     private SignalDecision applyAiGate(MarketSnapshot snapshot, SignalDecision decision, long now) {
@@ -1035,7 +1068,7 @@ public class MarketWatchService extends Service {
     }
 
     private int replayRiskQuantity(MarketSnapshot snapshot, SignalDecision decision, int aiConfidence) {
-        int qty = 3; // v2.32.5 validée replay : max 3 ETH tant que les faux signaux ne sont pas stabilisés.
+        int qty = 3; // v2.32.6 validée replay : max 3 ETH tant que les faux signaux ne sont pas stabilisés.
 
         if (aiConfidence >= 0) {
             if (aiConfidence < 75) qty = Math.min(qty, 3);
@@ -1092,7 +1125,7 @@ public class MarketWatchService extends Service {
         double flow60Aligned = side * s.flow60;
         double btc3Aligned = side * s.btcMove3;
 
-        // Le problème détecté dans le ZIP v2.32.5 :
+        // Le problème détecté dans le ZIP v2.32.6 :
         // SCALP_CONTINUATION déclenché sur move3 fort mais move8 pas aligné,
         // puis retournement rapide en SL. Ce n'est pas une vraie continuation.
         boolean move3Strong = move3Aligned > avg * 1.15;
@@ -1128,8 +1161,16 @@ public class MarketWatchService extends Service {
         double btc3 = side * s.btcMove3;
         double rp = Double.isFinite(s.rangePosition) ? s.rangePosition : 0.5;
 
-        // Replay v2.32.2/v2.32.5 :
+        // Replay v2.32.2/v2.32.6 :
         // les continuations prises en plein burst donnaient souvent un SL rapide.
+        // V2326_CONTINUATION_QUALITY_FLOOR
+        if (move1 < avg * 0.50) return true;
+        if (move8 < avg * 1.20) return true;
+
+        if (s.volumeRatio > 0 && s.volumeRatio < 0.35) {
+            return true;
+        }
+
         if (move1 > avg * 1.15 && s.volumeRatio > 1.50) return true;
 
         // Ancienne tendance sans flux frais :
@@ -1172,6 +1213,11 @@ public class MarketWatchService extends Service {
         double flow30 = side * s.flow30;
         double flow60 = side * s.flow60;
         double btc3 = side * s.btcMove3;
+
+        // V2326_RANGE_FADE_PRICE_REJECTION
+        if (move1 < avg * 0.50) {
+            return true;
+        }
 
         // Le fade doit venir d'une vraie zone extrême.
         if (side < 0 && rp < 0.78) return true;
@@ -2936,7 +2982,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "🚨 TEST ALERTE ETH", "Test sonore v2.32.5 · aucun ordre n’est envoyé"));
+                "🚨 TEST ALERTE ETH", "Test sonore v2.32.6 · aucun ordre n’est envoyé"));
     }
 
     private Notification buildSignalNotification(String title, String body) {
@@ -3011,7 +3057,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.32.5-android");
+            state.put("version", "2.32.6-android");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -3168,7 +3214,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper sessions v2.32.5-validated-quality-filter");
+        m.put("rulesProfile", "ETH Scalper sessions v2.32.6-validated-quality-filter");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 
