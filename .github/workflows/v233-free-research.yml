@@ -1,0 +1,112 @@
+name: ETH v2.33 Free Research
+
+on:
+  push:
+    branches:
+      - agent/v2.32.6-candidate
+    paths:
+      - ".github/workflows/v233-free-research.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Extraire et corriger le moteur
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf ETH_V233_FREE_WORK_2026-07-17
+          unzip -o ETH_V233_FREE_WORK_2026-07-17.zip
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("ETH_V233_FREE_WORK_2026-07-17")
+          builder = root / "binance_corpus_builder.py"
+          text = builder.read_text(encoding="utf-8")
+
+          old = '''def resample_4h(one_hour: pd.DataFrame) -> pd.DataFrame:
+              return one_hour.resample("4h", label="left", closed="left", origin="epoch").agg(
+                  open=("open", "first"), high=("high", "max"), low=("low", "min"),
+                  close=("close", "last"), volume=("volume", "sum"),
+              ).dropna()
+          '''
+
+          new = '''def resample_4h(one_hour: pd.DataFrame) -> pd.DataFrame:
+              source = one_hour.copy()
+              zero_volume = source["volume"] <= 0
+              source.loc[zero_volume, ["open", "high", "low", "close"]] = pd.NA
+
+              return source.resample(
+                  "4h", label="left", closed="left", origin="epoch"
+              ).agg(
+                  open=("open", "first"),
+                  high=("high", "max"),
+                  low=("low", "min"),
+                  close=("close", "last"),
+                  volume=("volume", "sum"),
+              ).dropna(subset=["open", "high", "low", "close"])
+          '''
+
+          if old in text:
+              builder.write_text(text.replace(old, new), encoding="utf-8")
+          elif new not in text:
+              raise SystemExit("Fonction resample_4h introuvable")
+
+          tests = root / "test_binance_corpus_builder.py"
+          test_text = tests.read_text(encoding="utf-8")
+
+          if "test_resample_4h_ignores_zero_volume_placeholder_ohlc" not in test_text:
+              test_text += '''
+
+          def test_resample_4h_ignores_zero_volume_placeholder_ohlc() -> None:
+              idx = pd.date_range("2024-10-28 20:00:00+00:00", periods=4, freq="1h")
+              one = pd.DataFrame(
+                  {
+                      "open": [2503.77, 2518.92, 2543.69, 2568.28],
+                      "high": [2503.77, 2550.00, 2590.78, 2577.83],
+                      "low": [2503.77, 2516.54, 2543.69, 2561.99],
+                      "close": [2503.77, 2543.70, 2568.28, 2566.49],
+                      "volume": [0.0, 142679.794, 329402.399, 87204.605],
+                  },
+                  index=idx,
+              )
+              row = builder.resample_4h(one).iloc[0]
+              assert row["open"] == 2518.92
+              assert row["high"] == 2590.78
+              assert row["low"] == 2516.54
+              assert row["close"] == 2566.49
+              assert abs(row["volume"] - 559286.798) < 1e-6
+          '''
+              tests.write_text(test_text, encoding="utf-8")
+          PY
+
+      - name: Exécuter la recherche complète
+        working-directory: ETH_V233_FREE_WORK_2026-07-17
+        shell: bash
+        run: |
+          set -o pipefail
+          bash run_free_codespaces.sh 2>&1 | tee run_v233_actions.log
+
+      - name: Conserver les résultats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ETH_V233_FREE_RESEARCH_OUTPUT
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            ETH_V233_FREE_WORK_2026-07-17/ETH_V233_FREE_RESEARCH_OUTPUT.zip
+            ETH_V233_FREE_WORK_2026-07-17/ETH_V233_FREE_RESEARCH_OUTPUT.zip.sha256
+            ETH_V233_FREE_WORK_2026-07-17/run_v233_actions.log
+            ETH_V233_FREE_WORK_2026-07-17/ETHUSDT_UM_CORPUS_2024-07-17_2026-07-16/CORPUS_AUDIT.json
+            ETH_V233_FREE_WORK_2026-07-17/V233_RESEARCH_RESULTS/
