@@ -74,9 +74,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          check_local_sha256() {
+            local checksum="$1"
+            awk '{name=$2; sub(/^.*\//, "", name); print $1 "  " name}' "$checksum" | sha256sum -c -
+          }
           (
             cd protocol/round23
-            for checksum in *.sha256; do sha256sum -c "$checksum"; done
+            for checksum in *.sha256; do check_local_sha256 "$checksum"; done
           )
           (
             cd protocol/round24
