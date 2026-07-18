@@ -1,0 +1,40 @@
+{
+  "candidate": "REGIME_ADAPTIVE_BREAKOUT_CONTINUATION_FRESH_ENTRY_LONG",
+  "frozen_file_hashes": {
+    "HOLDOUT_OPEN_AUTHORIZATION.json": {
+      "actual": "c28169d235458d0a2bf26a8e9b6489c3534cc0d7a7fa1603f4026856845c6c14",
+      "expected": "c28169d235458d0a2bf26a8e9b6489c3534cc0d7a7fa1603f4026856845c6c14",
+      "pass": true
+    },
+    "LOCKED_CRITERIA_V2.json": {
+      "actual": "d3c43e63afd9adf236e9d07ff6b658a88e9dc485dc81aa00906fb67281d4e640",
+      "expected": "d3c43e63afd9adf236e9d07ff6b658a88e9dc485dc81aa00906fb67281d4e640",
+      "pass": true
+    },
+    "ROUND22_ARCHITECTURE_LOCKED.json": {
+      "actual": "d4f4d831caa04974c842ab6451a611cc564039cdf60d864f07239b8574ffd4d2",
+      "expected": "d4f4d831caa04974c842ab6451a611cc564039cdf60d864f07239b8574ffd4d2",
+      "pass": true
+    },
+    "ROUND22_CRITERIA_LOCKED.json": {
+      "actual": "91e50c5d76c46b70f1f3ca489319a7a436c4d97950b3ce491e3103aebe41df87",
+      "expected": "91e50c5d76c46b70f1f3ca489319a7a436c4d97950b3ce491e3103aebe41df87",
+      "pass": true
+    },
+    "ROUND22_PREHOLDOUT_DECISION.json": {
+      "actual": "3590ee75081eba54069605cedfeba919e0f78a34d12007338718cbf3f312ef5f",
+      "expected": "3590ee75081eba54069605cedfeba919e0f78a34d12007338718cbf3f312ef5f",
+      "pass": true
+    },
+    "central_config.json": {
+      "actual": "0f859442e4517dfa8d79f2416f068696ac64597f37aac5fe87ea9c91e53700b3",
+      "expected": "0f859442e4517dfa8d79f2416f068696ac64597f37aac5fe87ea9c91e53700b3",
+      "pass": true
+    }
+  },
+  "holdout_open_count_this_protocol": 1,
+  "holdout_opened": true,
+  "no_parameter_change_after_authorization": true,
+  "opened_at_utc": "2026-07-18T16:09:23.415836+00:00",
+  "protocol": "ETH_V233_ROUND22_SINGLE_HOLDOUT_OPEN"
+}

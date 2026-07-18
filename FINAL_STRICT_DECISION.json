@@ -1,0 +1,84 @@
+{
+  "android_integration_allowed": false,
+  "decision": "CANDIDATE_REJECTED_HOLDOUT_FAILED",
+  "holdout_authorized": true,
+  "holdout_gate": {
+    "expectancy_r": false,
+    "max_drawdown_abs": true,
+    "profit_factor": false,
+    "trades": true
+  },
+  "holdout_gate_thresholds": {
+    "expectancy_r_min": 0.0,
+    "max_drawdown_abs_max": 0.02,
+    "no_parameter_change_after_open": true,
+    "open_only_when_exactly_one_candidate_passes_every_required_gate": true,
+    "profit_factor_min": 1.1,
+    "trades_min": 5
+  },
+  "holdout_metrics": {
+    "expectancy_r": -0.04650284244783854,
+    "max_drawdown_fraction_at_0_15pct_risk": 0.0017809121172165376,
+    "max_drawdown_fraction_at_1pct_risk": 0.011877853457749537,
+    "max_drawdown_r": -1.1877853457749536,
+    "profit_factor": 0.8110996134777271,
+    "return_r": -0.27901705468703125,
+    "trades": 6,
+    "win_rate_pct": 33.33333333333333
+  },
+  "holdout_open_count_this_protocol": 1,
+  "holdout_opened": true,
+  "intraday_engine": "REGIME_ADAPTIVE_BREAKOUT_CONTINUATION_FRESH_ENTRY_LONG",
+  "no_post_holdout_retuning": true,
+  "preholdout_exact_reproduction_checks": {
+    "expectancy_r": true,
+    "profit_factor": true,
+    "return_r": true,
+    "trades": true
+  },
+  "preholdout_frozen_replay": {
+    "expectancy_r": 0.1635603034467738,
+    "max_drawdown_fraction_at_1pct_risk": 0.025981884731869326,
+    "max_drawdown_r": -2.5981884731869327,
+    "profit_factor": 1.688349893362111,
+    "return_r": 35.32902554450314,
+    "trades": 216,
+    "win_rate_pct": 56.018518518518526
+  },
+  "preholdout_passes_all": true,
+  "protocol_hashes": {
+    "HOLDOUT_OPEN_AUTHORIZATION.json": {
+      "actual": "c28169d235458d0a2bf26a8e9b6489c3534cc0d7a7fa1603f4026856845c6c14",
+      "expected": "c28169d235458d0a2bf26a8e9b6489c3534cc0d7a7fa1603f4026856845c6c14",
+      "pass": true
+    },
+    "LOCKED_CRITERIA_V2.json": {
+      "actual": "d3c43e63afd9adf236e9d07ff6b658a88e9dc485dc81aa00906fb67281d4e640",
+      "expected": "d3c43e63afd9adf236e9d07ff6b658a88e9dc485dc81aa00906fb67281d4e640",
+      "pass": true
+    },
+    "ROUND22_ARCHITECTURE_LOCKED.json": {
+      "actual": "d4f4d831caa04974c842ab6451a611cc564039cdf60d864f07239b8574ffd4d2",
+      "expected": "d4f4d831caa04974c842ab6451a611cc564039cdf60d864f07239b8574ffd4d2",
+      "pass": true
+    },
+    "ROUND22_CRITERIA_LOCKED.json": {
+      "actual": "91e50c5d76c46b70f1f3ca489319a7a436c4d97950b3ce491e3103aebe41df87",
+      "expected": "91e50c5d76c46b70f1f3ca489319a7a436c4d97950b3ce491e3103aebe41df87",
+      "pass": true
+    },
+    "ROUND22_PREHOLDOUT_DECISION.json": {
+      "actual": "3590ee75081eba54069605cedfeba919e0f78a34d12007338718cbf3f312ef5f",
+      "expected": "3590ee75081eba54069605cedfeba919e0f78a34d12007338718cbf3f312ef5f",
+      "pass": true
+    },
+    "central_config.json": {
+      "actual": "0f859442e4517dfa8d79f2416f068696ac64597f37aac5fe87ea9c91e53700b3",
+      "expected": "0f859442e4517dfa8d79f2416f068696ac64597f37aac5fe87ea9c91e53700b3",
+      "pass": true
+    }
+  },
+  "research_only": true,
+  "scalp_engine_touched": false,
+  "stable": false
+}
