@@ -1,0 +1,17 @@
+{
+  "protocol":"ETH_V233_ROUND23_PHASE7",
+  "locked_at_utc":"2026-07-18T18:08:00Z",
+  "criteria_changed":false,
+  "research_only":true,
+  "round22_holdout_use":"NOT_LOADED",
+  "base_signal_architecture":"ASYMMETRIC_MULTI_PATTERN_ENSEMBLE_FROM_PHASE6",
+  "architectures":[
+    {"id":"PORTFOLIO_LOSS_CLUSTER_COOLDOWN","central":{"rolling_closed_trades":4,"loss_sum_trigger_r":-1.25,"pause_hours":72},"neighbours":{"rolling_closed_trades":[3,6],"loss_sum_trigger_r":[-1.0,-1.75],"pause_hours":[48,96]}},
+    {"id":"SLEEVE_CONSECUTIVE_LOSS_COOLDOWN","central":{"consecutive_losses":2,"pause_hours":48},"neighbours":{"consecutive_losses":[2,3],"pause_hours":[24,72]}},
+    {"id":"DUAL_RISK_GOVERNOR","central":{"portfolio_rolling_closed_trades":5,"portfolio_loss_sum_trigger_r":-1.5,"portfolio_pause_hours":48,"sleeve_consecutive_losses":2,"sleeve_pause_hours":48},"neighbours":{"portfolio_rolling_closed_trades":[3,7],"portfolio_loss_sum_trigger_r":[-1.0,-2.0],"portfolio_pause_hours":[24,72],"sleeve_consecutive_losses":[2,3],"sleeve_pause_hours":[24,72]}}
+  ],
+  "causality":"Only outcomes with exit_time strictly before a proposed entry may change pause state",
+  "skipped_trade_policy":"Skipped trades never update governor state",
+  "direction_reporting":"LONG_SHORT_AND_COMBINED",
+  "firewall":{"end_exclusive":"2026-06-01T00:00:00Z","scalp_engine_touched":false,"android_files_touched":false}
+}

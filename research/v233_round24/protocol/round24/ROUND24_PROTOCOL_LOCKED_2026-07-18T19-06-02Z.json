@@ -1,0 +1,208 @@
+{
+  "protocol": "ETH v2.33 Round 24 corrected-engine preregistration",
+  "locked_at_utc": "2026-07-18T19:06:02Z",
+  "locked_before_evaluation": true,
+  "research_only": true,
+  "stable_default": false,
+  "android_integration_allowed": false,
+  "scalp_engine_in_scope": false,
+  "android_files_in_scope": false,
+  "data": {
+    "symbol": "ETHUSDT",
+    "venue": "Binance USD-M",
+    "frequency": "1h",
+    "start_inclusive": "2021-01-01T00:00:00Z",
+    "end_exclusive": "2026-06-01T00:00:00Z",
+    "expected_rows": 47448,
+    "corpus_sha256": "358ed25f46e123deefeda86be464a34e912c53551ff7abc8285132a79fcacbc2",
+    "pinned_source_commit": "6fb9c7122281026afc515adf302b2a23a7f9a468",
+    "pinned_source_zip_sha256": "3ab51f603d34db70f536d53d43f981c25738523315c53d7ad47c7e2a114f9b6a",
+    "four_hour_rule": "derive only from closed 1h bars; ignore OHLC of volume<=0 placeholders; available at block close",
+    "round22_holdout": "PERMANENT_DIAGNOSTIC_ONLY_NOT_LOADED_NOT_SELECTED_NOT_TUNED_NOT_VALIDATED"
+  },
+  "candidate_budget": {
+    "architecture_families": 6,
+    "directions_per_family": 2,
+    "variants_per_architecture_direction": 9,
+    "maximum_total_variants": 108,
+    "adaptive_additions_allowed": false,
+    "duplicate_effective_variants_allowed": false,
+    "one_coordinate_change_per_neighbour": true
+  },
+  "architectures": [
+    {
+      "id": "TREND_PULLBACK_RESUMPTION",
+      "source_module": "round23_engine",
+      "source_architecture": "TREND_PULLBACK_RESUMPTION",
+      "rationale": "trend continuation after EMA pullback and price resumption",
+      "neighbours": {
+        "regime_threshold": [0.2, 0.3],
+        "pullback_lookback": [2, 4],
+        "rel_volume_min": [0.65, 0.9],
+        "reward_risk": [1.8, 2.2]
+      }
+    },
+    {
+      "id": "VOLATILITY_COMPRESSION_EXPANSION",
+      "source_module": "round23_engine",
+      "source_architecture": "VOLATILITY_COMPRESSION_EXPANSION",
+      "rationale": "volatility state transition from compression to directional expansion",
+      "neighbours": {
+        "compression_bars": [10, 14],
+        "expansion_range_atr_min": [1.0, 1.3],
+        "rel_volume_min": [1.0, 1.25],
+        "reward_risk": [2.0, 2.4]
+      }
+    },
+    {
+      "id": "RANGE_EXTREME_REVERSION",
+      "source_module": "round23_engine",
+      "source_architecture": "RANGE_EXTREME_REVERSION",
+      "rationale": "mean reversion after a volatility-band extreme in a non-trending regime",
+      "neighbours": {
+        "range_score_abs_max": [0.2, 0.3],
+        "h4_adx_max": [20.0, 26.0],
+        "bb_std": [2.0, 2.4],
+        "reward_risk": [1.15, 1.55]
+      }
+    },
+    {
+      "id": "DIRECTIONAL_RANGE_EXPANSION",
+      "source_module": "round23_phase2",
+      "source_architecture": "DIRECTIONAL_RANGE_EXPANSION",
+      "rationale": "directional channel break confirmed by candle range and body expansion",
+      "neighbours": {
+        "regime_threshold": [0.1, 0.2],
+        "channel_bars": [8, 20],
+        "range_atr_min": [1.05, 1.35],
+        "reward_risk": [1.8, 2.2]
+      }
+    },
+    {
+      "id": "BREAKOUT_RETEST_CONTINUATION",
+      "source_module": "round23_phase4",
+      "source_architecture": "BREAKOUT_RETEST_CONTINUATION",
+      "rationale": "breakout followed by a causal retest and renewed continuation",
+      "neighbours": {
+        "channel_bars": [8, 20],
+        "retest_bars": [2, 6],
+        "retest_tolerance_atr": [0.15, 0.4],
+        "reward_risk": [1.8, 2.2]
+      }
+    },
+    {
+      "id": "CHANDELIER_TIME_SERIES_MOMENTUM",
+      "source_module": "round23_phase4",
+      "source_architecture": "CHANDELIER_TIME_SERIES_MOMENTUM",
+      "rationale": "time-series momentum with long-horizon target and ATR chandelier protection",
+      "neighbours": {
+        "regime_threshold": [0.1, 0.3],
+        "channel_bars": [6, 12],
+        "h4_adx_min": [12.0, 18.0],
+        "trail_atr_mult": [1.1, 1.7]
+      }
+    }
+  ],
+  "validation": {
+    "outer_monthly_start": "2022-01-01T00:00:00Z",
+    "outer_monthly_end_exclusive": "2026-06-01T00:00:00Z",
+    "outer_purge_hours": 72,
+    "outer_embargo_hours_each_edge": 48,
+    "inner_validation_months_max": 12,
+    "inner_purge_hours": 72,
+    "inner_embargo_hours_each_edge": 48,
+    "annual_external_years": [2022, 2023, 2024, 2025, 2026],
+    "annual_boundary_embargo_hours_each_edge": 168,
+    "fold_trade_rule": "entry>=test_start AND entry<test_end AND exit<test_end; crossing trades excluded",
+    "selection_score": "median monthly expectancy + 0.15*clipped PF + 0.20*positive-month ratio + 0.10*q10 monthly expectancy",
+    "tie_break": "canonical candidate id ascending"
+  },
+  "multiple_testing": {
+    "alpha": 0.05,
+    "temporal_null": "one-sided circular moving-block null with 3 consecutive calendar-month blocks",
+    "bootstrap_samples": 4000,
+    "full_variant_family": "Holm-Bonferroni across all 108 locked variants",
+    "nested_outer_family": "Holm-Bonferroni across 12 architecture-direction outer streams",
+    "selection_pass_rule": "both adjusted p-values <= 0.05",
+    "unadjusted_significance_is_never_sufficient": true
+  },
+  "portfolio": {
+    "combination_allowed_only_after_individual_direction_pass": true,
+    "same_timestamp_collision": "fixed candidate id ascending",
+    "same_direction_overlap": "reject new position",
+    "opposite_direction_overlap": "allowed only within both caps",
+    "risk_per_sleeve": 0.0015,
+    "max_total_risk": 0.003,
+    "max_total_leverage": 2.0,
+    "max_active_sleeves": 2,
+    "outcome_dependent_priority_forbidden": true
+  },
+  "stress_matrix": [
+    {"id": "BASE", "fee": 0.0004, "slippage": 0.0001, "entry_delay_bars": 0, "extra_entry_penalty": 0.0},
+    {"id": "FEES_X1_5", "fee": 0.0006, "slippage": 0.0001, "entry_delay_bars": 0, "extra_entry_penalty": 0.0},
+    {"id": "FEES_X2", "fee": 0.0008, "slippage": 0.0001, "entry_delay_bars": 0, "extra_entry_penalty": 0.0},
+    {"id": "SLIPPAGE_X2", "fee": 0.0004, "slippage": 0.0002, "entry_delay_bars": 0, "extra_entry_penalty": 0.0},
+    {"id": "ENTRY_DELAY_1H", "fee": 0.0004, "slippage": 0.0001, "entry_delay_bars": 1, "extra_entry_penalty": 0.0},
+    {"id": "ENTRY_DELAY_2H", "fee": 0.0004, "slippage": 0.0001, "entry_delay_bars": 2, "extra_entry_penalty": 0.0},
+    {"id": "ADVERSE_GAP_10BP", "fee": 0.0004, "slippage": 0.0001, "entry_delay_bars": 0, "extra_entry_penalty": 0.001}
+  ],
+  "required_all_per_direction": {
+    "central_trades_min": 120,
+    "central_profit_factor_min": 1.25,
+    "central_expectancy_r_min": 0.08,
+    "nested_outer_trades_min": 100,
+    "nested_outer_profit_factor_min": 1.2,
+    "nested_outer_expectancy_r_min": 0.05,
+    "active_outer_months_min": 30,
+    "positive_active_month_ratio_min": 0.6,
+    "positive_rolling_quarter_ratio_min": 0.7,
+    "worst_rolling_quarter_expectancy_r_min": -0.2,
+    "annual_active_folds_min": 5,
+    "annual_positive_ratio_min": 0.8,
+    "annual_aggregate_profit_factor_min": 1.15,
+    "annual_aggregate_expectancy_r_min": 0.04,
+    "worst_annual_expectancy_r_min": -0.1,
+    "all_cost_stress_profit_factor_min": 1.1,
+    "all_cost_stress_expectancy_r_min": 0.02,
+    "delay_1h_profit_factor_min": 1.05,
+    "delay_1h_expectancy_r_min": 0.0,
+    "delay_2h_expectancy_r_min": 0.0,
+    "adverse_gap_expectancy_r_min": 0.0,
+    "parameter_neighbour_positive_fraction_min": 0.75,
+    "temporal_bootstrap_probability_positive_min": 0.95,
+    "temporal_bootstrap_q10_expectancy_r_min": 0.0,
+    "temporal_cluster_monte_carlo_q95_drawdown_max": 0.04,
+    "holm_adjusted_p_max": 0.05,
+    "average_signals_per_week_min": 0.35,
+    "average_signals_per_month_min": 1.5,
+    "median_signals_per_month_min": 1.0
+  },
+  "required_all_combined": {
+    "eligible_directions_min": 2,
+    "nested_outer_trades_min": 180,
+    "nested_outer_profit_factor_min": 1.2,
+    "nested_outer_expectancy_r_min": 0.05,
+    "positive_active_month_ratio_min": 0.65,
+    "annual_positive_ratio_min": 0.8,
+    "all_cost_stress_profit_factor_min": 1.1,
+    "temporal_cluster_monte_carlo_q95_drawdown_max": 0.04,
+    "average_signals_per_week_min": 0.7,
+    "average_signals_per_month_min": 3.0,
+    "median_signals_per_month_min": 2.0
+  },
+  "stopping_and_rejection": {
+    "stop_after_locked_108_variants": true,
+    "no_post_result_parameter_addition": true,
+    "no_threshold_relaxation": true,
+    "no_round22_holdout_use": true,
+    "reject_direction_on_any_failed_required_gate": true,
+    "reject_combination_if_any_constituent_direction_failed": true,
+    "stable_true_rule": "at least one direction passes every locked per-direction gate; any combined portfolio must independently pass every combined gate",
+    "android_integration_allowed_always_false": true
+  },
+  "frequency_reporting": {
+    "required": true,
+    "units": ["mean_signals_per_week", "median_signals_per_week", "mean_signals_per_month", "median_signals_per_month"],
+    "zero-signal_calendar_periods_included": true
+  }
+}

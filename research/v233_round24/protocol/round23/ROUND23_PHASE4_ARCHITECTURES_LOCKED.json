@@ -1,0 +1,37 @@
+{
+  "protocol": "ETH_V233_ROUND23_PHASE4",
+  "locked_at_utc": "2026-07-18T17:18:00Z",
+  "research_only": true,
+  "criteria_changed": false,
+  "round22_holdout_use": "DIAGNOSTIC_ONLY_NOT_USED",
+  "design_basis": "Independent causal intraday structures chosen before evaluation; not date-specific filters",
+  "architectures": [
+    {
+      "id": "BREAKOUT_FOLLOW_THROUGH_CONFIRMATION",
+      "description": "Range expansion is only armed by a second completed 1h continuation candle",
+      "central": {"regime_threshold":0.15,"h4_adx_min":16,"channel_bars":12,"range_atr_min":1.1,"body_atr_min":0.4,"confirm_body_atr_min":0.1,"rel_volume_min":0.9,"atr_stop_mult":1.3,"reward_risk":2.0,"max_hold_bars":16,"breakeven_r":0.8,"trail_start_r":1.3,"trail_atr_mult":1.5},
+      "neighbours_one_at_a_time": {"channel_bars":[8,20],"range_atr_min":[0.95,1.25],"confirm_body_atr_min":[0.0,0.2],"reward_risk":[1.8,2.2],"breakeven_r":[0.6,1.0],"max_hold_bars":[12,20]}
+    },
+    {
+      "id": "BREAKOUT_RETEST_CONTINUATION",
+      "description": "After a completed range expansion, wait causally for a retest and directional reclaim",
+      "central": {"regime_threshold":0.15,"h4_adx_min":16,"channel_bars":12,"range_atr_min":1.1,"body_atr_min":0.4,"retest_bars":4,"retest_tolerance_atr":0.25,"confirm_body_atr_min":0.05,"atr_stop_mult":1.25,"reward_risk":2.0,"max_hold_bars":18,"breakeven_r":0.8,"trail_start_r":1.4,"trail_atr_mult":1.6},
+      "neighbours_one_at_a_time": {"channel_bars":[8,20],"retest_bars":[2,6],"retest_tolerance_atr":[0.15,0.4],"reward_risk":[1.8,2.2],"breakeven_r":[0.6,1.0],"max_hold_bars":[14,22]}
+    },
+    {
+      "id": "TREND_EMA_REJECTION",
+      "description": "Multi-timeframe trend continuation after a completed 1h rejection of EMA20",
+      "central": {"regime_threshold":0.2,"h4_adx_min":16,"pullback_lookback":3,"close_location_min":0.62,"body_atr_min":0.15,"rel_volume_min":0.65,"atr_stop_mult":1.25,"reward_risk":1.6,"max_hold_bars":12,"breakeven_r":0.65,"trail_start_r":1.1,"trail_atr_mult":1.4},
+      "neighbours_one_at_a_time": {"regime_threshold":[0.15,0.3],"pullback_lookback":[2,5],"body_atr_min":[0.05,0.25],"rel_volume_min":[0.5,0.8],"reward_risk":[1.4,1.8],"max_hold_bars":[9,16]}
+    },
+    {
+      "id": "CHANDELIER_TIME_SERIES_MOMENTUM",
+      "description": "Frequent channel trend entry with no practical fixed target and a causal ATR chandelier exit",
+      "central": {"regime_threshold":0.2,"h4_adx_min":15,"channel_bars":8,"close_location_min":0.6,"rel_volume_min":0.65,"atr_stop_mult":1.4,"reward_risk":8.0,"max_hold_bars":30,"breakeven_r":0.8,"trail_start_r":0.9,"trail_atr_mult":1.35},
+      "neighbours_one_at_a_time": {"regime_threshold":[0.1,0.3],"channel_bars":[6,12],"h4_adx_min":[12,18],"breakeven_r":[0.6,1.0],"trail_atr_mult":[1.1,1.7],"max_hold_bars":[20,40]}
+    }
+  ],
+  "directions": ["LONG","SHORT"],
+  "validation": "UNCHANGED_ROUND23_LOCKED_CRITERIA_WITH_NESTED_WALK_FORWARD_ANNUAL_BLOCKS_PURGE_EMBARGO",
+  "firewall": {"end_exclusive":"2026-06-01T00:00:00Z","round22_holdout_loaded":false,"scalp_engine_touched":false,"android_files_touched":false}
+}

@@ -1,0 +1,44 @@
+{
+  "protocol": "ETH v2.33 Round 23 distinct intraday architectures",
+  "locked_before_evaluation": true,
+  "research_only": true,
+  "scalp_engine_untouched": true,
+  "android_files_untouched": true,
+  "selection_data_end_exclusive": "2026-06-01T00:00:00Z",
+  "round22_holdout_policy": "DIAGNOSTIC_ONLY; never used to choose or tune Round 23",
+  "architectures": [
+    {
+      "id": "TREND_PULLBACK_RESUMPTION",
+      "idea": "Continuation after a causal 1h pullback to EMA20 inside an established closed-4h trend.",
+      "central": {"regime_threshold": 0.25, "h4_adx_min": 18.0, "pullback_lookback": 3, "resume_break_bars": 2, "rel_volume_min": 0.75, "atr_stop_mult": 1.35, "atr_stop_cap": 3.0, "reward_risk": 2.0, "max_hold_bars": 18, "breakeven_r": 1.0, "trail_start_r": 1.6, "trail_atr_mult": 1.8, "cooldown_bars": 4},
+      "neighbours": "one-at-a-time nearest perturbations of regime threshold, pullback lookback, relative volume, stop multiple, reward:risk and max hold"
+    },
+    {
+      "id": "VOLATILITY_COMPRESSION_EXPANSION",
+      "idea": "Breakout after fixed-threshold volatility/range compression followed by a wide-range volume expansion candle.",
+      "central": {"regime_threshold": 0.10, "compression_bars": 12, "compression_range_atr_max": 3.2, "bandwidth_max": 0.055, "expansion_range_atr_min": 1.15, "close_location_min": 0.72, "rel_volume_min": 1.10, "atr_stop_mult": 1.25, "atr_stop_cap": 3.0, "reward_risk": 2.2, "max_hold_bars": 14, "breakeven_r": 1.0, "trail_start_r": 1.7, "trail_atr_mult": 1.7, "cooldown_bars": 6},
+      "neighbours": "one-at-a-time nearest perturbations of compression length/range, expansion range, volume, reward:risk and max hold"
+    },
+    {
+      "id": "RANGE_EXTREME_REVERSION",
+      "idea": "Re-entry inside a fixed Bollinger envelope after an extreme in a closed-4h non-trending regime.",
+      "central": {"range_score_abs_max": 0.25, "h4_adx_max": 23.0, "bb_period": 20, "bb_std": 2.2, "reentry_buffer_atr": 0.05, "rel_volume_max": 1.60, "atr_stop_mult": 1.0, "atr_stop_cap": 2.6, "reward_risk": 1.35, "max_hold_bars": 10, "breakeven_r": 0.65, "trail_start_r": 1.0, "trail_atr_mult": 1.4, "cooldown_bars": 4},
+      "neighbours": "one-at-a-time nearest perturbations of range score, ADX, Bollinger width, stop, reward:risk and max hold"
+    },
+    {
+      "id": "MOMENTUM_ACCELERATION",
+      "idea": "Strong closed-4h trend plus 1h directional acceleration, volume expansion and close near the candle extreme.",
+      "central": {"regime_threshold": 0.35, "h4_adx_min": 20.0, "momentum_bars": 6, "momentum_atr_min": 1.4, "channel_bars": 20, "close_location_min": 0.72, "rel_volume_min": 1.20, "atr_stop_mult": 1.5, "atr_stop_cap": 3.2, "reward_risk": 2.4, "max_hold_bars": 16, "breakeven_r": 1.1, "trail_start_r": 1.8, "trail_atr_mult": 1.9, "cooldown_bars": 5},
+      "neighbours": "one-at-a-time nearest perturbations of trend strength, momentum horizon/threshold, channel, volume, reward:risk and max hold"
+    },
+    {
+      "id": "DUAL_EMA_IMPULSE",
+      "idea": "Fresh 1h EMA9/EMA21 alignment and impulse break, confirmed by the already-closed 4h trend; not a Donchian family.",
+      "central": {"regime_threshold": 0.22, "h4_adx_min": 17.0, "cross_age_max": 4, "impulse_break_bars": 4, "body_atr_min": 0.35, "rel_volume_min": 0.90, "atr_stop_mult": 1.35, "atr_stop_cap": 3.0, "reward_risk": 2.0, "max_hold_bars": 16, "breakeven_r": 0.9, "trail_start_r": 1.5, "trail_atr_mult": 1.7, "cooldown_bars": 4},
+      "neighbours": "one-at-a-time nearest perturbations of regime strength, cross age, impulse break/body, volume, reward:risk and max hold"
+    }
+  ],
+  "sides": ["LONG", "SHORT"],
+  "candidate_policy": "Each architecture and side is evaluated independently. Parameters are selected only inside purged training folds from a predeclared one-at-a-time neighbourhood. Round 22 holdout is excluded.",
+  "stable_tie_breaker_if_multiple_pass": ["highest minimum expanding-annual expectancy", "highest purged monthly outer expectancy", "lowest Monte-Carlo 95% drawdown", "lexicographic architecture and side"]
+}

@@ -1,0 +1,32 @@
+{
+  "protocol": "ETH v2.33 Round 23 phase 2 distinct state machines",
+  "locked_before_phase2_evaluation": true,
+  "reason_for_phase2": "Phase 1 found a robust downside compression effect but insufficient month/quarter dispersion. Phase 2 changes the event/exit state machine rather than adding date filters or correcting July 2026 trades.",
+  "round22_holdout_policy": "EXCLUDED FROM DESIGN, SELECTION AND EVALUATION",
+  "research_only": true,
+  "scalp_engine_untouched": true,
+  "architectures": [
+    {
+      "id": "DIRECTIONAL_RANGE_EXPANSION",
+      "idea": "Trade a wide directional range expansion through a prior 12h structural level without requiring a compression setup.",
+      "central": {"regime_threshold": 0.15, "h4_adx_min": 16.0, "channel_bars": 12, "range_atr_min": 1.20, "body_atr_min": 0.50, "close_location_min": 0.70, "rel_volume_min": 1.00, "atr_stop_mult": 1.30, "atr_stop_cap": 3.0, "reward_risk": 2.0, "max_hold_bars": 14, "cooldown_bars": 4}
+    },
+    {
+      "id": "COMPRESSION_SCALE_OUT",
+      "idea": "Compression expansion entry with a fixed 50% realization at 0.8R and the remainder targeting 2.4R; no signal filter added.",
+      "central": {"regime_threshold": 0.10, "compression_bars": 12, "compression_range_atr_max": 3.4, "bandwidth_max": 0.060, "expansion_range_atr_min": 1.10, "close_location_min": 0.70, "rel_volume_min": 1.05, "atr_stop_mult": 1.25, "atr_stop_cap": 3.0, "partial_r": 0.80, "partial_fraction": 0.50, "reward_risk": 2.40, "max_hold_bars": 18, "cooldown_bars": 5}
+    },
+    {
+      "id": "COMPRESSION_TIME_DECAY",
+      "idea": "Compression expansion entry with a causal time-decay exit when no 0.35R follow-through appears within four bars.",
+      "central": {"regime_threshold": 0.10, "compression_bars": 12, "compression_range_atr_max": 3.4, "bandwidth_max": 0.060, "expansion_range_atr_min": 1.10, "close_location_min": 0.70, "rel_volume_min": 1.05, "atr_stop_mult": 1.25, "atr_stop_cap": 3.0, "reward_risk": 2.30, "time_decay_bars": 4, "minimum_favourable_r": 0.35, "max_hold_bars": 16, "cooldown_bars": 5}
+    },
+    {
+      "id": "VOLATILITY_TRANSITION_BREAK",
+      "idea": "Break a prior 12h level when current ATR rises above its own causal 24h baseline and the candle closes near the directional extreme.",
+      "central": {"regime_threshold": 0.10, "channel_bars": 12, "atr_transition_ratio_min": 1.20, "range_atr_min": 1.05, "close_location_min": 0.68, "rel_volume_min": 0.90, "atr_stop_mult": 1.30, "atr_stop_cap": 3.0, "reward_risk": 2.10, "max_hold_bars": 15, "cooldown_bars": 4}
+    }
+  ],
+  "sides": ["LONG", "SHORT"],
+  "neighbour_policy": "One-at-a-time nearest perturbations declared in code and included in the artifact; no date/time or July-specific parameters."
+}

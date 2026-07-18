@@ -1,0 +1,24 @@
+{
+  "protocol":"ETH_V233_ROUND23_PHASE6",
+  "locked_at_utc":"2026-07-18T17:52:00Z",
+  "criteria_changed":false,
+  "research_only":true,
+  "round22_holdout_use":"NOT_LOADED",
+  "architecture_class":"FIXED_INDEPENDENT_SIGNAL_SLEEVES_WITH_TOTAL_RISK_CAP",
+  "risk_model":{"total_risk_cap_fraction":0.0015,"risk_split":"equal across active sleeves","reported_trade_R":"relative to sleeve initial risk","monte_carlo_assumption":"0.15 percent per trade, intentionally conservative"},
+  "architectures":[
+    {
+      "id":"ASYMMETRIC_MULTI_PATTERN_ENSEMBLE",
+      "modules":["VOLATILITY_COMPRESSION_EXPANSION_LONG","VOLATILITY_COMPRESSION_EXPANSION_SHORT","DIRECTIONAL_RANGE_EXPANSION_SHORT","BREAKOUT_FOLLOW_THROUGH_CONFIRMATION_SHORT"],
+      "neighbours_one_module_at_a_time":["VCE_LONG_REL_VOLUME_LOW_HIGH","VCE_SHORT_REL_VOLUME_LOW_HIGH","DRE_SHORT_BODY_LOW_HIGH","FOLLOW_THROUGH_CONFIRM_BODY_LOW_HIGH"]
+    },
+    {
+      "id":"TWO_SLEEVE_MOMENTUM_ENSEMBLE",
+      "modules":["MOMENTUM_ACCELERATION_LONG","DIRECTIONAL_RANGE_EXPANSION_SHORT"],
+      "neighbours_one_module_at_a_time":["MOMENTUM_LONG_THRESHOLD_LOW_HIGH","DRE_SHORT_BODY_LOW_HIGH","DRE_SHORT_RANGE_LOW_HIGH"]
+    }
+  ],
+  "direction_reporting":"LONG_SHORT_AND_COMBINED_REPORTED_SEPARATELY",
+  "execution":"Each module retains its previously locked causal conservative execution",
+  "firewall":{"end_exclusive":"2026-06-01T00:00:00Z","scalp_engine_touched":false,"android_files_touched":false}
+}

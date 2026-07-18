@@ -1,0 +1,16 @@
+{
+  "protocol":"ETH_V233_ROUND23_PHASE5",
+  "locked_at_utc":"2026-07-18T17:34:00Z",
+  "criteria_changed":false,
+  "research_only":true,
+  "round22_holdout_use":"NOT_LOADED",
+  "design_basis":"Pre-holdout aggregate losing-trade excursion showed many failed expansions reveal themselves within the first few bars; fixed causal state machines, not calendar filters",
+  "architectures":[
+    {"id":"DRE_FAST_FAILURE","central":{"time_decay_bars":3,"minimum_favourable_r":0.15,"protect_trigger_r":0.6,"protect_stop_r":-0.25,"breakeven_trigger_r":0.9,"reward_risk":2.2,"max_hold_bars":16},"neighbours":{"time_decay_bars":[2,4],"minimum_favourable_r":[0.1,0.25],"protect_trigger_r":[0.5,0.75],"protect_stop_r":[-0.4,-0.1],"reward_risk":[2.0,2.4],"max_hold_bars":[12,20]}},
+    {"id":"DRE_FAST_FAILURE_SCALEOUT","central":{"time_decay_bars":3,"minimum_favourable_r":0.15,"partial_r":0.6,"partial_fraction":0.5,"reward_risk":2.2,"max_hold_bars":16},"neighbours":{"time_decay_bars":[2,4],"minimum_favourable_r":[0.1,0.25],"partial_r":[0.5,0.7],"partial_fraction":[0.33,0.67],"reward_risk":[2.0,2.4],"max_hold_bars":[12,20]}},
+    {"id":"DRE_SHORT_HORIZON_ASYMMETRY","central":{"time_decay_bars":4,"minimum_favourable_r":0.2,"protect_trigger_r":0.5,"protect_stop_r":-0.2,"breakeven_trigger_r":0.75,"reward_risk":1.5,"max_hold_bars":10},"neighbours":{"time_decay_bars":[3,6],"minimum_favourable_r":[0.1,0.3],"protect_trigger_r":[0.4,0.65],"protect_stop_r":[-0.35,-0.1],"reward_risk":[1.3,1.8],"max_hold_bars":[8,14]}}
+  ],
+  "shared_entry":{"family":"DIRECTIONAL_RANGE_EXPANSION","regime_threshold":0.15,"h4_adx_min":16,"channel_bars":12,"range_atr_min":1.2,"body_atr_min":0.5,"close_location_min":0.7,"rel_volume_min":1.0,"atr_stop_mult":1.3,"atr_stop_cap":3.0},
+  "directions":["LONG","SHORT"],
+  "firewall":{"end_exclusive":"2026-06-01T00:00:00Z","scalp_engine_touched":false,"android_files_touched":false}
+}
