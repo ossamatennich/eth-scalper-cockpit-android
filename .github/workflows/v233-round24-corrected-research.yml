@@ -1,0 +1,221 @@
+name: ETH v2.33 Round 24 corrected research
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/v233-research-engine-round24
+    paths:
+      - '.github/workflows/v233-round24-corrected-research.yml'
+      - 'research/v233_round24/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v233-round24-corrected-research-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  RESEARCH_DIR: research/v233_round24
+  CORPUS: research/v233_round24/data/ETHUSDT_UM_1h_2021-01-01_2026-05-31.csv.gz
+  PROTOCOL: research/v233_round24/protocol/round24/ROUND24_PROTOCOL_LOCKED_2026-07-18T19-06-02Z.json
+
+jobs:
+  corrected-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Checkout dedicated branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce Android and SCALP firewall
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          git diff --name-only origin/main...HEAD > /tmp/changed_files.txt
+          if grep -E '^(app/|build\.gradle$|settings\.gradle$|gradle\.properties$)|\.(java|kt|gradle|apk)$' /tmp/changed_files.txt; then
+            echo 'Forbidden Android, Java, Gradle, APK, UI or SCALP path changed.'
+            exit 1
+          fi
+          awk '!/^research\/v233_round24\// && !/^\.github\/workflows\/v233-round24-corrected-research\.yml$/ {print; bad=1} END {exit bad}' /tmp/changed_files.txt
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: research/v233_round24/requirements-research.txt
+
+      - name: Install locked dependencies
+        run: python -m pip install -r "$RESEARCH_DIR/requirements-research.txt"
+
+      - name: Materialize pinned pre-holdout corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RESEARCH_DIR/data"
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/ossamatennich/eth-scalper-cockpit-android/6fb9c7122281026afc515adf302b2a23a7f9a468/ETH_V233_HISTORICAL_RESULTS.zip" \
+            --output /tmp/ETH_V233_HISTORICAL_RESULTS.zip
+          echo "3ab51f603d34db70f536d53d43f981c25738523315c53d7ad47c7e2a114f9b6a  /tmp/ETH_V233_HISTORICAL_RESULTS.zip" | sha256sum -c -
+          unzip -p /tmp/ETH_V233_HISTORICAL_RESULTS.zip \
+            deliverable/results/ETHUSDT_UM_1h_2021-01-01_2026-05-31.csv.gz \
+            > "$CORPUS"
+          echo "358ed25f46e123deefeda86be464a34e912c53551ff7abc8285132a79fcacbc2  $CORPUS" | sha256sum -c -
+
+      - name: Verify every locked protocol
+        working-directory: research/v233_round24
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd protocol/round23
+            for checksum in *.sha256; do sha256sum -c "$checksum"; done
+          )
+          (
+            cd protocol/round24
+            sha256sum -c ROUND24_PROTOCOL_LOCKED_2026-07-18T19-06-02Z.sha256
+          )
+
+      - name: Run unit, integration, causal, risk and firewall tests
+        working-directory: research/v233_round24
+        shell: bash
+        env:
+          ROUND24_CORPUS: data/ETHUSDT_UM_1h_2021-01-01_2026-05-31.csv.gz
+        run: |
+          set -euo pipefail
+          pytest -q | tee results-tests.log
+
+      - name: Reproduce all 43 Round 23 candidates twice with legacy engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RESEARCH_DIR/results/reproduction"
+          python "$RESEARCH_DIR/src/reproduce_round23.py" \
+            --engine-dir "$RESEARCH_DIR/legacy_engine" --engine-label legacy \
+            --corpus "$CORPUS" \
+            --reference-summary "$RESEARCH_DIR/reference/ROUND23_PACKAGED_BASELINE.json" \
+            --output "$ROOT/legacy_a"
+          python "$RESEARCH_DIR/src/reproduce_round23.py" \
+            --engine-dir "$RESEARCH_DIR/legacy_engine" --engine-label legacy \
+            --corpus "$CORPUS" --output "$ROOT/legacy_b"
+
+      - name: Reproduce all 43 Round 23 candidates twice with corrected engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RESEARCH_DIR/results/reproduction"
+          python "$RESEARCH_DIR/src/reproduce_round23.py" \
+            --engine-dir "$RESEARCH_DIR/corrected_engine" --engine-label corrected \
+            --corpus "$CORPUS" --output "$ROOT/corrected_a"
+          python "$RESEARCH_DIR/src/reproduce_round23.py" \
+            --engine-dir "$RESEARCH_DIR/corrected_engine" --engine-label corrected \
+            --corpus "$CORPUS" --output "$ROOT/corrected_b"
+
+      - name: Compare pre and post correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RESEARCH_DIR/results/reproduction"
+          python "$RESEARCH_DIR/src/compare_round23.py" \
+            --legacy-a "$ROOT/legacy_a" --legacy-b "$ROOT/legacy_b" \
+            --corrected-a "$ROOT/corrected_a" --corrected-b "$ROOT/corrected_b" \
+            --output "$ROOT/comparison"
+          REPORT="$ROOT/comparison/ROUND23_PRE_POST_COMPARISON.json"
+          test "$(jq -r '.summary.legacy_deterministic' "$REPORT")" = true
+          test "$(jq -r '.summary.corrected_deterministic' "$REPORT")" = true
+          test "$(jq -r '.summary.legacy_packaged_reproduction_pass_at_1e_12' "$REPORT")" = true
+          test "$(jq -r '.summary.legacy_packaged_trade_signature_matches' "$REPORT")" = 43
+          test "$(jq -r '.summary.old_quasi_candidates_validated' "$REPORT")" = false
+
+      - name: Certify LONG SHORT and combined ensemble gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RESEARCH_DIR/results/correction_certification"
+          python "$RESEARCH_DIR/corrected_engine/round23_phase6.py" "$CORPUS" \
+            --output "$OUT/phase6" --protocol "$RESEARCH_DIR/protocol/round23"
+          python "$RESEARCH_DIR/corrected_engine/round23_phase7.py" "$CORPUS" \
+            --output "$OUT/phase7" --protocol "$RESEARCH_DIR/protocol/round23"
+
+      - name: Run preregistered Round 24 twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in a b; do
+            python "$RESEARCH_DIR/src/run_round24.py" \
+              --engine-dir "$RESEARCH_DIR/corrected_engine" \
+              --corpus "$CORPUS" --protocol "$PROTOCOL" \
+              --output "$RESEARCH_DIR/results/round24/run_$RUN"
+          done
+
+      - name: Verify Round 24 byte determinism and strict decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RESEARCH_DIR/results/round24"
+          (
+            cd "$ROOT/run_a"
+            find . -type f -print0 | sort -z | xargs -0 sha256sum
+          ) > "$ROOT/run_a.MANIFEST_SHA256.txt"
+          (
+            cd "$ROOT/run_b"
+            find . -type f -print0 | sort -z | xargs -0 sha256sum
+          ) > "$ROOT/run_b.MANIFEST_SHA256.txt"
+          diff -u "$ROOT/run_a.MANIFEST_SHA256.txt" "$ROOT/run_b.MANIFEST_SHA256.txt"
+          test "$(jq -r '.android_integration_allowed' "$ROOT/run_a/ROUND24_FINAL_DECISION.json")" = false
+          test "$(jq -r '.round22_holdout_loaded' "$ROOT/run_a/ROUND24_FINAL_DECISION.json")" = false
+          test "$(jq -r '.candidate_budget_used' "$ROOT/run_a/ROUND24_FINAL_DECISION.json")" = 108
+
+      - name: Build verifiable artifact and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          DELIVERABLE="$RESEARCH_DIR/deliverable"
+          mkdir -p "$DELIVERABLE"
+          cp -r "$RESEARCH_DIR/corrected_engine" "$DELIVERABLE/"
+          cp -r "$RESEARCH_DIR/legacy_engine" "$DELIVERABLE/"
+          cp -r "$RESEARCH_DIR/src" "$DELIVERABLE/"
+          cp -r "$RESEARCH_DIR/tests" "$DELIVERABLE/"
+          cp -r "$RESEARCH_DIR/protocol" "$DELIVERABLE/"
+          cp -r "$RESEARCH_DIR/reference" "$DELIVERABLE/"
+          cp -r "$RESEARCH_DIR/evidence" "$DELIVERABLE/"
+          cp -r "$RESEARCH_DIR/results" "$DELIVERABLE/"
+          cp "$RESEARCH_DIR/requirements-research.txt" "$RESEARCH_DIR/pytest.ini" "$DELIVERABLE/"
+          cp "$RESEARCH_DIR/README.md" "$RESEARCH_DIR/METHODOLOGY_CORRECTIONS.md" "$RESEARCH_DIR/GITHUB_STATE_AND_HANDOFF.md" "$DELIVERABLE/"
+          mkdir -p "$DELIVERABLE/workflow"
+          cp .github/workflows/v233-round24-corrected-research.yml "$DELIVERABLE/workflow/"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg branch "$GITHUB_REF_NAME" \
+            --arg commit "$GITHUB_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            '{repository:$repository,branch:$branch,commit:$commit,run_id:$run_id,run_attempt:$run_attempt}' \
+            > "$DELIVERABLE/GITHUB_RUN_METADATA.json"
+          (
+            cd "$DELIVERABLE"
+            find . -type f ! -name MANIFEST_SHA256.txt -print0 | sort -z | xargs -0 sha256sum > MANIFEST_SHA256.txt
+          )
+          (
+            cd "$RESEARCH_DIR"
+            zip -qr ETH_V233_ROUND24_CORRECTED_RESEARCH.zip deliverable
+            sha256sum ETH_V233_ROUND24_CORRECTED_RESEARCH.zip > ETH_V233_ROUND24_CORRECTED_RESEARCH.zip.sha256
+          )
+
+      - name: Upload immutable research artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ETH_V233_ROUND24_CORRECTED_RESEARCH_${{ github.run_id }}
+          path: |
+            research/v233_round24/ETH_V233_ROUND24_CORRECTED_RESEARCH.zip
+            research/v233_round24/ETH_V233_ROUND24_CORRECTED_RESEARCH.zip.sha256
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0

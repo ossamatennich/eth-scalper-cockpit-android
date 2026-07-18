@@ -1,0 +1,2848 @@
+{
+  "candidates": [
+    {
+      "candidate": "phase1/DUAL_EMA_IMPULSE__LONG",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.026395059508535493,
+        "max_drawdown_r": -12.398245245981913,
+        "profit_factor": 1.0678151655660981,
+        "return_r": 1.8476541655974845,
+        "trades": 70,
+        "win_rate_pct": 40.0
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "f18a09ee26e7ac806f4fab43d55c514a48090338610b9ebd097d29ce116c1733",
+      "delta": {
+        "expectancy_r": -0.008830675971405983,
+        "max_drawdown_r": -0.6155986487120799,
+        "profit_factor": -0.025544421417940333,
+        "return_r": -0.6181473179984187,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.035225735479941477,
+        "max_drawdown_r": -11.782646597269833,
+        "profit_factor": 1.0933595869840385,
+        "return_r": 2.4658014835959032,
+        "trades": 70,
+        "win_rate_pct": 41.42857142857143
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "157e3f081f2ff5fe35239f1e508b71c8aa392f382ade2cc89fd82b5767997071",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 1.3877787807814457e-17,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 8.881784197001252e-16,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.03522573547994146,
+          "max_drawdown_r": -11.782646597269833,
+          "profit_factor": 1.0933595869840385,
+          "return_r": 2.4658014835959023,
+          "trades": 70,
+          "win_rate_pct": 41.42857142857143
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "296d465c2cbd648bc7bd291580e6d05b30612eb1e2767cbcd6e854f644661ed3"
+      },
+      "phase": "phase1",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase1/DUAL_EMA_IMPULSE__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.4126468382904274,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase1/DUAL_EMA_IMPULSE__SHORT",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.09982055196632597,
+        "max_drawdown_r": -6.52963748600269,
+        "profit_factor": 1.2836874077799292,
+        "return_r": 8.983849676969337,
+        "trades": 90,
+        "win_rate_pct": 41.11111111111111
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "c148422bec90f201d6d561d811745d11d91e5ebd6b4f18e29a127053a5df9dd0",
+      "delta": {
+        "expectancy_r": 0.012749752540082412,
+        "max_drawdown_r": -0.10618551737397652,
+        "profit_factor": 0.036203079549013584,
+        "return_r": 1.0604069291811724,
+        "trades": -1.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.08707079942624356,
+        "max_drawdown_r": -6.423451968628713,
+        "profit_factor": 1.2474843282309156,
+        "return_r": 7.923442747788164,
+        "trades": 91,
+        "win_rate_pct": 41.75824175824176
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "43b0a509a0d96ac8ebb9ec44195e4bf2f7436250260f9be359d9c3f59f69c8d1",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.08707079942624356,
+          "max_drawdown_r": -6.423451968628713,
+          "profit_factor": 1.2474843282309156,
+          "return_r": 7.923442747788164,
+          "trades": 91,
+          "win_rate_pct": 41.75824175824176
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "ef3f984286600af7240f54f93eeb050467bfbc2d15dd35dd0e13fb48dfba66f5"
+      },
+      "phase": "phase1",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase1/DUAL_EMA_IMPULSE__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.19295176205948514,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase1/MOMENTUM_ACCELERATION__LONG",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.17774987608439471,
+        "max_drawdown_r": -2.557897961524016,
+        "profit_factor": 1.6200695470930744,
+        "return_r": 9.953993060726104,
+        "trades": 56,
+        "win_rate_pct": 53.57142857142857
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "de814399be01c2b052669acdb7bd5dda7139340bcd3dde721a1513738d73abd3",
+      "delta": {
+        "expectancy_r": 0.027116450240136314,
+        "max_drawdown_r": 0.09195952512620531,
+        "profit_factor": 0.11488218669442007,
+        "return_r": 1.5185212134476327,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.1506334258442584,
+        "max_drawdown_r": -2.6498574866502214,
+        "profit_factor": 1.5051873603986543,
+        "return_r": 8.435471847278471,
+        "trades": 56,
+        "win_rate_pct": 50.0
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "dde1f748818d9f7ba72e99c255ffded1429ad950d9f5162802a832d2d8d7bfb7",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.1506334258442584,
+          "max_drawdown_r": -2.6498574866502214,
+          "profit_factor": 1.5051873603986543,
+          "return_r": 8.435471847278471,
+          "trades": 56,
+          "win_rate_pct": 50
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "c3ae84ee1f7b6dccfef033b0107bbcc3fdcd52fac62d5c2e3865a53b32ff2c73"
+      },
+      "phase": "phase1",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase1/MOMENTUM_ACCELERATION__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.05723569107723069,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase1/MOMENTUM_ACCELERATION__SHORT",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.1127405588270677,
+        "max_drawdown_r": -3.230864424653654,
+        "profit_factor": 1.4270116482468724,
+        "return_r": 4.39688179425564,
+        "trades": 39,
+        "win_rate_pct": 41.02564102564102
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "8cd45cf1334ae87305663d651306ad27ae8cd748318225bd6c2e3bef3441ea2c",
+      "delta": {
+        "expectancy_r": 0.019803319374656916,
+        "max_drawdown_r": 0.45449797748103826,
+        "profit_factor": 0.07785083972890283,
+        "return_r": 0.77232945561162,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.09293723945241078,
+        "max_drawdown_r": -3.6853624021346922,
+        "profit_factor": 1.3491608085179696,
+        "return_r": 3.6245523386440204,
+        "trades": 39,
+        "win_rate_pct": 38.46153846153847
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "8086a9ffade2de7531ba279bdadf02490f09d35b58c88359db4b85ca87fdff58",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.09293723945241078,
+          "max_drawdown_r": -3.6853624021346922,
+          "profit_factor": 1.3491608085179696,
+          "return_r": 3.6245523386440204,
+          "trades": 39,
+          "win_rate_pct": 38.46153846153847
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "b4601abad3fb313f91279fde8f89377e9077260c57d589cc5bc63f64a01f7e46"
+      },
+      "phase": "phase1",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase1/MOMENTUM_ACCELERATION__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.1709572606848288,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase1/RANGE_EXTREME_REVERSION__LONG",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": -0.10384558124220437,
+        "max_drawdown_r": -13.813999893912428,
+        "profit_factor": 0.7340925774758996,
+        "return_r": -12.253778586580117,
+        "trades": 118,
+        "win_rate_pct": 44.91525423728814
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "02f8380c1d5f9275ccfca4fc959a1f1d15aeb381db9c2462a6b4e9a7c9214479",
+      "delta": {
+        "expectancy_r": 0.010530538844077175,
+        "max_drawdown_r": 1.4021795955832754,
+        "profit_factor": 0.022951166391584343,
+        "return_r": 1.242603583601106,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.11437612008628155,
+        "max_drawdown_r": -15.216179489495703,
+        "profit_factor": 0.7111414110843153,
+        "return_r": -13.496382170181223,
+        "trades": 118,
+        "win_rate_pct": 43.22033898305085
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "ab02432d1d7a3c0b83583f5a0f73d6cf4a740aba837b070316b1aeac357ed4cc",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.11437612008628155,
+          "max_drawdown_r": -15.216179489495703,
+          "profit_factor": 0.7111414110843153,
+          "return_r": -13.496382170181223,
+          "trades": 118,
+          "win_rate_pct": 43.22033898305085
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "7da5edcf9710bf6afdf91c0dd60582fe0b538f5bb7b88548b7d19c1e4f8a362b"
+      },
+      "phase": "phase1",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase1/RANGE_EXTREME_REVERSION__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.9387653086728318,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase1/RANGE_EXTREME_REVERSION__SHORT",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": -0.1525560030775071,
+        "max_drawdown_r": -12.967260261588102,
+        "profit_factor": 0.64911905767996,
+        "return_r": -12.967260261588104,
+        "trades": 85,
+        "win_rate_pct": 40.0
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "9d7fc5769ac811ee12e7fc04547978f9e138e2158a1734b24b37a916981f91d1",
+      "delta": {
+        "expectancy_r": 0.012218174158056538,
+        "max_drawdown_r": 1.2033189806703728,
+        "profit_factor": 0.03880010565591385,
+        "return_r": 1.2033189806703692,
+        "trades": -1.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.16477417723556365,
+        "max_drawdown_r": -14.170579242258475,
+        "profit_factor": 0.6103189520240462,
+        "return_r": -14.170579242258473,
+        "trades": 86,
+        "win_rate_pct": 39.53488372093023
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "3e81d2e6bedcc4b2ccd80f65ec4601d581700c30e634e2f314f091da14902c72",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.16477417723556365,
+          "max_drawdown_r": -14.170579242258475,
+          "profit_factor": 0.6103189520240462,
+          "return_r": -14.170579242258473,
+          "trades": 86,
+          "win_rate_pct": 39.53488372093023
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "c0c7b62a46551838a4130c66f3344aae3687861804adb72d2891bbe261513f2d"
+      },
+      "phase": "phase1",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase1/RANGE_EXTREME_REVERSION__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.939515121219695,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase1/TREND_PULLBACK_RESUMPTION__LONG",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.0008572404098975472,
+        "max_drawdown_r": -25.547993774542686,
+        "profit_factor": 1.0000585641427775,
+        "return_r": 0.2743169311672151,
+        "trades": 320,
+        "win_rate_pct": 39.6875
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "346ae897a0b8e106539d91b83bccf4f3de54f49b273b7e9e6ba752a9402f3537",
+      "delta": {
+        "expectancy_r": 0.0224827065957431,
+        "max_drawdown_r": 3.1768617389626748,
+        "profit_factor": 0.050259408701908814,
+        "return_r": 7.259342509195328,
+        "trades": -3.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.02162546618584555,
+        "max_drawdown_r": -28.72485551350536,
+        "profit_factor": 0.9497991554408687,
+        "return_r": -6.985025578028113,
+        "trades": 323,
+        "win_rate_pct": 38.69969040247678
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "01fb45fb2593ba7cbb3ca6eb63ca8a5226b6be4a7817eef7700a930356aedae4",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": -6.938893903907228e-18,
+          "max_drawdown_r": 7.105427357601002e-15,
+          "profit_factor": 0.0,
+          "return_r": -1.7763568394002505e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.021625466185845543,
+          "max_drawdown_r": -28.724855513505368,
+          "profit_factor": 0.9497991554408687,
+          "return_r": -6.985025578028111,
+          "trades": 323,
+          "win_rate_pct": 38.69969040247678
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "b92fd833e478759a00c9a26e7678db379dbd94625bf24e55a56777523e375ae6"
+      },
+      "phase": "phase1",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase1/TREND_PULLBACK_RESUMPTION__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.48562859285178706,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase1/TREND_PULLBACK_RESUMPTION__SHORT",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": -0.03449544727299628,
+        "max_drawdown_r": -42.59588265827537,
+        "profit_factor": 0.9195876016078486,
+        "return_r": -11.900929309183716,
+        "trades": 345,
+        "win_rate_pct": 34.20289855072463
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "feb8b194ba42c867bcbf68a9f85d53698c94d0a5999a75a4c37bf3d2b76f50d0",
+      "delta": {
+        "expectancy_r": -0.01605310092901159,
+        "max_drawdown_r": -4.980634696682586,
+        "profit_factor": -0.03553145622691556,
+        "return_r": -5.4092233961011065,
+        "trades": -7.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.018442346343984686,
+        "max_drawdown_r": -37.615247961592786,
+        "profit_factor": 0.9551190578347641,
+        "return_r": -6.49170591308261,
+        "trades": 352,
+        "win_rate_pct": 34.94318181818182
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "1eb7ad92d066e5d6af123ed43b3adc160127a42c4a4fb4e0cc995223c72adc00",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 6.938893903907228e-18,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 1.7763568394002505e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.018442346343984693,
+          "max_drawdown_r": -37.615247961592786,
+          "profit_factor": 0.9551190578347641,
+          "return_r": -6.491705913082612,
+          "trades": 352,
+          "win_rate_pct": 34.94318181818182
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "4e4b5cdc6cbe24d1e3dd1fe006efc4152ae60f2ade3b2df2fa3511a9f431c4fe"
+      },
+      "phase": "phase1",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase1/TREND_PULLBACK_RESUMPTION__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.7350662334416396,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase1/VOLATILITY_COMPRESSION_EXPANSION__LONG",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.05273296326178924,
+        "max_drawdown_r": -13.130541506081581,
+        "profit_factor": 1.1360114732671471,
+        "return_r": 8.173609305577331,
+        "trades": 155,
+        "win_rate_pct": 45.16129032258064
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "e790467eda8d6d960298326f522d4837227d671936d345fd61f65bafaa181e0b",
+      "delta": {
+        "expectancy_r": -0.0015008496192441198,
+        "max_drawdown_r": -0.055265700818576846,
+        "profit_factor": -0.008177189984402533,
+        "return_r": -0.23263169098283853,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.05423381288103336,
+        "max_drawdown_r": -13.075275805263004,
+        "profit_factor": 1.1441886632515497,
+        "return_r": 8.40624099656017,
+        "trades": 155,
+        "win_rate_pct": 43.225806451612904
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "9c5eb30c1bb2ac8d45c265f69b1ed1d11043edf38327999c5f00525244c8b2f0",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.05423381288103336,
+          "max_drawdown_r": -13.075275805263004,
+          "profit_factor": 1.1441886632515497,
+          "return_r": 8.40624099656017,
+          "trades": 155,
+          "win_rate_pct": 43.225806451612904
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "26df9820f6074f86135485b96a742f17570a9a7dd262f706fb70ec8a83e3ad9c"
+      },
+      "phase": "phase1",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase1/VOLATILITY_COMPRESSION_EXPANSION__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.24068982754311422,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase1/VOLATILITY_COMPRESSION_EXPANSION__SHORT",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": 0.1407322796407853,
+        "max_drawdown_r": -5.519960571932556,
+        "profit_factor": 1.436736400699479,
+        "return_r": 16.324944438331094,
+        "trades": 116,
+        "win_rate_pct": 43.96551724137931
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "0782d6f9d7dbdc004ae8bbcd031ef6e605a08e56dfa234c5626a36ca1cf5f2fb",
+      "delta": {
+        "expectancy_r": -0.022125234087169293,
+        "max_drawdown_r": 0.03140893956912727,
+        "profit_factor": -0.08583887000805746,
+        "return_r": -2.5665271541116397,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.1628575137279546,
+        "max_drawdown_r": -5.551369511501683,
+        "profit_factor": 1.5225752707075364,
+        "return_r": 18.891471592442734,
+        "trades": 116,
+        "win_rate_pct": 44.827586206896555
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "a996d17d4dee2a043ba0b51c0ed0a46935ac0df24a41c58af00367ac593fe8ad",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.1628575137279546,
+          "max_drawdown_r": -5.551369511501683,
+          "profit_factor": 1.5225752707075364,
+          "return_r": 18.891471592442734,
+          "trades": 116,
+          "win_rate_pct": 44.827586206896555
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "1d5a9dbd2d5c47d23bbf2ad0a5e59df83a1150931c5b297a01d05d8632cea369"
+      },
+      "phase": "phase1",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase1/VOLATILITY_COMPRESSION_EXPANSION__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.0379905023744064,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase2/COMPRESSION_SCALE_OUT__LONG",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.027306663043016093,
+        "max_drawdown_r": -12.174703214638246,
+        "profit_factor": 1.0708270129095425,
+        "return_r": 4.778666032527816,
+        "trades": 175,
+        "win_rate_pct": 50.28571428571429
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "8c07be5290a250420de21206f37546e72a1773f1efd11284ab4242084d7fe175",
+      "delta": {
+        "expectancy_r": -0.0036027209484803813,
+        "max_drawdown_r": -0.4958808776410919,
+        "profit_factor": -0.011092282571138146,
+        "return_r": -0.661385549975563,
+        "trades": -1.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.030909383991496474,
+        "max_drawdown_r": -11.678822336997154,
+        "profit_factor": 1.0819192954806807,
+        "return_r": 5.440051582503379,
+        "trades": 176,
+        "win_rate_pct": 52.27272727272727
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "6adc773b7ea0654192332fc2ee81ebe9c20aa408e058b01361f57e7e924422d5",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.030909383991496474,
+          "max_drawdown_r": -11.678822336997154,
+          "profit_factor": 1.0819192954806807,
+          "return_r": 5.440051582503379,
+          "trades": 176,
+          "win_rate_pct": 52.27272727272727
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "3bc39bda19d5a24e489860ff3d428d36f5c98fd7cc8239f35c6d176e3eaafbb0"
+      },
+      "phase": "phase2",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase2/COMPRESSION_SCALE_OUT__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.33266683329167707,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase2/COMPRESSION_SCALE_OUT__SHORT",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.10553661043591231,
+        "max_drawdown_r": -4.679331057870218,
+        "profit_factor": 1.3268782695378347,
+        "return_r": 14.669588850591811,
+        "trades": 139,
+        "win_rate_pct": 58.992805755395686
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "14aa479a26f3061a43c14f3b808e1599164ab55b2c862633a7a2661e9eee01ec",
+      "delta": {
+        "expectancy_r": -0.002683276474620966,
+        "max_drawdown_r": -0.06251455937984396,
+        "profit_factor": -0.00891886501265815,
+        "return_r": -0.37297542997231403,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.10821988691053328,
+        "max_drawdown_r": -4.616816498490374,
+        "profit_factor": 1.3357971345504929,
+        "return_r": 15.042564280564125,
+        "trades": 139,
+        "win_rate_pct": 59.71223021582733
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "56b8cf42b1eb264691e98f6c20d6f8731dac503a8a740968bdd5cb4f096bf95c",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 2.7755575615628914e-17,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 3.552713678800501e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.10821988691053325,
+          "max_drawdown_r": -4.616816498490374,
+          "profit_factor": 1.3357971345504929,
+          "return_r": 15.042564280564122,
+          "trades": 139,
+          "win_rate_pct": 59.71223021582733
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "06732c7fea3d832ee8637258a48d077edbd58a99c8f9ab9b16cdde4b93a6617d"
+      },
+      "phase": "phase2",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase2/COMPRESSION_SCALE_OUT__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.04423894026493377,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase2/COMPRESSION_TIME_DECAY__LONG",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.020108401328438955,
+        "max_drawdown_r": -18.41824432963321,
+        "profit_factor": 1.0528281527960568,
+        "return_r": 3.6999458444327677,
+        "trades": 184,
+        "win_rate_pct": 34.78260869565217
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "459cde1dd059338c3866039bb70fa8ee425a9d636405f12c6b1363069a73c02e",
+      "delta": {
+        "expectancy_r": 0.018979324055914685,
+        "max_drawdown_r": 1.3705968951391263,
+        "profit_factor": 0.05122075264331549,
+        "return_r": 3.488808394470729,
+        "trades": -3.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.0011290772725242708,
+        "max_drawdown_r": -19.788841224772337,
+        "profit_factor": 1.0016074001527413,
+        "return_r": 0.21113744996203865,
+        "trades": 187,
+        "win_rate_pct": 33.155080213903744
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "fc8a940545fedc61a0e4eb46da5f777f4a0c2d7a5dbe4b91e7404006d775f177",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.0011290772725242708,
+          "max_drawdown_r": -19.788841224772337,
+          "profit_factor": 1.0016074001527413,
+          "return_r": 0.21113744996203865,
+          "trades": 187,
+          "win_rate_pct": 33.155080213903744
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "ff16526b2b87a7116acabe637f201c51ed2251717b34cc04da521b709782bd1e"
+      },
+      "phase": "phase2",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase2/COMPRESSION_TIME_DECAY__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.38165458635341165,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase2/COMPRESSION_TIME_DECAY__SHORT",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.10280657706573791,
+        "max_drawdown_r": -6.934457732877551,
+        "profit_factor": 1.2990345381265453,
+        "return_r": 14.290114212137569,
+        "trades": 139,
+        "win_rate_pct": 41.007194244604314
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "b937b01a6da20d84dc531bafbd67bf0784969ddc76586b4f4f70b56c0256a23c",
+      "delta": {
+        "expectancy_r": 0.012430603577845797,
+        "max_drawdown_r": -1.186531028879247,
+        "profit_factor": 0.016568569081942375,
+        "return_r": 1.727853897320566,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.09037597348789211,
+        "max_drawdown_r": -5.747926703998304,
+        "profit_factor": 1.282465969044603,
+        "return_r": 12.562260314817003,
+        "trades": 139,
+        "win_rate_pct": 34.53237410071942
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "ae6e07089016f1a708492c0f7064b8b92e27414b23dbd95c14d48958ee20367a",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": -1.3877787807814457e-17,
+          "max_drawdown_r": -8.881784197001252e-16,
+          "profit_factor": 0.0,
+          "return_r": -3.552713678800501e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.09037597348789213,
+          "max_drawdown_r": -5.747926703998303,
+          "profit_factor": 1.282465969044603,
+          "return_r": 12.562260314817006,
+          "trades": 139,
+          "win_rate_pct": 34.53237410071942
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "4a4fb5b7c319b7d3ae5fd364e17d3b3e4680bf9500b0e82d83568443fcaefd30"
+      },
+      "phase": "phase2",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase2/COMPRESSION_TIME_DECAY__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.09647588102974257,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase2/DIRECTIONAL_RANGE_EXPANSION__LONG",
+      "classification": "EDGE_DISAPPEARED",
+      "corrected": {
+        "expectancy_r": -0.0011083693413014096,
+        "max_drawdown_r": -14.293527085450785,
+        "profit_factor": 0.9955222778822368,
+        "return_r": -0.19839811209295233,
+        "trades": 179,
+        "win_rate_pct": 44.6927374301676
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "020a71916c668e71f174f8402624d16c226cb3f7d8bd70051e314ab499a020b7",
+      "delta": {
+        "expectancy_r": -0.012690239804825029,
+        "max_drawdown_r": 0.7174325707188078,
+        "profit_factor": -0.03266599378495605,
+        "return_r": -2.3062985364542508,
+        "trades": -3.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.011581870463523618,
+        "max_drawdown_r": -15.010959656169593,
+        "profit_factor": 1.0281882716671928,
+        "return_r": 2.1079004243612984,
+        "trades": 182,
+        "win_rate_pct": 42.857142857142854
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "13953c56d9925ff9eae3a644a59efa9cc30676b7b5a0fcde49d5a5dbe5d63757",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 5.204170427930421e-18,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 8.881784197001252e-16,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.011581870463523613,
+          "max_drawdown_r": -15.010959656169593,
+          "profit_factor": 1.0281882716671928,
+          "return_r": 2.1079004243612975,
+          "trades": 182,
+          "win_rate_pct": 42.857142857142854
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "5abcdfce3e19908f8081a89190e4175809059aa12cd8e796a8bf4fa331ba3a77"
+      },
+      "phase": "phase2",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase2/DIRECTIONAL_RANGE_EXPANSION__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.5126218445388653,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase2/DIRECTIONAL_RANGE_EXPANSION__SHORT",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": 0.14540524841156788,
+        "max_drawdown_r": -5.055211565716432,
+        "profit_factor": 1.4218034216538864,
+        "return_r": 21.083761019677343,
+        "trades": 145,
+        "win_rate_pct": 46.89655172413793
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "cc7e7227006da4040b5951f00bf300224a2f037201d5481f7bc9185cb421c9b8",
+      "delta": {
+        "expectancy_r": -0.038738452241113,
+        "max_drawdown_r": 0.43011040504754305,
+        "profit_factor": -0.1490948540484225,
+        "return_r": -5.985362976266746,
+        "trades": -2.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.18414370065268088,
+        "max_drawdown_r": -5.485321970763975,
+        "profit_factor": 1.5708982757023089,
+        "return_r": 27.06912399594409,
+        "trades": 147,
+        "win_rate_pct": 49.65986394557823
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "3f031e4eb769d14bfaf6d58f0e4aefadca09f297b562940048dddc853579f308",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.18414370065268088,
+          "max_drawdown_r": -5.485321970763975,
+          "profit_factor": 1.5708982757023089,
+          "return_r": 27.06912399594409,
+          "trades": 147,
+          "win_rate_pct": 49.65986394557823
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "90ed9029c1d8c867bcad9e137cd2c44d186a699afdaa2ffac5e3e3956bc99af0"
+      },
+      "phase": "phase2",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase2/DIRECTIONAL_RANGE_EXPANSION__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 0.9397650587353162,
+        "p_value": 0.023494126468382906,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase2/VOLATILITY_TRANSITION_BREAK__LONG",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.15892917253569658,
+        "max_drawdown_r": -1.0,
+        "profit_factor": 1.8022683655689813,
+        "return_r": 1.1125042077498761,
+        "trades": 7,
+        "win_rate_pct": 71.42857142857143
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "5c854ce5b5c08bdfc83bdb99e0017fb51683f82d111de3120ecd20779173d56b",
+      "delta": {
+        "expectancy_r": -0.0008793615786192033,
+        "max_drawdown_r": -2.220446049250313e-16,
+        "profit_factor": -0.03380458553533883,
+        "return_r": -0.006155531050334284,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.15980853411431578,
+        "max_drawdown_r": -0.9999999999999998,
+        "profit_factor": 1.8360729511043201,
+        "return_r": 1.1186597388002104,
+        "trades": 7,
+        "win_rate_pct": 71.42857142857143
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "0fe9f37b81580e4cacb332351cf89ccbd88000395e1c4d2ac44d69c25c6f1413",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.15980853411431578,
+          "max_drawdown_r": -0.9999999999999998,
+          "profit_factor": 1.8360729511043201,
+          "return_r": 1.1186597388002104,
+          "trades": 7,
+          "win_rate_pct": 71.42857142857143
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "59142fb2483f463edca67cfd7f08f883e7c815ec6cd12f9309f1708f5c9de8e0"
+      },
+      "phase": "phase2",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase2/VOLATILITY_TRANSITION_BREAK__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 1.0,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase2/VOLATILITY_TRANSITION_BREAK__SHORT",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": 0.0855131062672333,
+        "max_drawdown_r": -4.660370116483525,
+        "profit_factor": 1.2333789434923734,
+        "return_r": 1.3682097002757327,
+        "trades": 16,
+        "win_rate_pct": 37.5
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "b59b09af978f7dca15f00f69e09dbd8994c026bb5cf4e3f9d6b79bc47c7f0dda",
+      "delta": {
+        "expectancy_r": -0.09308327169402261,
+        "max_drawdown_r": -0.5574693791125576,
+        "profit_factor": -0.3506774806702171,
+        "return_r": -1.4893323471043618,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.1785963779612559,
+        "max_drawdown_r": -4.102900737370968,
+        "profit_factor": 1.5840564241625905,
+        "return_r": 2.8575420473800945,
+        "trades": 16,
+        "win_rate_pct": 50.0
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "06a61ec55f58fec89c4d8d509b87097c36dfd22af0379119e62c1b09f159f3ba",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": -2.7755575615628914e-17,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": -4.440892098500626e-16,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.17859637796125594,
+          "max_drawdown_r": -4.102900737370968,
+          "profit_factor": 1.5840564241625905,
+          "return_r": 2.857542047380095,
+          "trades": 16,
+          "win_rate_pct": 50
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "4f639eb4d8d60b41155a3e30687ee166f17dc5b465368b7d480874cdf98b525d"
+      },
+      "phase": "phase2",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase2/VOLATILITY_TRANSITION_BREAK__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 1.0,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_EARLY_PROTECT__LONG",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.05887818446526798,
+        "max_drawdown_r": -8.607116673567017,
+        "profit_factor": 1.1688962085132621,
+        "return_r": 10.539195019282968,
+        "trades": 179,
+        "win_rate_pct": 37.43016759776536
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "31211951d3983e3c80e9a25b8bedf7ca0f62a6abe0a4007916b3f7adc34e24d8",
+      "delta": {
+        "expectancy_r": 0.00805490441420293,
+        "max_drawdown_r": 1.7871481392460193,
+        "profit_factor": 0.024328700797650482,
+        "return_r": 1.4418278901423243,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.050823280051065046,
+        "max_drawdown_r": -10.394264812813036,
+        "profit_factor": 1.1445675077156117,
+        "return_r": 9.097367129140643,
+        "trades": 179,
+        "win_rate_pct": 37.988826815642454
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "39ca691332d64726188aa9a5af3fb98f821307050334731603ed57e1456e66d8",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.050823280051065046,
+          "max_drawdown_r": -10.394264812813036,
+          "profit_factor": 1.1445675077156117,
+          "return_r": 9.097367129140643,
+          "trades": 179,
+          "win_rate_pct": 37.988826815642454
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "1ddba7a7c6c75a60322e9de7af34e4183324cc5d4101ba5edb66d298ea700c9e"
+      },
+      "phase": "phase3",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_EARLY_PROTECT__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.15946013496625844,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_EARLY_PROTECT__SHORT",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.14950637728778388,
+        "max_drawdown_r": -4.765528929131651,
+        "profit_factor": 1.4763940305275118,
+        "return_r": 21.678424706728663,
+        "trades": 145,
+        "win_rate_pct": 34.48275862068966
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "9a1bdec9971cb78faa31b3e0c078a140fb4fef3eb439b47bc0d5ca9330a151a7",
+      "delta": {
+        "expectancy_r": 0.005782453872992754,
+        "max_drawdown_r": -0.013515715675662676,
+        "profit_factor": 0.008848526588145056,
+        "return_r": 0.8384558115839482,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.14372392341479112,
+        "max_drawdown_r": -4.752013213455989,
+        "profit_factor": 1.4675455039393668,
+        "return_r": 20.839968895144715,
+        "trades": 145,
+        "win_rate_pct": 34.48275862068966
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "6013180ee88b52f7daeeaca73c54a864982bddafbfda8d726daa36d537b43ff2",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": -4.440892098500626e-16,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.14372392341479112,
+          "max_drawdown_r": -4.752013213455989,
+          "profit_factor": 1.4675455039393672,
+          "return_r": 20.839968895144715,
+          "trades": 145,
+          "win_rate_pct": 34.48275862068966
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "f2f5d829452f95820d2a1d5161f34cbb69627f0768e1f9e1179c43bc535cf344"
+      },
+      "phase": "phase3",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_EARLY_PROTECT__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.02999250187453137,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_RISK_SHAPED__LONG",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.04990034312676977,
+        "max_drawdown_r": -6.554776347595519,
+        "profit_factor": 1.1750221271481631,
+        "return_r": 9.081862449072098,
+        "trades": 182,
+        "win_rate_pct": 52.74725274725275
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "3c31ddb5cec679dc2e7252ec61408464fc478806cc74272b02e26c432c46155b",
+      "delta": {
+        "expectancy_r": 0.014311702336999327,
+        "max_drawdown_r": 2.7706833241013396,
+        "profit_factor": 0.045592819739647794,
+        "return_r": 2.533552543754336,
+        "trades": -2.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.03558864078977044,
+        "max_drawdown_r": -9.325459671696859,
+        "profit_factor": 1.1294293074085153,
+        "return_r": 6.548309905317762,
+        "trades": 184,
+        "win_rate_pct": 50.0
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "95c1409e42427034b5b3ac0bfc26bc3d8d192b450fbfdec860f8bba3b8be13b6",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": -2.0816681711721685e-17,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": -3.552713678800501e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.03558864078977046,
+          "max_drawdown_r": -9.325459671696859,
+          "profit_factor": 1.1294293074085153,
+          "return_r": 6.548309905317765,
+          "trades": 184,
+          "win_rate_pct": 50
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "6b452adcc07738cc19032753a539ee34524da134504c19a4b73897c56833809b"
+      },
+      "phase": "phase3",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_RISK_SHAPED__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.11497125718570357,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_RISK_SHAPED__SHORT",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.0971258070776184,
+        "max_drawdown_r": -3.926497052818066,
+        "profit_factor": 1.3565176364914586,
+        "return_r": 14.56887106164276,
+        "trades": 150,
+        "win_rate_pct": 56.00000000000001
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "5d5eedb24aeb47b32ab8d2befebfc3df67d1f3397a28d4304cb29cfce91da2d2",
+      "delta": {
+        "expectancy_r": 0.050370464782079016,
+        "max_drawdown_r": 1.1224849543023492,
+        "profit_factor": 0.188247481124989,
+        "return_r": 7.508814375016312,
+        "trades": -1.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.04675534229553939,
+        "max_drawdown_r": -5.048982007120415,
+        "profit_factor": 1.1682701553664696,
+        "return_r": 7.060056686626448,
+        "trades": 151,
+        "win_rate_pct": 50.993377483443716
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "104fb9ee51e255a8879363e5a8ab99f913039fc533f5bd010862e0c8276570e6",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": -8.881784197001252e-16,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.04675534229553939,
+          "max_drawdown_r": -5.048982007120414,
+          "profit_factor": 1.1682701553664696,
+          "return_r": 7.060056686626448,
+          "trades": 151,
+          "win_rate_pct": 50.993377483443716
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "c4705d2800900ce67e667e9b835299f96d4e71024c690190b991ac197aaaeb90"
+      },
+      "phase": "phase3",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_RISK_SHAPED__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.04423894026493377,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_SCALEOUT_ONLY__LONG",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.05108744920736334,
+        "max_drawdown_r": -8.65076023526117,
+        "profit_factor": 1.1629267729390946,
+        "return_r": 9.093565958910675,
+        "trades": 178,
+        "win_rate_pct": 57.865168539325836
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "f8d5b5d8820c1897c694fba23084d1896d8d34308ab1bc89157e988165c3d040",
+      "delta": {
+        "expectancy_r": 0.0056716044962982146,
+        "max_drawdown_r": 1.0484753933517421,
+        "profit_factor": 0.01858372995951285,
+        "return_r": 1.0095456003410828,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.04541584471106513,
+        "max_drawdown_r": -9.699235628612913,
+        "profit_factor": 1.1443430429795818,
+        "return_r": 8.084020358569592,
+        "trades": 178,
+        "win_rate_pct": 58.42696629213483
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "351ea09f8d7412cb143d7325f91b92d6488d97cd59f1b7dcd7052897f5b50b8f",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.04541584471106513,
+          "max_drawdown_r": -9.699235628612913,
+          "profit_factor": 1.1443430429795818,
+          "return_r": 8.084020358569592,
+          "trades": 178,
+          "win_rate_pct": 58.42696629213483
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "7751aca7c2e4ba5b7e89ee2d90ac0c0f0818860d88d570cb55e7827a1a45bb8a"
+      },
+      "phase": "phase3",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_SCALEOUT_ONLY__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.1277180704823794,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_SCALEOUT_ONLY__SHORT",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.12163099510328543,
+        "max_drawdown_r": -5.13687057708889,
+        "profit_factor": 1.4298221532747006,
+        "return_r": 17.75812528507967,
+        "trades": 146,
+        "win_rate_pct": 64.38356164383562
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "2353e792f33e9610e67b8b57ab29d3af49abc35049dfe3b8a85dc3be6193befa",
+      "delta": {
+        "expectancy_r": 0.002118291040897155,
+        "max_drawdown_r": -0.23481811044844925,
+        "profit_factor": -0.0006281412564619338,
+        "return_r": 0.30927049197098455,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.11951270406238827,
+        "max_drawdown_r": -4.90205246664044,
+        "profit_factor": 1.4304502945311626,
+        "return_r": 17.448854793108687,
+        "trades": 146,
+        "win_rate_pct": 63.013698630136986
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "b6d0a990c717dbecf09ab0dcbd85c0e6dbf6149d70ee216a49d460b31c43ea54",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 5.551115123125783e-17,
+          "max_drawdown_r": 8.881784197001252e-16,
+          "profit_factor": -4.440892098500626e-16,
+          "return_r": 7.105427357601002e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.11951270406238822,
+          "max_drawdown_r": -4.902052466640441,
+          "profit_factor": 1.430450294531163,
+          "return_r": 17.44885479310868,
+          "trades": 146,
+          "win_rate_pct": 63.013698630136986
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "e3b0decdc98ef7cb3b9bcf70e9092456b1c813878fec2f19b2f55aa4778fe7cb"
+      },
+      "phase": "phase3",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_SCALEOUT_ONLY__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 0.9017745563609099,
+        "p_value": 0.021994501374656337,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase4/BREAKOUT_FOLLOW_THROUGH_CONFIRMATION__LONG",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": -0.02965027052841804,
+        "max_drawdown_r": -6.0,
+        "profit_factor": 0.9137635825586897,
+        "return_r": -1.0377594684946314,
+        "trades": 35,
+        "win_rate_pct": 40.0
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "00d9df3f2965e01e9ef2a6857af07a6662e5d5854ff1278ac55e8fc65172d49c",
+      "delta": {
+        "expectancy_r": 0.004960352826688944,
+        "max_drawdown_r": -1.0,
+        "profit_factor": 0.01645319020191005,
+        "return_r": 0.13900172557900614,
+        "trades": 1.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.034610623355106986,
+        "max_drawdown_r": -5.0,
+        "profit_factor": 0.8973103923567797,
+        "return_r": -1.1767611940736376,
+        "trades": 34,
+        "win_rate_pct": 44.11764705882353
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "e021a902592f4d43a2166126791b792f9ed839711366795cf0f4477eaf02cfd9",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 2.0816681711721685e-17,
+          "max_drawdown_r": 0.0,
+          "profit_factor": -1.1102230246251565e-16,
+          "return_r": 6.661338147750939e-16,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.034610623355107006,
+          "max_drawdown_r": -5,
+          "profit_factor": 0.8973103923567798,
+          "return_r": -1.1767611940736382,
+          "trades": 34,
+          "win_rate_pct": 44.11764705882353
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "fdc2b60557f927b7bf090a415701e4e028cf232b5644fbab5aff70105243d061"
+      },
+      "phase": "phase4",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase4/BREAKOUT_FOLLOW_THROUGH_CONFIRMATION__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.598850287428143,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase4/BREAKOUT_FOLLOW_THROUGH_CONFIRMATION__SHORT",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.1758190247377905,
+        "max_drawdown_r": -4.795602368153265,
+        "profit_factor": 1.6103084904361866,
+        "return_r": 7.7360370884627825,
+        "trades": 44,
+        "win_rate_pct": 50.0
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "19615acd96f7af4630f1bbe6ab218593bf3459cd14a3fe83a8bad5306d4dcf1e",
+      "delta": {
+        "expectancy_r": 0.05595672354262764,
+        "max_drawdown_r": 0.1691421715078416,
+        "profit_factor": 0.2090700347175749,
+        "return_r": 2.581958137070779,
+        "trades": 1.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.11986230119516288,
+        "max_drawdown_r": -4.9647445396611065,
+        "profit_factor": 1.4012384557186117,
+        "return_r": 5.154078951392004,
+        "trades": 43,
+        "win_rate_pct": 46.51162790697674
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "f4bde570309269d2f94116d0b929c4c2d9e99c17a37fc6b557a5d9a0bffc3e92",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 2.7755575615628914e-17,
+          "max_drawdown_r": -8.881784197001252e-16,
+          "profit_factor": 0.0,
+          "return_r": 8.881784197001252e-16,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.11986230119516285,
+          "max_drawdown_r": -4.964744539661106,
+          "profit_factor": 1.4012384557186117,
+          "return_r": 5.154078951392003,
+          "trades": 43,
+          "win_rate_pct": 46.51162790697674
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "3eb8e7b007524f7b9681b71b3efc33e5cec7f6edd449d164027283d6bcad9662"
+      },
+      "phase": "phase4",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase4/BREAKOUT_FOLLOW_THROUGH_CONFIRMATION__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.11622094476380905,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase4/BREAKOUT_RETEST_CONTINUATION__LONG",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": -0.06749285284566099,
+        "max_drawdown_r": -22.2043219979968,
+        "profit_factor": 0.8380533673850153,
+        "return_r": -9.381506545546877,
+        "trades": 139,
+        "win_rate_pct": 35.97122302158273
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "6332c07971263eb1fc5cac7f851a3b70e41f6cd674680ae6ed4d5137fbb3fb5d",
+      "delta": {
+        "expectancy_r": 0.005522672110196941,
+        "max_drawdown_r": -2.153249608551686,
+        "profit_factor": 0.01553849056871548,
+        "return_r": 0.4755893234939439,
+        "trades": 4.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.07301552495585793,
+        "max_drawdown_r": -20.051072389445114,
+        "profit_factor": 0.8225148768162999,
+        "return_r": -9.85709586904082,
+        "trades": 135,
+        "win_rate_pct": 35.55555555555556
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "0fc12fd53e82ce7a86f4f489eeebf3676a8be4a32823ddcab5cdae1cfe71c712",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": -1.3877787807814457e-17,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": -1.7763568394002505e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.07301552495585792,
+          "max_drawdown_r": -20.051072389445114,
+          "profit_factor": 0.8225148768162999,
+          "return_r": -9.857095869040819,
+          "trades": 135,
+          "win_rate_pct": 35.55555555555556
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "0475cbe969cebdf3517a7d96f3dceb92f7fc3731bf3d1d3f5dcb380296fcb3d1"
+      },
+      "phase": "phase4",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase4/BREAKOUT_RETEST_CONTINUATION__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.7918020494876281,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase4/BREAKOUT_RETEST_CONTINUATION__SHORT",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": -0.00808000508592445,
+        "max_drawdown_r": -10.321439802361153,
+        "profit_factor": 0.9774023118810516,
+        "return_r": -1.1231207069434985,
+        "trades": 139,
+        "win_rate_pct": 38.1294964028777
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "21a9aa608560d4c602d289307656f299aa286032738c363cd7b6a2784d87c249",
+      "delta": {
+        "expectancy_r": 0.008756920834910968,
+        "max_drawdown_r": -0.40139979115126323,
+        "profit_factor": 0.023029306663290283,
+        "return_r": 1.1330273664484474,
+        "trades": 5.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.016836925920835417,
+        "max_drawdown_r": -9.92004001120989,
+        "profit_factor": 0.9543730052177614,
+        "return_r": -2.256148073391946,
+        "trades": 134,
+        "win_rate_pct": 36.56716417910448
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "e1ada05690c0f00043deccd849cd0d1175abc68639ec27181cdfca3d3b8244c4",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 3.469446951953614e-18,
+          "max_drawdown_r": -1.7763568394002505e-15,
+          "profit_factor": 1.1102230246251565e-16,
+          "return_r": 4.440892098500626e-16,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.01683692592083542,
+          "max_drawdown_r": -9.920040011209888,
+          "profit_factor": 0.9543730052177612,
+          "return_r": -2.2561480733919463,
+          "trades": 134,
+          "win_rate_pct": 36.56716417910448
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "e44bceaf2de6d925e519fdd7f8d985e6081501ba8091395e717a8b0589dfe2f9"
+      },
+      "phase": "phase4",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase4/BREAKOUT_RETEST_CONTINUATION__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.5561109722569357,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase4/CHANDELIER_TIME_SERIES_MOMENTUM__LONG",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.029635973553502504,
+        "max_drawdown_r": -20.083890631353203,
+        "profit_factor": 1.0710759732865196,
+        "return_r": 6.905181837966083,
+        "trades": 233,
+        "win_rate_pct": 49.35622317596567
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "f593320d4762abf91462d598aaac886f6f9f4c7a46230443546a87a4510577a6",
+      "delta": {
+        "expectancy_r": 0.0037580141044737565,
+        "max_drawdown_r": -0.07593461359696363,
+        "profit_factor": 0.009340330801445473,
+        "return_r": 0.8756172863423846,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.025877959449028747,
+        "max_drawdown_r": -20.00795601775624,
+        "profit_factor": 1.0617356424850741,
+        "return_r": 6.029564551623698,
+        "trades": 233,
+        "win_rate_pct": 48.927038626609445
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "8db2a60b225b0e9704d89c39843488c7d85a1ecf6b962030a6b41af82232d410",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 6.938893903907228e-18,
+          "max_drawdown_r": 3.552713678800501e-15,
+          "profit_factor": 0.0,
+          "return_r": 1.7763568394002505e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.02587795944902874,
+          "max_drawdown_r": -20.007956017756243,
+          "profit_factor": 1.0617356424850741,
+          "return_r": 6.029564551623697,
+          "trades": 233,
+          "win_rate_pct": 48.927038626609445
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "05f9ee9f4b19db8b9569580b8c33b0587446b1a77b7061b9d9620974309b0b09"
+      },
+      "phase": "phase4",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase4/CHANDELIER_TIME_SERIES_MOMENTUM__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.3286678330417396,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase4/CHANDELIER_TIME_SERIES_MOMENTUM__SHORT",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": -0.005427731238755771,
+        "max_drawdown_r": -20.04450457995077,
+        "profit_factor": 0.9842600257424658,
+        "return_r": -1.2700891098688505,
+        "trades": 234,
+        "win_rate_pct": 50.0
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "79583764c9fd7d915f4d93f411854a9c6e0bf0b38c5b38fd038647888bb7d2cf",
+      "delta": {
+        "expectancy_r": -8.511136865022636e-05,
+        "max_drawdown_r": 0.19171901031559813,
+        "profit_factor": -0.00024104675145286691,
+        "return_r": -0.019916060264153046,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.005342619870105545,
+        "max_drawdown_r": -20.23622359026637,
+        "profit_factor": 0.9845010724939187,
+        "return_r": -1.2501730496046974,
+        "trades": 234,
+        "win_rate_pct": 49.14529914529914
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "ba6bc581f3e249371a9b09fc75630b621c712cc853977b96bd8d1b9494132551",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": -1.5612511283791264e-17,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": -3.552713678800501e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.005342619870105529,
+          "max_drawdown_r": -20.23622359026637,
+          "profit_factor": 0.9845010724939187,
+          "return_r": -1.2501730496046939,
+          "trades": 234,
+          "win_rate_pct": 49.14529914529914
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "584af19d6acf97f1a843313b3df082ef5b2906439413205f4140fcd429b7df0a"
+      },
+      "phase": "phase4",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase4/CHANDELIER_TIME_SERIES_MOMENTUM__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.5463634091477131,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase4/TREND_EMA_REJECTION__LONG",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": -0.039397121785178825,
+        "max_drawdown_r": -35.94764453933599,
+        "profit_factor": 0.8912792403597417,
+        "return_r": -21.668416981848353,
+        "trades": 550,
+        "win_rate_pct": 36.18181818181818
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "d25e3ef04a1007b5053a9b60051e795ca0492205cf53cf7c355b546d0bf3a115",
+      "delta": {
+        "expectancy_r": -0.011589586910519006,
+        "max_drawdown_r": -4.218361702548613,
+        "profit_factor": -0.03001460669225542,
+        "return_r": -6.318657731036133,
+        "trades": -2.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.02780753487465982,
+        "max_drawdown_r": -31.729282836787377,
+        "profit_factor": 0.9212938470519971,
+        "return_r": -15.34975925081222,
+        "trades": 552,
+        "win_rate_pct": 37.13768115942029
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "fee8f680c4d9933029c48f37703ecdb8792b3366baf50e209471f1e99df3c90c",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": -6.938893903907228e-18,
+          "max_drawdown_r": -7.105427357601002e-15,
+          "profit_factor": -1.1102230246251565e-16,
+          "return_r": -3.552713678800501e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.02780753487465981,
+          "max_drawdown_r": -31.72928283678737,
+          "profit_factor": 0.9212938470519972,
+          "return_r": -15.349759250812216,
+          "trades": 552,
+          "win_rate_pct": 37.13768115942029
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "80903f04e64038ffc6e8377733aa6843acabe4f6680972d795ba33128767523c"
+      },
+      "phase": "phase4",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase4/TREND_EMA_REJECTION__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.8405398650337416,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase4/TREND_EMA_REJECTION__SHORT",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": -0.007192490136028982,
+        "max_drawdown_r": -23.853232663447706,
+        "profit_factor": 0.978189928239107,
+        "return_r": -3.7185174003269834,
+        "trades": 517,
+        "win_rate_pct": 36.36363636363637
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "cb64c3c8da5425c8fb9b2b9d31be228567c9e35dd28bc13ee014858914ab0dde",
+      "delta": {
+        "expectancy_r": 0.0032941004929999173,
+        "max_drawdown_r": -0.14548117083050016,
+        "profit_factor": 0.009606767236180036,
+        "return_r": 1.755482908026102,
+        "trades": -5.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.010486590629028899,
+        "max_drawdown_r": -23.707751492617206,
+        "profit_factor": 0.968583161002927,
+        "return_r": -5.4740003083530855,
+        "trades": 522,
+        "win_rate_pct": 36.7816091954023
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "9fdb19cac0b31ef4a9d17774e5af7b82036008e3d604c9dddc2453fb89af8181",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": -7.105427357601002e-15,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.010486590629028899,
+          "max_drawdown_r": -23.7077514926172,
+          "profit_factor": 0.968583161002927,
+          "return_r": -5.4740003083530855,
+          "trades": 522,
+          "win_rate_pct": 36.7816091954023
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "1a1382c2168c27df9507d5c12592ad7a14601dc647a89150d055d07d89200afb"
+      },
+      "phase": "phase4",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase4/TREND_EMA_REJECTION__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.5836040989752562,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase5/DRE_FAST_FAILURE_SCALEOUT__LONG",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.028135184547667124,
+        "max_drawdown_r": -9.595800623073021,
+        "profit_factor": 1.097108312075527,
+        "return_r": 5.1487387722230835,
+        "trades": 183,
+        "win_rate_pct": 50.27322404371585
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "379e09cd2f527e47fa40005d5810ca2e9096dbd2a3e4c53bcd5656a4a9cc58f6",
+      "delta": {
+        "expectancy_r": 0.014013940611524004,
+        "max_drawdown_r": 0.20476501485377163,
+        "profit_factor": 0.04720586382560188,
+        "return_r": 2.50806615616432,
+        "trades": -4.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.01412124393614312,
+        "max_drawdown_r": -9.800565637926793,
+        "profit_factor": 1.049902448249925,
+        "return_r": 2.6406726160587635,
+        "trades": 187,
+        "win_rate_pct": 45.98930481283423
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "06d1ef9ecb928b1cd2743433232be4f6d050a00e2a09f29817f885fb7e67ca65",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": -1.3877787807814457e-17,
+          "max_drawdown_r": -1.7763568394002505e-15,
+          "profit_factor": 0.0,
+          "return_r": -2.6645352591003757e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.014121243936143134,
+          "max_drawdown_r": -9.800565637926791,
+          "profit_factor": 1.049902448249925,
+          "return_r": 2.640672616058766,
+          "trades": 187,
+          "win_rate_pct": 45.98930481283423
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "564c162d3c73a03f2c02b4e7d23fee41d37c542eb9f0aaa91ded9926694158d4"
+      },
+      "phase": "phase5",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase5/DRE_FAST_FAILURE_SCALEOUT__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.2734316420894776,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase5/DRE_FAST_FAILURE_SCALEOUT__SHORT",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": 0.0991195192525028,
+        "max_drawdown_r": -4.851451519882998,
+        "profit_factor": 1.3566383910197863,
+        "return_r": 14.669688849370415,
+        "trades": 148,
+        "win_rate_pct": 57.432432432432435
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "95d0ae25739c87af9e79a5c5e4f1933f896eee298c01147bfbd3a141caafcedc",
+      "delta": {
+        "expectancy_r": -0.0052990673193581,
+        "max_drawdown_r": 0.2284402895693054,
+        "profit_factor": -0.05018074485379276,
+        "return_r": -0.7842619632649974,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.1044185865718609,
+        "max_drawdown_r": -5.079891809452303,
+        "profit_factor": 1.406819135873579,
+        "return_r": 15.453950812635412,
+        "trades": 148,
+        "win_rate_pct": 56.08108108108109
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "34c88166996dc1341df92b70f35a82bd90b13ec56e1c1641c368555b1425c9fb",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 1.3877787807814457e-17,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 1.7763568394002505e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.10441858657186089,
+          "max_drawdown_r": -5.079891809452303,
+          "profit_factor": 1.406819135873579,
+          "return_r": 15.45395081263541,
+          "trades": 148,
+          "win_rate_pct": 56.08108108108109
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "10427d32a57ceea5f7d6d5702ad06ed0feecb328df117ca04672eae883b754c7"
+      },
+      "phase": "phase5",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase5/DRE_FAST_FAILURE_SCALEOUT__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.04548862784303924,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase5/DRE_FAST_FAILURE__LONG",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.04408762944575735,
+        "max_drawdown_r": -11.25939638038478,
+        "profit_factor": 1.134231899200415,
+        "return_r": 8.068036188573595,
+        "trades": 183,
+        "win_rate_pct": 32.240437158469945
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "d5c01644206987c9ee83f0b96949881d2fade67fa30b150f024e3e2005928d8a",
+      "delta": {
+        "expectancy_r": 0.010151401668829857,
+        "max_drawdown_r": 0.34551163363041226,
+        "profit_factor": 0.027218831682428446,
+        "return_r": 1.721961594288154,
+        "trades": -4.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.033936227776927494,
+        "max_drawdown_r": -11.604908014015193,
+        "profit_factor": 1.1070130675179866,
+        "return_r": 6.346074594285441,
+        "trades": 187,
+        "win_rate_pct": 29.946524064171122
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "ceafcab7be187fb68edbe6a159db6d91086ad15c8b19b0c22c31cda39a003470",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": -6.938893903907228e-18,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": -1.7763568394002505e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.0339362277769275,
+          "max_drawdown_r": -11.604908014015193,
+          "profit_factor": 1.1070130675179866,
+          "return_r": 6.346074594285443,
+          "trades": 187,
+          "win_rate_pct": 29.946524064171122
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "d4d47ce91caf08229b5c277aae572d755d3f97fc1174d4dc36fc6da19af0a6d2"
+      },
+      "phase": "phase5",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase5/DRE_FAST_FAILURE__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.2324418895276181,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase5/DRE_FAST_FAILURE__SHORT",
+      "classification": "ESSENTIALLY_UNCHANGED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": 0.14386856012223934,
+        "max_drawdown_r": -4.553040922534107,
+        "profit_factor": 1.477862332909988,
+        "return_r": 21.148678337969184,
+        "trades": 147,
+        "win_rate_pct": 33.33333333333333
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "a340015b8300b20663dca3179ca3edc0189b14bf4145709fdd9e2f28bdd098de",
+      "delta": {
+        "expectancy_r": 0.004622251440589115,
+        "max_drawdown_r": 0.8873862023112835,
+        "profit_factor": -0.019714765169995596,
+        "return_r": 0.6794709617666008,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.13924630868165022,
+        "max_drawdown_r": -5.440427124845391,
+        "profit_factor": 1.4975770980799836,
+        "return_r": 20.469207376202583,
+        "trades": 147,
+        "win_rate_pct": 31.97278911564626
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "c99c17624c48a89d4dffa2a8d80ca334dcaed59169457b8a45537f2229664dc3",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.13924630868165022,
+          "max_drawdown_r": -5.440427124845391,
+          "profit_factor": 1.4975770980799836,
+          "return_r": 20.469207376202583,
+          "trades": 147,
+          "win_rate_pct": 31.97278911564626
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "a6e3a662c183cafda762c824b87ce1a603a9757e0b1d86334b06c0e17fb0178b"
+      },
+      "phase": "phase5",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase5/DRE_FAST_FAILURE__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.030492376905773555,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase5/DRE_SHORT_HORIZON_ASYMMETRY__LONG",
+      "classification": "IMPROVED_OR_MIXED_NOT_VALIDATED",
+      "corrected": {
+        "expectancy_r": -0.00021832677774564685,
+        "max_drawdown_r": -11.328554479174917,
+        "profit_factor": 0.9978639113558981,
+        "return_r": -0.041263760993927256,
+        "trades": 189,
+        "win_rate_pct": 37.03703703703704
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "d287c955413dad2da38df6a6cdbff06e4a7b47a75e49fc5120e12cb101899d97",
+      "delta": {
+        "expectancy_r": 0.018289491072932523,
+        "max_drawdown_r": 0.9288912324108427,
+        "profit_factor": 0.06701805664698501,
+        "return_r": 3.475221630634925,
+        "trades": -1.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": -0.01850781785067817,
+        "max_drawdown_r": -12.25744571158576,
+        "profit_factor": 0.9308458547089131,
+        "return_r": -3.5164853916288523,
+        "trades": 190,
+        "win_rate_pct": 33.68421052631579
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "22735a4d68fbfaf9b462fadd11792830114c4577ef977495c2e15e9881f0c776",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": -1.3877787807814457e-17,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 1.1102230246251565e-16,
+          "return_r": -2.6645352591003757e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": -0.018507817850678156,
+          "max_drawdown_r": -12.25744571158576,
+          "profit_factor": 0.930845854708913,
+          "return_r": -3.5164853916288497,
+          "trades": 190,
+          "win_rate_pct": 33.68421052631579
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "217c4b211e5d41582e9ef094b0d441759157e7eae9c7eaf4b4f40e0af87afe80"
+      },
+      "phase": "phase5",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase5/DRE_SHORT_HORIZON_ASYMMETRY__LONG",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.5006248437890527,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase5/DRE_SHORT_HORIZON_ASYMMETRY__SHORT",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": 0.05681198226465924,
+        "max_drawdown_r": -6.173775306753623,
+        "profit_factor": 1.2006793350239444,
+        "return_r": 8.749045268757524,
+        "trades": 154,
+        "win_rate_pct": 35.064935064935064
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "0f93a7d0a976fa45319e924bddd1d0751f7322b57364d182e9c9dd9f6498de8b",
+      "delta": {
+        "expectancy_r": -0.01767951548692389,
+        "max_drawdown_r": -0.1307430772328244,
+        "profit_factor": -0.07932273096578624,
+        "return_r": -2.7226453849862793,
+        "trades": 0.0
+      },
+      "directional_central_gates": {},
+      "legacy": {
+        "expectancy_r": 0.07449149775158313,
+        "max_drawdown_r": -6.043032229520799,
+        "profit_factor": 1.2800020659897307,
+        "return_r": 11.471690653743803,
+        "trades": 154,
+        "win_rate_pct": 33.76623376623377
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "c72feef05867ee4e40256c63f9a9722fb0543859992fcc9adad878c7ba9a7a50",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 8.881784197001252e-16,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.07449149775158313,
+          "max_drawdown_r": -6.0430322295208,
+          "profit_factor": 1.2800020659897307,
+          "return_r": 11.471690653743803,
+          "trades": 154,
+          "win_rate_pct": 33.76623376623377
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "b8fa21534b5f2d78174f3ac9d85b53061111b72a055662b3a20d1f49a41088db"
+      },
+      "phase": "phase5",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase5/DRE_SHORT_HORIZON_ASYMMETRY__SHORT",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.16770807298175455,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase6/ASYMMETRIC_MULTI_PATTERN_ENSEMBLE",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": 0.0727020694299754,
+        "max_drawdown_r": -11.018627267559957,
+        "profit_factor": 1.1952900261072166,
+        "return_r": 24.79140567562161,
+        "trades": 341,
+        "win_rate_pct": 44.868035190615835
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "b6c16882b0ee8b5459c034f6657b1f7bbfe1424a379c4fec723090daf9dcf691",
+      "delta": {
+        "expectancy_r": -0.05641054561631309,
+        "max_drawdown_r": -1.660090768958348,
+        "profit_factor": -0.19132503537177836,
+        "return_r": -34.72950986071738,
+        "trades": -120.0
+      },
+      "directional_central_gates": {
+        "LONG": {
+          "central_gate_pass": false,
+          "metrics": {
+            "expectancy_r": 0.05273296326178924,
+            "max_drawdown_r": -13.130541506081581,
+            "profit_factor": 1.1360114732671471,
+            "return_r": 8.173609305577331,
+            "trades": 155,
+            "win_rate_pct": 45.16129032258064
+          }
+        },
+        "SHORT": {
+          "central_gate_pass": false,
+          "metrics": {
+            "expectancy_r": 0.08934299123679719,
+            "max_drawdown_r": -7.947962461264467,
+            "profit_factor": 1.2474195348088561,
+            "return_r": 16.617796370044278,
+            "trades": 186,
+            "win_rate_pct": 44.623655913978496
+          }
+        }
+      },
+      "legacy": {
+        "expectancy_r": 0.1291126150462885,
+        "max_drawdown_r": -9.358536498601609,
+        "profit_factor": 1.386615061478995,
+        "return_r": 59.52091553633899,
+        "trades": 461,
+        "win_rate_pct": 45.98698481561822
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "7064d7260826cfc110f684b22d62f1c1dd387f5bc3a7d24387662c1e64336bb7",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": -2.220446049250313e-16,
+          "return_r": -7.105427357601002e-15,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.1291126150462885,
+          "max_drawdown_r": -9.358536498601609,
+          "profit_factor": 1.3866150614789952,
+          "return_r": 59.520915536339,
+          "trades": 461,
+          "win_rate_pct": 45.98698481561822
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "de47b73afa4dd91adcb7bdc761e1965a1407fe02b19eba2e4ccf1a7e36ff7b96"
+      },
+      "phase": "phase6",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase6/ASYMMETRIC_MULTI_PATTERN_ENSEMBLE",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.04573856535866033,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase6/TWO_SLEEVE_MOMENTUM_ENSEMBLE",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": 0.15441668696718133,
+        "max_drawdown_r": -5.047637699343783,
+        "profit_factor": 1.4697629074526342,
+        "return_r": 31.03775408040345,
+        "trades": 201,
+        "win_rate_pct": 48.756218905472636
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "d9e4d8fbf6c11d7861fc28778dada1706726d444096d9be4539879ba408d1bdf",
+      "delta": {
+        "expectancy_r": -0.020482799945245073,
+        "max_drawdown_r": -0.06242183999506956,
+        "profit_factor": -0.08419814593685282,
+        "return_r": -4.4668417628191115,
+        "trades": -2.0
+      },
+      "directional_central_gates": {
+        "LONG": {
+          "central_gate_pass": false,
+          "metrics": {
+            "expectancy_r": 0.17774987608439471,
+            "max_drawdown_r": -2.557897961524016,
+            "profit_factor": 1.6200695470930744,
+            "return_r": 9.953993060726104,
+            "trades": 56,
+            "win_rate_pct": 53.57142857142857
+          }
+        },
+        "SHORT": {
+          "central_gate_pass": true,
+          "metrics": {
+            "expectancy_r": 0.14540524841156788,
+            "max_drawdown_r": -5.055211565716432,
+            "profit_factor": 1.4218034216538864,
+            "return_r": 21.083761019677343,
+            "trades": 145,
+            "win_rate_pct": 46.89655172413793
+          }
+        }
+      },
+      "legacy": {
+        "expectancy_r": 0.1748994869124264,
+        "max_drawdown_r": -4.985215859348713,
+        "profit_factor": 1.553961053389487,
+        "return_r": 35.50459584322256,
+        "trades": 203,
+        "win_rate_pct": 49.75369458128079
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "63c1242366f251cf04686cff7cb90a567db31b7065ae19036df1c5604ca5d7f4",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.1748994869124264,
+          "max_drawdown_r": -4.985215859348713,
+          "profit_factor": 1.553961053389487,
+          "return_r": 35.50459584322256,
+          "trades": 203,
+          "win_rate_pct": 49.75369458128079
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "f27649964ff02077cbd400366b25fa378fdd731bdc61c3679f30e47e6b0bee7a"
+      },
+      "phase": "phase6",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase6/TWO_SLEEVE_MOMENTUM_ENSEMBLE",
+        "family_size": 43,
+        "holm_adjusted_p": 0.25793551612096977,
+        "p_value": 0.005998500374906273,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase7/DUAL_RISK_GOVERNOR",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": 0.09051526109934191,
+        "max_drawdown_r": -9.236640022661753,
+        "profit_factor": 1.2495877684685313,
+        "return_r": 28.331276724094018,
+        "trades": 313,
+        "win_rate_pct": 46.00638977635783
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "5efd8d99f45bcfb904dee01c11a6e58c6dd23845d029dd701e0c9025a6f59f1d",
+      "delta": {
+        "expectancy_r": -0.07142312854888724,
+        "max_drawdown_r": 0.6602472387034997,
+        "profit_factor": -0.25889123734829034,
+        "return_r": -39.68284692816223,
+        "trades": -107.0
+      },
+      "directional_central_gates": {
+        "LONG": {
+          "central_gate_pass": true,
+          "metrics": {
+            "expectancy_r": 0.0955044578496182,
+            "max_drawdown_r": -8.907960917087323,
+            "profit_factor": 1.2630240921977045,
+            "return_r": 13.657137472495402,
+            "trades": 143,
+            "win_rate_pct": 47.55244755244755
+          }
+        },
+        "SHORT": {
+          "central_gate_pass": false,
+          "metrics": {
+            "expectancy_r": 0.08631846618587417,
+            "max_drawdown_r": -6.723686356102538,
+            "profit_factor": 1.2383303442749272,
+            "return_r": 14.67413925159861,
+            "trades": 170,
+            "win_rate_pct": 44.70588235294118
+          }
+        }
+      },
+      "legacy": {
+        "expectancy_r": 0.16193838964822915,
+        "max_drawdown_r": -9.896887261365253,
+        "profit_factor": 1.5084790058168216,
+        "return_r": 68.01412365225625,
+        "trades": 420,
+        "win_rate_pct": 48.333333333333336
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "c0cb4396885ca241454c21980ae6a6636266adeb098ae1069021b0c2e2bd10c7",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 1.7763568394002505e-15,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.16193838964822915,
+          "max_drawdown_r": -9.896887261365254,
+          "profit_factor": 1.5084790058168216,
+          "return_r": 68.01412365225625,
+          "trades": 420,
+          "win_rate_pct": 48.333333333333336
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "2f18c82944006ae7a9fac06fe61b5e76594fc9525f01ff74acf5af3df7b2c8a1"
+      },
+      "phase": "phase7",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase7/DUAL_RISK_GOVERNOR",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.027743064233941513,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase7/PORTFOLIO_LOSS_CLUSTER_COOLDOWN",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": 0.09464653066117523,
+        "max_drawdown_r": -9.007895732276902,
+        "profit_factor": 1.2613093449002364,
+        "return_r": 29.719010627609023,
+        "trades": 314,
+        "win_rate_pct": 46.496815286624205
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "3ec5787398a78fd5b745bc5d2deba5c172d7ac43de9d80df77caaac407c3559a",
+      "delta": {
+        "expectancy_r": -0.04112429345151325,
+        "max_drawdown_r": -1.2491575291106347,
+        "profit_factor": -0.14239819514809482,
+        "return_r": -25.26817313802981,
+        "trades": -91.0
+      },
+      "directional_central_gates": {
+        "LONG": {
+          "central_gate_pass": false,
+          "metrics": {
+            "expectancy_r": 0.06211006764659936,
+            "max_drawdown_r": -12.345957026909133,
+            "profit_factor": 1.1584752374423657,
+            "return_r": 9.316510146989904,
+            "trades": 150,
+            "win_rate_pct": 46.666666666666664
+          }
+        },
+        "SHORT": {
+          "central_gate_pass": true,
+          "metrics": {
+            "expectancy_r": 0.12440549073548236,
+            "max_drawdown_r": -5.929340932371101,
+            "profit_factor": 1.3691691220288136,
+            "return_r": 20.402500480619107,
+            "trades": 164,
+            "win_rate_pct": 46.34146341463415
+          }
+        }
+      },
+      "legacy": {
+        "expectancy_r": 0.13577082411268848,
+        "max_drawdown_r": -7.758738203166267,
+        "profit_factor": 1.4037075400483312,
+        "return_r": 54.98718376563883,
+        "trades": 405,
+        "win_rate_pct": 46.666666666666664
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "b5b584ef2420b952b2e7ff7bc2465e42d82d9eeddbfd7c05fff597fe18f3fc94",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.13577082411268848,
+          "max_drawdown_r": -7.758738203166267,
+          "profit_factor": 1.4037075400483312,
+          "return_r": 54.98718376563883,
+          "trades": 405,
+          "win_rate_pct": 46.666666666666664
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "7617bce2386bd23f91cba0bedbc8f4913c9fd53cb184d7430dd821139bb7cc14"
+      },
+      "phase": "phase7",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase7/PORTFOLIO_LOSS_CLUSTER_COOLDOWN",
+        "family_size": 43,
+        "holm_adjusted_p": 0.5353661584603849,
+        "p_value": 0.01274681329667583,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    },
+    {
+      "candidate": "phase7/SLEEVE_CONSECUTIVE_LOSS_COOLDOWN",
+      "classification": "DECLINED",
+      "corrected": {
+        "expectancy_r": 0.08503288138403638,
+        "max_drawdown_r": -8.310600322933364,
+        "profit_factor": 1.2336691548689918,
+        "return_r": 27.72071933119586,
+        "trades": 326,
+        "win_rate_pct": 45.39877300613497
+      },
+      "corrected_deterministic": true,
+      "corrected_trade_hash": "9314e69915a061526eb4006a3c9dc46bcc7880e6e0784d49d0c3e150a40e68e2",
+      "delta": {
+        "expectancy_r": -0.04852517266513483,
+        "max_drawdown_r": 0.5770613282098918,
+        "profit_factor": -0.1728720057225095,
+        "return_r": -30.64415028829196,
+        "trades": -111.0
+      },
+      "directional_central_gates": {
+        "LONG": {
+          "central_gate_pass": false,
+          "metrics": {
+            "expectancy_r": 0.08931329249382101,
+            "max_drawdown_r": -9.167041323244735,
+            "profit_factor": 1.2479216379489093,
+            "return_r": 13.039740704097868,
+            "trades": 146,
+            "win_rate_pct": 46.57534246575342
+          }
+        },
+        "SHORT": {
+          "central_gate_pass": false,
+          "metrics": {
+            "expectancy_r": 0.08156099237276665,
+            "max_drawdown_r": -7.748899784667098,
+            "profit_factor": 1.2224148156886943,
+            "return_r": 14.680978627097996,
+            "trades": 180,
+            "win_rate_pct": 44.44444444444444
+          }
+        }
+      },
+      "legacy": {
+        "expectancy_r": 0.1335580540491712,
+        "max_drawdown_r": -8.887661651143256,
+        "profit_factor": 1.4065411605915012,
+        "return_r": 58.36486961948782,
+        "trades": 437,
+        "win_rate_pct": 46.681922196796336
+      },
+      "legacy_deterministic": true,
+      "legacy_trade_hash": "6e16aa118e2f3d00f986caa43135b1f17a16b0f473fb90618daf746c49d0017d",
+      "packaged_round23_reproduction": {
+        "metric_delta": {
+          "expectancy_r": 0.0,
+          "max_drawdown_r": 1.7763568394002505e-15,
+          "profit_factor": 0.0,
+          "return_r": 0.0,
+          "trades": 0.0
+        },
+        "metrics": {
+          "expectancy_r": 0.1335580540491712,
+          "max_drawdown_r": -8.887661651143258,
+          "profit_factor": 1.4065411605915012,
+          "return_r": 58.36486961948782,
+          "trades": 437,
+          "win_rate_pct": 46.681922196796336
+        },
+        "path": "research/v233_round24/reference/ROUND23_PACKAGED_BASELINE.json",
+        "trade_signature_match": true,
+        "trade_structure_hash": "863048930807f54a0bf8bcbf320f64c8ae9ed91df3d6bb2036f4c649fa716360"
+      },
+      "phase": "phase7",
+      "selection_correction": {
+        "alpha": 0.05,
+        "candidate": "phase7/SLEEVE_CONSECUTIVE_LOSS_COOLDOWN",
+        "family_size": 43,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.03074231442139465,
+        "passes_holm_fwer": false
+      },
+      "trade_sequence_changed": true,
+      "validated": false
+    }
+  ],
+  "summary": {
+    "android_integration_allowed": false,
+    "candidate_count": 43,
+    "classifications": {
+      "DECLINED": 12,
+      "EDGE_DISAPPEARED": 1,
+      "ESSENTIALLY_UNCHANGED_NOT_VALIDATED": 16,
+      "IMPROVED_OR_MIXED_NOT_VALIDATED": 14
+    },
+    "corrected_deterministic": true,
+    "holm_fwer_pass_count": 0,
+    "legacy_deterministic": true,
+    "legacy_packaged_reproduction_max_abs_metric_delta": 7.105427357601002e-15,
+    "legacy_packaged_reproduction_pass_at_1e_12": true,
+    "legacy_packaged_trade_signature_matches": 43,
+    "old_quasi_candidates_validated": false,
+    "round22_holdout_used": false,
+    "scalp_engine_touched": false,
+    "trade_sequences_changed": 43
+  }
+}

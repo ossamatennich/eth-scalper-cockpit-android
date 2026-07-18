@@ -1,0 +1,2838 @@
+{
+  "android_files_touched": false,
+  "android_integration_allowed": false,
+  "candidate_budget_max": 108,
+  "candidate_budget_used": 108,
+  "candidate_reports": [
+    {
+      "android_integration_allowed": false,
+      "architecture": "BREAKOUT_RETEST_CONTINUATION",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "BREAKOUT_RETEST_CONTINUATION__LONG",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": false,
+          "annual_pf": false,
+          "annual_positive_ratio": false,
+          "bootstrap_probability": false,
+          "bootstrap_q10": false,
+          "central_expectancy": false,
+          "central_pf": false,
+          "central_trades": true,
+          "cost_expectancy": false,
+          "cost_pf": false,
+          "delay1_expectancy": false,
+          "delay1_pf": false,
+          "delay2_expectancy": true,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": false,
+          "monte_carlo_drawdown": true,
+          "neighbour_fraction": false,
+          "nested_expectancy": false,
+          "nested_pf": false,
+          "nested_trades": false,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": false,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": -0.18130049032158335,
+              "fold": "Y2022",
+              "max_drawdown_r": -4.876388247126616,
+              "profit_factor": 0.6092783580328874,
+              "return_r": -3.0821083354669168,
+              "trades": 17,
+              "win_rate_pct": 35.294117647058826
+            },
+            {
+              "expectancy_r": -0.13539319133472383,
+              "fold": "Y2023",
+              "max_drawdown_r": -8.28608040781473,
+              "profit_factor": 0.7357364558494238,
+              "return_r": -4.061795740041715,
+              "trades": 30,
+              "win_rate_pct": 26.666666666666668
+            },
+            {
+              "expectancy_r": -0.10387891195878844,
+              "fold": "Y2024",
+              "max_drawdown_r": -9.00211193343032,
+              "profit_factor": 0.7618399420265943,
+              "return_r": -4.466793214227903,
+              "trades": 43,
+              "win_rate_pct": 34.883720930232556
+            },
+            {
+              "expectancy_r": 0.26641584888035674,
+              "fold": "Y2025",
+              "max_drawdown_r": -3.627173641415406,
+              "profit_factor": 1.657434149138808,
+              "return_r": 6.660396222008918,
+              "trades": 25,
+              "win_rate_pct": 52.0
+            },
+            {
+              "expectancy_r": 0.20276113093254833,
+              "fold": "Y2026",
+              "max_drawdown_r": -2.195878154231008,
+              "profit_factor": 1.4967233898861387,
+              "return_r": 1.6220890474603866,
+              "trades": 8,
+              "win_rate_pct": 50.0
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": -0.027058634311115697,
+            "max_drawdown_r": -15.096100331878201,
+            "profit_factor": 0.9379403645464512,
+            "return_r": -3.3282120202672307,
+            "trades": 123,
+            "win_rate_pct": 37.39837398373984
+          },
+          "central": {
+            "expectancy_r": -0.06749285284566099,
+            "max_drawdown_r": -22.2043219979968,
+            "profit_factor": 0.8380533673850153,
+            "return_r": -9.381506545546877,
+            "trades": 139,
+            "win_rate_pct": 35.97122302158273
+          },
+          "failed_checks": [
+            "central_pf",
+            "central_expectancy",
+            "nested_trades",
+            "nested_pf",
+            "nested_expectancy",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "annual_positive_ratio",
+            "annual_pf",
+            "annual_expectancy",
+            "worst_annual",
+            "cost_pf",
+            "cost_expectancy",
+            "delay1_pf",
+            "delay1_expectancy",
+            "gap_expectancy",
+            "neighbour_fraction",
+            "bootstrap_probability",
+            "bootstrap_q10",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 0.0,
+          "nested_outer": {
+            "expectancy_r": 0.025524542336990343,
+            "max_drawdown_r": -13.948227507412984,
+            "profit_factor": 1.0560334702322145,
+            "return_r": 2.322733352666121,
+            "trades": 91,
+            "win_rate_pct": 38.46153846153847
+          },
+          "nested_outer_holm_adjusted_p": 1.0,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 1.7169811320754718,
+            "mean_signals_per_week": 0.3939393939393939,
+            "median_signals_per_month": 1.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 91,
+            "weeks": 231,
+            "zero_signal_months": 13,
+            "zero_signal_weeks": 162
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": -0.048294925850328234,
+              "max_drawdown_r": -17.695535582831013,
+              "profit_factor": 0.892318481226364,
+              "return_r": -4.346543326529541,
+              "trades": 90,
+              "win_rate_pct": 37.77777777777778
+            },
+            "BASE": {
+              "expectancy_r": 0.025524542336990343,
+              "max_drawdown_r": -13.948227507412984,
+              "profit_factor": 1.0560334702322145,
+              "return_r": 2.322733352666121,
+              "trades": 91,
+              "win_rate_pct": 38.46153846153847
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": -0.004216104167384807,
+              "max_drawdown_r": -14.75892647647313,
+              "profit_factor": 0.9864755092375894,
+              "return_r": -0.37101716672986296,
+              "trades": 88,
+              "win_rate_pct": 40.909090909090914
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": 0.06777847131445774,
+              "max_drawdown_r": -11.339837254283053,
+              "profit_factor": 1.196855737079761,
+              "return_r": 5.693391590414451,
+              "trades": 84,
+              "win_rate_pct": 44.047619047619044
+            },
+            "FEES_X1_5": {
+              "expectancy_r": 0.006149520671135912,
+              "max_drawdown_r": -14.565340380889063,
+              "profit_factor": 1.0108097500202031,
+              "return_r": 0.559606381073368,
+              "trades": 91,
+              "win_rate_pct": 38.46153846153847
+            },
+            "FEES_X2": {
+              "expectancy_r": -0.012382670907996132,
+              "max_drawdown_r": -15.147304216041118,
+              "profit_factor": 0.96831340111486,
+              "return_r": -1.126823052627648,
+              "trades": 91,
+              "win_rate_pct": 38.46153846153847
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": 0.018537819381756807,
+              "max_drawdown_r": -14.142133434473669,
+              "profit_factor": 1.0397778420545998,
+              "return_r": 1.6869415637398695,
+              "trades": 91,
+              "win_rate_pct": 38.46153846153847
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.601,
+            "q05_mean_r": -0.16014853942157176,
+            "q10_mean_r": -0.11910397744856993,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.014573422182524054,
+            "q95_max_drawdown_abs": 0.030274016169772777,
+            "q99_max_drawdown_abs": 0.0380271491127624,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "BREAKOUT_RETEST_CONTINUATION__LONG",
+        "family_size": 12,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.41889527618095473,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "LONG",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "BREAKOUT_RETEST_CONTINUATION",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "BREAKOUT_RETEST_CONTINUATION__SHORT",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": true,
+          "annual_pf": true,
+          "annual_positive_ratio": false,
+          "bootstrap_probability": false,
+          "bootstrap_q10": false,
+          "central_expectancy": false,
+          "central_pf": false,
+          "central_trades": true,
+          "cost_expectancy": false,
+          "cost_pf": false,
+          "delay1_expectancy": true,
+          "delay1_pf": true,
+          "delay2_expectancy": false,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": false,
+          "monte_carlo_drawdown": true,
+          "neighbour_fraction": false,
+          "nested_expectancy": false,
+          "nested_pf": false,
+          "nested_trades": true,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": false,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": -0.0154642588825554,
+              "fold": "Y2022",
+              "max_drawdown_r": -9.378697000669552,
+              "profit_factor": 0.9606693532081412,
+              "return_r": -0.6494988730673268,
+              "trades": 42,
+              "win_rate_pct": 33.33333333333333
+            },
+            {
+              "expectancy_r": -0.20735290626838213,
+              "fold": "Y2023",
+              "max_drawdown_r": -4.308005023973939,
+              "profit_factor": 0.512247661474962,
+              "return_r": -2.6955877814889675,
+              "trades": 13,
+              "win_rate_pct": 30.76923076923077
+            },
+            {
+              "expectancy_r": 0.19639813506618164,
+              "fold": "Y2024",
+              "max_drawdown_r": -2.825178397269259,
+              "profit_factor": 1.6401141368669927,
+              "return_r": 3.927962701323633,
+              "trades": 20,
+              "win_rate_pct": 55.00000000000001
+            },
+            {
+              "expectancy_r": 0.1520071193499905,
+              "fold": "Y2025",
+              "max_drawdown_r": -1.6010052220194733,
+              "profit_factor": 1.4812098629870563,
+              "return_r": 2.432113909599848,
+              "trades": 16,
+              "win_rate_pct": 43.75
+            },
+            {
+              "expectancy_r": 0.2916396107389422,
+              "fold": "Y2026",
+              "max_drawdown_r": -1.0,
+              "profit_factor": 2.707922144814432,
+              "return_r": 2.6247564966504795,
+              "trades": 9,
+              "win_rate_pct": 55.55555555555556
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": 0.05639746453017667,
+            "max_drawdown_r": -12.828129866408508,
+            "profit_factor": 1.1575834830197225,
+            "return_r": 5.639746453017667,
+            "trades": 100,
+            "win_rate_pct": 41.0
+          },
+          "central": {
+            "expectancy_r": -0.00808000508592445,
+            "max_drawdown_r": -10.321439802361153,
+            "profit_factor": 0.9774023118810516,
+            "return_r": -1.1231207069434985,
+            "trades": 139,
+            "win_rate_pct": 38.1294964028777
+          },
+          "failed_checks": [
+            "central_pf",
+            "central_expectancy",
+            "nested_pf",
+            "nested_expectancy",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "annual_positive_ratio",
+            "worst_annual",
+            "cost_pf",
+            "cost_expectancy",
+            "delay2_expectancy",
+            "gap_expectancy",
+            "neighbour_fraction",
+            "bootstrap_probability",
+            "bootstrap_q10",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 0.25,
+          "nested_outer": {
+            "expectancy_r": -0.007236605934134473,
+            "max_drawdown_r": -9.804286576211636,
+            "profit_factor": 0.9799854696047141,
+            "return_r": -0.8394462883595989,
+            "trades": 116,
+            "win_rate_pct": 41.37931034482759
+          },
+          "nested_outer_holm_adjusted_p": 1.0,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 2.188679245283019,
+            "mean_signals_per_week": 0.5021645021645021,
+            "median_signals_per_month": 2.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 116,
+            "weeks": 231,
+            "zero_signal_months": 7,
+            "zero_signal_weeks": 159
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": -0.08497301633505942,
+              "max_drawdown_r": -17.45212717824863,
+              "profit_factor": 0.788915020379007,
+              "return_r": -9.856869894866893,
+              "trades": 116,
+              "win_rate_pct": 38.793103448275865
+            },
+            "BASE": {
+              "expectancy_r": -0.007236605934134473,
+              "max_drawdown_r": -9.804286576211636,
+              "profit_factor": 0.9799854696047141,
+              "return_r": -0.8394462883595989,
+              "trades": 116,
+              "win_rate_pct": 41.37931034482759
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": 0.056437503461507804,
+              "max_drawdown_r": -11.161387311390268,
+              "profit_factor": 1.137634910409615,
+              "return_r": 6.095250373842843,
+              "trades": 108,
+              "win_rate_pct": 42.592592592592595
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": -0.09546218823582105,
+              "max_drawdown_r": -15.817148883717953,
+              "profit_factor": 0.7726289204505783,
+              "return_r": -9.737143200053747,
+              "trades": 102,
+              "win_rate_pct": 34.31372549019608
+            },
+            "FEES_X1_5": {
+              "expectancy_r": -0.0247616503719973,
+              "max_drawdown_r": -10.816527297297139,
+              "profit_factor": 0.9359456610301803,
+              "return_r": -2.872351443151687,
+              "trades": 116,
+              "win_rate_pct": 40.51724137931034
+            },
+            "FEES_X2": {
+              "expectancy_r": -0.04150282219163713,
+              "max_drawdown_r": -11.843022954458185,
+              "profit_factor": 0.8946197152924407,
+              "return_r": -4.814327374229907,
+              "trades": 116,
+              "win_rate_pct": 40.51724137931034
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": -0.013748744777286164,
+              "max_drawdown_r": -10.161606387916178,
+              "profit_factor": 0.9633178013017526,
+              "return_r": -1.5948543941651951,
+              "trades": 116,
+              "win_rate_pct": 41.37931034482759
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.459,
+            "q05_mean_r": -0.1340319576331562,
+            "q10_mean_r": -0.10296974591503885,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.014807836708319477,
+            "q95_max_drawdown_abs": 0.027901613613843204,
+            "q99_max_drawdown_abs": 0.034304523836326296,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "BREAKOUT_RETEST_CONTINUATION__SHORT",
+        "family_size": 12,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.5273681579605098,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "SHORT",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "CHANDELIER_TIME_SERIES_MOMENTUM",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "CHANDELIER_TIME_SERIES_MOMENTUM__LONG",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": true,
+          "annual_pf": true,
+          "annual_positive_ratio": true,
+          "bootstrap_probability": false,
+          "bootstrap_q10": false,
+          "central_expectancy": false,
+          "central_pf": false,
+          "central_trades": true,
+          "cost_expectancy": true,
+          "cost_pf": false,
+          "delay1_expectancy": true,
+          "delay1_pf": false,
+          "delay2_expectancy": false,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": false,
+          "monte_carlo_drawdown": true,
+          "neighbour_fraction": true,
+          "nested_expectancy": true,
+          "nested_pf": false,
+          "nested_trades": true,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": true,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": 0.1486440178292223,
+              "fold": "Y2022",
+              "max_drawdown_r": -4.025920397351254,
+              "profit_factor": 1.3529568427019671,
+              "return_r": 4.905252588364336,
+              "trades": 33,
+              "win_rate_pct": 48.484848484848484
+            },
+            {
+              "expectancy_r": 0.09773584876694694,
+              "fold": "Y2023",
+              "max_drawdown_r": -2.5891360031436776,
+              "profit_factor": 1.315200403600688,
+              "return_r": 1.9547169753389388,
+              "trades": 20,
+              "win_rate_pct": 55.00000000000001
+            },
+            {
+              "expectancy_r": 0.09600307715505771,
+              "fold": "Y2024",
+              "max_drawdown_r": -4.319193434096436,
+              "profit_factor": 1.295938001609201,
+              "return_r": 3.4561107775820776,
+              "trades": 36,
+              "win_rate_pct": 63.888888888888886
+            },
+            {
+              "expectancy_r": 0.17728445738236348,
+              "fold": "Y2025",
+              "max_drawdown_r": -3.0,
+              "profit_factor": 1.430417070350729,
+              "return_r": 3.9002580624119965,
+              "trades": 22,
+              "win_rate_pct": 59.09090909090909
+            },
+            {
+              "expectancy_r": 0.18131964089705635,
+              "fold": "Y2026",
+              "max_drawdown_r": -1.0251738667863106,
+              "profit_factor": 1.6243899083807056,
+              "return_r": 1.2692374862793945,
+              "trades": 7,
+              "win_rate_pct": 57.14285714285714
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": 0.13123369398285376,
+            "max_drawdown_r": -4.3191934340964355,
+            "profit_factor": 1.3614976580299596,
+            "return_r": 15.485575889976744,
+            "trades": 118,
+            "win_rate_pct": 56.779661016949156
+          },
+          "central": {
+            "expectancy_r": 0.029635973553502504,
+            "max_drawdown_r": -20.083890631353203,
+            "profit_factor": 1.0710759732865196,
+            "return_r": 6.905181837966083,
+            "trades": 233,
+            "win_rate_pct": 49.35622317596567
+          },
+          "failed_checks": [
+            "central_pf",
+            "central_expectancy",
+            "nested_pf",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "cost_pf",
+            "delay1_pf",
+            "delay2_expectancy",
+            "gap_expectancy",
+            "bootstrap_probability",
+            "bootstrap_q10",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 0.875,
+          "nested_outer": {
+            "expectancy_r": 0.06364775243620209,
+            "max_drawdown_r": -7.800630288866362,
+            "profit_factor": 1.1584239829139598,
+            "return_r": 9.292571855685505,
+            "trades": 146,
+            "win_rate_pct": 51.369863013698634
+          },
+          "nested_outer_holm_adjusted_p": 1.0,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 2.7547169811320753,
+            "mean_signals_per_week": 0.6320346320346321,
+            "median_signals_per_month": 2.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 146,
+            "weeks": 231,
+            "zero_signal_months": 9,
+            "zero_signal_weeks": 146
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": -0.03231659862083845,
+              "max_drawdown_r": -12.941883776349222,
+              "profit_factor": 0.9273384859223227,
+              "return_r": -4.653590201400737,
+              "trades": 144,
+              "win_rate_pct": 48.61111111111111
+            },
+            "BASE": {
+              "expectancy_r": 0.06364775243620209,
+              "max_drawdown_r": -7.800630288866362,
+              "profit_factor": 1.1584239829139598,
+              "return_r": 9.292571855685505,
+              "trades": 146,
+              "win_rate_pct": 51.369863013698634
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": 0.011020521861173891,
+              "max_drawdown_r": -7.786475403810206,
+              "profit_factor": 1.0257350831760792,
+              "return_r": 1.4326678419526058,
+              "trades": 130,
+              "win_rate_pct": 53.07692307692308
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": -0.06609568707606849,
+              "max_drawdown_r": -15.357475272583256,
+              "profit_factor": 0.8398522321308092,
+              "return_r": -8.195865197432493,
+              "trades": 124,
+              "win_rate_pct": 42.74193548387097
+            },
+            "FEES_X1_5": {
+              "expectancy_r": 0.041948632998948986,
+              "max_drawdown_r": -8.450457097673537,
+              "profit_factor": 1.103254089937032,
+              "return_r": 6.124500417846551,
+              "trades": 146,
+              "win_rate_pct": 50.68493150684932
+            },
+            "FEES_X2": {
+              "expectancy_r": 0.02127787886119382,
+              "max_drawdown_r": -9.488087651106698,
+              "profit_factor": 1.0512265632074798,
+              "return_r": 3.1065703137342977,
+              "trades": 146,
+              "win_rate_pct": 50.68493150684932
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": 0.04712806888740917,
+              "max_drawdown_r": -8.124445145006284,
+              "profit_factor": 1.1148657766020234,
+              "return_r": 6.880698057561739,
+              "trades": 146,
+              "win_rate_pct": 51.369863013698634
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.773,
+            "q05_mean_r": -0.06920318242800984,
+            "q10_mean_r": -0.0408674876359527,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.012588202566018003,
+            "q95_max_drawdown_abs": 0.02429076033833534,
+            "q99_max_drawdown_abs": 0.02981808532174319,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "CHANDELIER_TIME_SERIES_MOMENTUM__LONG",
+        "family_size": 12,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.20544863784053988,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "LONG",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "CHANDELIER_TIME_SERIES_MOMENTUM",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "CHANDELIER_TIME_SERIES_MOMENTUM__SHORT",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": false,
+          "annual_pf": false,
+          "annual_positive_ratio": false,
+          "bootstrap_probability": false,
+          "bootstrap_q10": false,
+          "central_expectancy": false,
+          "central_pf": false,
+          "central_trades": true,
+          "cost_expectancy": false,
+          "cost_pf": false,
+          "delay1_expectancy": false,
+          "delay1_pf": false,
+          "delay2_expectancy": true,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": false,
+          "monte_carlo_drawdown": false,
+          "neighbour_fraction": false,
+          "nested_expectancy": false,
+          "nested_pf": false,
+          "nested_trades": true,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": false,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": -0.06157055047901333,
+              "fold": "Y2022",
+              "max_drawdown_r": -6.359222113200913,
+              "profit_factor": 0.8332176497770659,
+              "return_r": -2.3396809182025065,
+              "trades": 38,
+              "win_rate_pct": 39.473684210526315
+            },
+            {
+              "expectancy_r": -0.3675159521131524,
+              "fold": "Y2023",
+              "max_drawdown_r": -14.835189562945178,
+              "profit_factor": 0.3840178098184356,
+              "return_r": -13.230574276073487,
+              "trades": 36,
+              "win_rate_pct": 33.33333333333333
+            },
+            {
+              "expectancy_r": 0.1033082182439705,
+              "fold": "Y2024",
+              "max_drawdown_r": -5.84461611886751,
+              "profit_factor": 1.2694729371853353,
+              "return_r": 4.958794475710584,
+              "trades": 48,
+              "win_rate_pct": 54.166666666666664
+            },
+            {
+              "expectancy_r": -0.0642553077936821,
+              "fold": "Y2025",
+              "max_drawdown_r": -8.746758284385109,
+              "profit_factor": 0.839819477371128,
+              "return_r": -3.791063159827244,
+              "trades": 59,
+              "win_rate_pct": 44.06779661016949
+            },
+            {
+              "expectancy_r": 0.15388670264640805,
+              "fold": "Y2026",
+              "max_drawdown_r": -2.0,
+              "profit_factor": 1.5111736146801662,
+              "return_r": 2.616073944988937,
+              "trades": 17,
+              "win_rate_pct": 64.70588235294117
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": -0.0595275249161804,
+            "max_drawdown_r": -21.08294241066166,
+            "profit_factor": 0.8569390983184302,
+            "return_r": -11.78644993340372,
+            "trades": 198,
+            "win_rate_pct": 45.45454545454545
+          },
+          "central": {
+            "expectancy_r": -0.005427731238755771,
+            "max_drawdown_r": -20.04450457995077,
+            "profit_factor": 0.9842600257424658,
+            "return_r": -1.2700891098688505,
+            "trades": 234,
+            "win_rate_pct": 50.0
+          },
+          "failed_checks": [
+            "central_pf",
+            "central_expectancy",
+            "nested_pf",
+            "nested_expectancy",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "annual_positive_ratio",
+            "annual_pf",
+            "annual_expectancy",
+            "worst_annual",
+            "cost_pf",
+            "cost_expectancy",
+            "delay1_pf",
+            "delay1_expectancy",
+            "gap_expectancy",
+            "neighbour_fraction",
+            "bootstrap_probability",
+            "bootstrap_q10",
+            "monte_carlo_drawdown",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 0.375,
+          "nested_outer": {
+            "expectancy_r": -0.06052303889773287,
+            "max_drawdown_r": -23.365997323836027,
+            "profit_factor": 0.8505551657661776,
+            "return_r": -10.34943965151232,
+            "trades": 171,
+            "win_rate_pct": 45.614035087719294
+          },
+          "nested_outer_holm_adjusted_p": 1.0,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 3.2264150943396226,
+            "mean_signals_per_week": 0.7402597402597403,
+            "median_signals_per_month": 3.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 171,
+            "weeks": 231,
+            "zero_signal_months": 5,
+            "zero_signal_weeks": 129
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": -0.06154375717421646,
+              "max_drawdown_r": -24.184037359628885,
+              "profit_factor": 0.8543840597646736,
+              "return_r": -10.400894962442582,
+              "trades": 169,
+              "win_rate_pct": 43.786982248520715
+            },
+            "BASE": {
+              "expectancy_r": -0.06052303889773287,
+              "max_drawdown_r": -23.365997323836027,
+              "profit_factor": 0.8505551657661776,
+              "return_r": -10.34943965151232,
+              "trades": 171,
+              "win_rate_pct": 45.614035087719294
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": -0.02466220534721979,
+              "max_drawdown_r": -14.866540821239969,
+              "profit_factor": 0.9383532422164864,
+              "return_r": -3.8719662395135073,
+              "trades": 157,
+              "win_rate_pct": 43.31210191082803
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": 0.018989395859819343,
+              "max_drawdown_r": -11.712554807537561,
+              "profit_factor": 1.044059820807232,
+              "return_r": 2.715483607954166,
+              "trades": 143,
+              "win_rate_pct": 47.55244755244755
+            },
+            "FEES_X1_5": {
+              "expectancy_r": -0.07918839839190674,
+              "max_drawdown_r": -25.629652231511116,
+              "profit_factor": 0.8063282821345166,
+              "return_r": -13.541216125016051,
+              "trades": 171,
+              "win_rate_pct": 44.44444444444444
+            },
+            "FEES_X2": {
+              "expectancy_r": -0.09689007776382777,
+              "max_drawdown_r": -27.769094016635783,
+              "profit_factor": 0.7651521743167861,
+              "return_r": -16.56820329761455,
+              "trades": 171,
+              "win_rate_pct": 43.859649122807014
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": -0.06968589286150041,
+              "max_drawdown_r": -24.480004142054923,
+              "profit_factor": 0.8286060165665281,
+              "return_r": -11.916287679316572,
+              "trades": 171,
+              "win_rate_pct": 45.02923976608187
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.19775,
+            "q05_mean_r": -0.1793111528954555,
+            "q10_mean_r": -0.15579498437192366,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.02752971381821473,
+            "q95_max_drawdown_abs": 0.04931313076641561,
+            "q99_max_drawdown_abs": 0.058595572285745384,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "CHANDELIER_TIME_SERIES_MOMENTUM__SHORT",
+        "family_size": 12,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.8082979255186203,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "SHORT",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "DIRECTIONAL_RANGE_EXPANSION",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "DIRECTIONAL_RANGE_EXPANSION__LONG",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": false,
+          "annual_pf": false,
+          "annual_positive_ratio": false,
+          "bootstrap_probability": false,
+          "bootstrap_q10": false,
+          "central_expectancy": false,
+          "central_pf": false,
+          "central_trades": true,
+          "cost_expectancy": false,
+          "cost_pf": false,
+          "delay1_expectancy": false,
+          "delay1_pf": false,
+          "delay2_expectancy": true,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": false,
+          "monte_carlo_drawdown": true,
+          "neighbour_fraction": false,
+          "nested_expectancy": false,
+          "nested_pf": false,
+          "nested_trades": true,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": false,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": -0.2558761434660361,
+              "fold": "Y2022",
+              "max_drawdown_r": -5.888911649222778,
+              "profit_factor": 0.5425348639152631,
+              "return_r": -3.838142151990542,
+              "trades": 15,
+              "win_rate_pct": 40.0
+            },
+            {
+              "expectancy_r": -0.15864418244758144,
+              "fold": "Y2023",
+              "max_drawdown_r": -6.995740775363653,
+              "profit_factor": 0.6868183857025127,
+              "return_r": -4.1247487436371175,
+              "trades": 26,
+              "win_rate_pct": 30.76923076923077
+            },
+            {
+              "expectancy_r": 0.06634374813657537,
+              "fold": "Y2024",
+              "max_drawdown_r": -5.102921574506339,
+              "profit_factor": 1.1690496530834191,
+              "return_r": 2.3883749329167134,
+              "trades": 36,
+              "win_rate_pct": 47.22222222222222
+            },
+            {
+              "expectancy_r": -0.23006725827190122,
+              "fold": "Y2025",
+              "max_drawdown_r": -5.240014105130725,
+              "profit_factor": 0.5625341714049372,
+              "return_r": -5.061479681981827,
+              "trades": 22,
+              "win_rate_pct": 31.818181818181817
+            },
+            {
+              "expectancy_r": 0.10126154612558969,
+              "fold": "Y2026",
+              "max_drawdown_r": -1.0,
+              "profit_factor": 1.3256639881200512,
+              "return_r": 0.5063077306279484,
+              "trades": 5,
+              "win_rate_pct": 20.0
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": -0.09740084532754639,
+            "max_drawdown_r": -12.505661390759421,
+            "profit_factor": 0.7904570989833757,
+            "return_r": -10.129687914064824,
+            "trades": 104,
+            "win_rate_pct": 37.5
+          },
+          "central": {
+            "expectancy_r": -0.0011083693413014096,
+            "max_drawdown_r": -14.293527085450785,
+            "profit_factor": 0.9955222778822368,
+            "return_r": -0.19839811209295233,
+            "trades": 179,
+            "win_rate_pct": 44.6927374301676
+          },
+          "failed_checks": [
+            "central_pf",
+            "central_expectancy",
+            "nested_pf",
+            "nested_expectancy",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "annual_positive_ratio",
+            "annual_pf",
+            "annual_expectancy",
+            "worst_annual",
+            "cost_pf",
+            "cost_expectancy",
+            "delay1_pf",
+            "delay1_expectancy",
+            "gap_expectancy",
+            "neighbour_fraction",
+            "bootstrap_probability",
+            "bootstrap_q10",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 0.25,
+          "nested_outer": {
+            "expectancy_r": -0.0008698844865384515,
+            "max_drawdown_r": -8.292491427726482,
+            "profit_factor": 0.9963961109926129,
+            "return_r": -0.09568729351922967,
+            "trades": 110,
+            "win_rate_pct": 43.63636363636363
+          },
+          "nested_outer_holm_adjusted_p": 1.0,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 2.0754716981132075,
+            "mean_signals_per_week": 0.47619047619047616,
+            "median_signals_per_month": 2.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 110,
+            "weeks": 231,
+            "zero_signal_months": 10,
+            "zero_signal_weeks": 159
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": -0.023724867416827194,
+              "max_drawdown_r": -8.875305023148835,
+              "profit_factor": 0.9451233030344318,
+              "return_r": -2.6097354158509916,
+              "trades": 110,
+              "win_rate_pct": 40.909090909090914
+            },
+            "BASE": {
+              "expectancy_r": -0.0008698844865384515,
+              "max_drawdown_r": -8.292491427726482,
+              "profit_factor": 0.9963961109926129,
+              "return_r": -0.09568729351922967,
+              "trades": 110,
+              "win_rate_pct": 43.63636363636363
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": -0.02823373161533039,
+              "max_drawdown_r": -8.482778546012947,
+              "profit_factor": 0.9381285579839462,
+              "return_r": -2.682204503456387,
+              "trades": 95,
+              "win_rate_pct": 42.10526315789473
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": 0.03561953030801984,
+              "max_drawdown_r": -9.490382730051689,
+              "profit_factor": 1.0743183192903505,
+              "return_r": 3.2769967883378257,
+              "trades": 92,
+              "win_rate_pct": 45.65217391304348
+            },
+            "FEES_X1_5": {
+              "expectancy_r": -0.019069621636392038,
+              "max_drawdown_r": -8.751801031534066,
+              "profit_factor": 0.955254896007447,
+              "return_r": -2.097658380003124,
+              "trades": 110,
+              "win_rate_pct": 42.72727272727273
+            },
+            "FEES_X2": {
+              "expectancy_r": -0.03651553473528114,
+              "max_drawdown_r": -9.211330681500481,
+              "profit_factor": 0.9162777292342283,
+              "return_r": -4.016708820880925,
+              "trades": 110,
+              "win_rate_pct": 40.909090909090914
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": -0.007841328277939761,
+              "max_drawdown_r": -8.46990855218827,
+              "profit_factor": 0.9805867293090214,
+              "return_r": -0.8625461105733738,
+              "trades": 110,
+              "win_rate_pct": 42.72727272727273
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.488,
+            "q05_mean_r": -0.12040914030946755,
+            "q10_mean_r": -0.09355200719944975,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.013733619614516857,
+            "q95_max_drawdown_abs": 0.026371908057557715,
+            "q99_max_drawdown_abs": 0.03338685125321562,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "DIRECTIONAL_RANGE_EXPANSION__LONG",
+        "family_size": 12,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.514371407148213,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "LONG",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "DIRECTIONAL_RANGE_EXPANSION",
+      "best_full_variant_holm_adjusted_p": 0.5128717820544864,
+      "candidate": "DIRECTIONAL_RANGE_EXPANSION__SHORT",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": true,
+          "annual_pf": true,
+          "annual_positive_ratio": true,
+          "bootstrap_probability": false,
+          "bootstrap_q10": true,
+          "central_expectancy": true,
+          "central_pf": true,
+          "central_trades": true,
+          "cost_expectancy": true,
+          "cost_pf": true,
+          "delay1_expectancy": true,
+          "delay1_pf": true,
+          "delay2_expectancy": true,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": true,
+          "monte_carlo_drawdown": true,
+          "neighbour_fraction": true,
+          "nested_expectancy": true,
+          "nested_pf": true,
+          "nested_trades": true,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": true,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": 0.27278051574691065,
+              "fold": "Y2022",
+              "max_drawdown_r": -1.5678631517443558,
+              "profit_factor": 2.3712901599607608,
+              "return_r": 5.455610314938213,
+              "trades": 20,
+              "win_rate_pct": 55.00000000000001
+            },
+            {
+              "expectancy_r": 0.14679810804375149,
+              "fold": "Y2023",
+              "max_drawdown_r": -2.5319348088368825,
+              "profit_factor": 1.4744924619850441,
+              "return_r": 2.3487697287000238,
+              "trades": 16,
+              "win_rate_pct": 50.0
+            },
+            {
+              "expectancy_r": 0.19676344506917332,
+              "fold": "Y2024",
+              "max_drawdown_r": -3.0183186246799654,
+              "profit_factor": 1.5659258759642987,
+              "return_r": 5.3126130168676795,
+              "trades": 27,
+              "win_rate_pct": 44.44444444444444
+            },
+            {
+              "expectancy_r": 0.35081100916466307,
+              "fold": "Y2025",
+              "max_drawdown_r": -2.420280350136797,
+              "profit_factor": 2.256377199272984,
+              "return_r": 8.770275229116576,
+              "trades": 25,
+              "win_rate_pct": 48.0
+            },
+            {
+              "expectancy_r": 0.14136300807622548,
+              "fold": "Y2026",
+              "max_drawdown_r": -2.7090974763599345,
+              "profit_factor": 1.3569499125641504,
+              "return_r": 1.6963560969147058,
+              "trades": 12,
+              "win_rate_pct": 58.333333333333336
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": 0.235836243865372,
+            "max_drawdown_r": -5.018318624679964,
+            "profit_factor": 1.7846652589422123,
+            "return_r": 23.5836243865372,
+            "trades": 100,
+            "win_rate_pct": 50.0
+          },
+          "central": {
+            "expectancy_r": 0.14540524841156788,
+            "max_drawdown_r": -5.055211565716432,
+            "profit_factor": 1.4218034216538864,
+            "return_r": 21.083761019677343,
+            "trades": 145,
+            "win_rate_pct": 46.89655172413793
+          },
+          "failed_checks": [
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "bootstrap_probability",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 0.5128717820544864,
+          "neighbour_positive_fraction": 1.0,
+          "nested_outer": {
+            "expectancy_r": 0.13629773287369235,
+            "max_drawdown_r": -5.055211565716431,
+            "profit_factor": 1.3705353823407795,
+            "return_r": 14.992750616106157,
+            "trades": 110,
+            "win_rate_pct": 44.54545454545455
+          },
+          "nested_outer_holm_adjusted_p": 0.49237690577355664,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 2.0754716981132075,
+            "mean_signals_per_week": 0.47619047619047616,
+            "median_signals_per_month": 2.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 110,
+            "weeks": 231,
+            "zero_signal_months": 10,
+            "zero_signal_weeks": 160
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": 0.10615259065347553,
+              "max_drawdown_r": -5.191377027860841,
+              "profit_factor": 1.2819081490247515,
+              "return_r": 11.676784971882308,
+              "trades": 110,
+              "win_rate_pct": 41.81818181818181
+            },
+            "BASE": {
+              "expectancy_r": 0.13629773287369235,
+              "max_drawdown_r": -5.055211565716431,
+              "profit_factor": 1.3705353823407795,
+              "return_r": 14.992750616106157,
+              "trades": 110,
+              "win_rate_pct": 44.54545454545455
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": 0.1357485172213017,
+              "max_drawdown_r": -3.6278070751841582,
+              "profit_factor": 1.3566947957326445,
+              "return_r": 12.76036061880236,
+              "trades": 94,
+              "win_rate_pct": 47.87234042553192
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": 0.04926386875127184,
+              "max_drawdown_r": -5.43358396905255,
+              "profit_factor": 1.1272710508871162,
+              "return_r": 4.0889011063555625,
+              "trades": 83,
+              "win_rate_pct": 43.373493975903614
+            },
+            "FEES_X1_5": {
+              "expectancy_r": 0.11510233647786783,
+              "max_drawdown_r": -5.101677645221853,
+              "profit_factor": 1.3099216660211088,
+              "return_r": 12.66125701256546,
+              "trades": 110,
+              "win_rate_pct": 43.63636363636363
+            },
+            "FEES_X2": {
+              "expectancy_r": 0.09487657593896967,
+              "max_drawdown_r": -5.156502257281195,
+              "profit_factor": 1.2528928837619304,
+              "return_r": 10.436423353286663,
+              "trades": 110,
+              "win_rate_pct": 41.81818181818181
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": 0.12909912833583767,
+              "max_drawdown_r": -5.078585531590583,
+              "profit_factor": 1.3493286719661663,
+              "return_r": 14.200904116942143,
+              "trades": 110,
+              "win_rate_pct": 43.63636363636363
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.94375,
+            "q05_mean_r": -0.004383160483978604,
+            "q10_mean_r": 0.02414593092392849,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.009141227900121507,
+            "q95_max_drawdown_abs": 0.015752607336491902,
+            "q99_max_drawdown_abs": 0.01914298462354196,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "DIRECTIONAL_RANGE_EXPANSION__SHORT",
+        "family_size": 12,
+        "holm_adjusted_p": 0.49237690577355664,
+        "p_value": 0.049237690577355664,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "SHORT",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "RANGE_EXTREME_REVERSION",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "RANGE_EXTREME_REVERSION__LONG",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": true,
+          "annual_pf": true,
+          "annual_positive_ratio": true,
+          "bootstrap_probability": false,
+          "bootstrap_q10": false,
+          "central_expectancy": false,
+          "central_pf": false,
+          "central_trades": false,
+          "cost_expectancy": false,
+          "cost_pf": false,
+          "delay1_expectancy": false,
+          "delay1_pf": false,
+          "delay2_expectancy": false,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": false,
+          "monte_carlo_drawdown": true,
+          "neighbour_fraction": false,
+          "nested_expectancy": false,
+          "nested_pf": false,
+          "nested_trades": false,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": true,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": 0.06655922100968542,
+              "fold": "Y2022",
+              "max_drawdown_r": -4.371235201582079,
+              "profit_factor": 1.2205535095431452,
+              "return_r": 1.4643028622130794,
+              "trades": 22,
+              "win_rate_pct": 54.54545454545454
+            },
+            {
+              "expectancy_r": 0.2160758091513626,
+              "fold": "Y2023",
+              "max_drawdown_r": -2.3158538141000014,
+              "profit_factor": 2.115374933376895,
+              "return_r": 5.83404684708679,
+              "trades": 27,
+              "win_rate_pct": 70.37037037037037
+            },
+            {
+              "expectancy_r": -0.05057022566888842,
+              "fold": "Y2024",
+              "max_drawdown_r": -5.616006184891795,
+              "profit_factor": 0.8433975922762137,
+              "return_r": -1.4159663187288758,
+              "trades": 28,
+              "win_rate_pct": 57.14285714285714
+            },
+            {
+              "expectancy_r": 0.03637859835163888,
+              "fold": "Y2025",
+              "max_drawdown_r": -2.772606645665771,
+              "profit_factor": 1.1068929263654228,
+              "return_r": 1.1641151472524442,
+              "trades": 32,
+              "win_rate_pct": 53.125
+            },
+            {
+              "expectancy_r": 0.11217631052762449,
+              "fold": "Y2026",
+              "max_drawdown_r": -1.2040539029041306,
+              "profit_factor": 1.3340969588476659,
+              "return_r": 1.0095867947486203,
+              "trades": 9,
+              "win_rate_pct": 55.55555555555556
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": 0.06827190959806831,
+            "max_drawdown_r": -5.616006184891795,
+            "profit_factor": 1.2305844268238497,
+            "return_r": 8.05608533257206,
+            "trades": 118,
+            "win_rate_pct": 58.47457627118644
+          },
+          "central": {
+            "expectancy_r": -0.10384558124220437,
+            "max_drawdown_r": -13.813999893912428,
+            "profit_factor": 0.7340925774758996,
+            "return_r": -12.253778586580117,
+            "trades": 118,
+            "win_rate_pct": 44.91525423728814
+          },
+          "failed_checks": [
+            "central_trades",
+            "central_pf",
+            "central_expectancy",
+            "nested_trades",
+            "nested_pf",
+            "nested_expectancy",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "cost_pf",
+            "cost_expectancy",
+            "delay1_pf",
+            "delay1_expectancy",
+            "delay2_expectancy",
+            "gap_expectancy",
+            "neighbour_fraction",
+            "bootstrap_probability",
+            "bootstrap_q10",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 0.125,
+          "nested_outer": {
+            "expectancy_r": 0.001787828735320185,
+            "max_drawdown_r": -7.075957160090434,
+            "profit_factor": 1.005536291238505,
+            "return_r": 0.17163155859073775,
+            "trades": 96,
+            "win_rate_pct": 56.25
+          },
+          "nested_outer_holm_adjusted_p": 1.0,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 1.8113207547169812,
+            "mean_signals_per_week": 0.4155844155844156,
+            "median_signals_per_month": 2.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 96,
+            "weeks": 231,
+            "zero_signal_months": 4,
+            "zero_signal_weeks": 155
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": -0.09685691245669545,
+              "max_drawdown_r": -9.472832427526054,
+              "profit_factor": 0.7296031049930207,
+              "return_r": -9.201406683386068,
+              "trades": 95,
+              "win_rate_pct": 50.526315789473685
+            },
+            "BASE": {
+              "expectancy_r": 0.001787828735320185,
+              "max_drawdown_r": -7.075957160090434,
+              "profit_factor": 1.005536291238505,
+              "return_r": 0.17163155859073775,
+              "trades": 96,
+              "win_rate_pct": 56.25
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": -0.049004869050062766,
+              "max_drawdown_r": -6.079707228691494,
+              "profit_factor": 0.8532815970607097,
+              "return_r": -4.6554625597559625,
+              "trades": 95,
+              "win_rate_pct": 47.368421052631575
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": -0.05901451175858047,
+              "max_drawdown_r": -8.31372031177738,
+              "profit_factor": 0.8280691654640921,
+              "return_r": -5.07524801123792,
+              "trades": 86,
+              "win_rate_pct": 50.0
+            },
+            "FEES_X1_5": {
+              "expectancy_r": -0.031275505539789104,
+              "max_drawdown_r": -7.590723420767579,
+              "profit_factor": 0.9098334316557297,
+              "return_r": -3.002448531819754,
+              "trades": 96,
+              "win_rate_pct": 53.125
+            },
+            "FEES_X2": {
+              "expectancy_r": -0.06190058685160741,
+              "max_drawdown_r": -8.093073295544064,
+              "profit_factor": 0.8233703026820036,
+              "return_r": -5.942456337754312,
+              "trades": 96,
+              "win_rate_pct": 53.125
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": -0.026744603611264982,
+              "max_drawdown_r": -7.3023893635244965,
+              "profit_factor": 0.9243788100378076,
+              "return_r": -2.540737343070173,
+              "trades": 95,
+              "win_rate_pct": 53.68421052631579
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.51175,
+            "q05_mean_r": -0.13063358881003856,
+            "q10_mean_r": -0.10168631947699357,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.0116065457891259,
+            "q95_max_drawdown_abs": 0.023017530208423516,
+            "q99_max_drawdown_abs": 0.02856506231573258,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "RANGE_EXTREME_REVERSION__LONG",
+        "family_size": 12,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.4971257185703574,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "LONG",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "RANGE_EXTREME_REVERSION",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "RANGE_EXTREME_REVERSION__SHORT",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": false,
+          "annual_pf": false,
+          "annual_positive_ratio": false,
+          "bootstrap_probability": false,
+          "bootstrap_q10": false,
+          "central_expectancy": false,
+          "central_pf": false,
+          "central_trades": false,
+          "cost_expectancy": false,
+          "cost_pf": false,
+          "delay1_expectancy": false,
+          "delay1_pf": false,
+          "delay2_expectancy": false,
+          "frequency_month_mean": false,
+          "frequency_month_median": true,
+          "frequency_week_mean": false,
+          "full_variant_holm": false,
+          "gap_expectancy": false,
+          "monte_carlo_drawdown": false,
+          "neighbour_fraction": false,
+          "nested_expectancy": false,
+          "nested_pf": false,
+          "nested_trades": false,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": false,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": -0.2089735184066808,
+              "fold": "Y2022",
+              "max_drawdown_r": -6.054241652469824,
+              "profit_factor": 0.48527164764139913,
+              "return_r": -3.7615233313202543,
+              "trades": 18,
+              "win_rate_pct": 38.88888888888889
+            },
+            {
+              "expectancy_r": -0.23751724555886045,
+              "fold": "Y2023",
+              "max_drawdown_r": -8.69632721813844,
+              "profit_factor": 0.5115822671953716,
+              "return_r": -6.412965630089232,
+              "trades": 27,
+              "win_rate_pct": 44.44444444444444
+            },
+            {
+              "expectancy_r": -0.21093844542331616,
+              "fold": "Y2024",
+              "max_drawdown_r": -5.335272643273592,
+              "profit_factor": 0.5736774662320699,
+              "return_r": -5.273461135582904,
+              "trades": 25,
+              "win_rate_pct": 36.0
+            },
+            {
+              "expectancy_r": -0.15057079752414743,
+              "fold": "Y2025",
+              "max_drawdown_r": -5.169210598978418,
+              "profit_factor": 0.5861065988689659,
+              "return_r": -2.860845152958801,
+              "trades": 19,
+              "win_rate_pct": 36.84210526315789
+            },
+            {
+              "expectancy_r": -0.224463727902205,
+              "fold": "Y2026",
+              "max_drawdown_r": -3.0909107251444015,
+              "profit_factor": 0.4826926890429019,
+              "return_r": -2.020173551119845,
+              "trades": 9,
+              "win_rate_pct": 33.33333333333333
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": -0.20743845715378606,
+            "max_drawdown_r": -21.073960150278083,
+            "profit_factor": 0.5338615186429961,
+            "return_r": -20.328968801071035,
+            "trades": 98,
+            "win_rate_pct": 38.775510204081634
+          },
+          "central": {
+            "expectancy_r": -0.1525560030775071,
+            "max_drawdown_r": -12.967260261588102,
+            "profit_factor": 0.64911905767996,
+            "return_r": -12.967260261588104,
+            "trades": 85,
+            "win_rate_pct": 40.0
+          },
+          "failed_checks": [
+            "central_trades",
+            "central_pf",
+            "central_expectancy",
+            "nested_trades",
+            "nested_pf",
+            "nested_expectancy",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "annual_positive_ratio",
+            "annual_pf",
+            "annual_expectancy",
+            "worst_annual",
+            "cost_pf",
+            "cost_expectancy",
+            "delay1_pf",
+            "delay1_expectancy",
+            "delay2_expectancy",
+            "gap_expectancy",
+            "neighbour_fraction",
+            "bootstrap_probability",
+            "bootstrap_q10",
+            "monte_carlo_drawdown",
+            "full_variant_holm",
+            "outer_holm",
+            "frequency_week_mean",
+            "frequency_month_mean"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 0.0,
+          "nested_outer": {
+            "expectancy_r": -0.205609555880971,
+            "max_drawdown_r": -19.43447737521916,
+            "profit_factor": 0.5416751029361497,
+            "return_r": -15.831935802834765,
+            "trades": 77,
+            "win_rate_pct": 33.76623376623377
+          },
+          "nested_outer_holm_adjusted_p": 1.0,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 1.4528301886792452,
+            "mean_signals_per_week": 0.3333333333333333,
+            "median_signals_per_month": 1.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 77,
+            "weeks": 231,
+            "zero_signal_months": 14,
+            "zero_signal_weeks": 170
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": -0.29570867677229207,
+              "max_drawdown_r": -23.679051349978128,
+              "profit_factor": 0.41486891882659177,
+              "return_r": -22.473859434694198,
+              "trades": 76,
+              "win_rate_pct": 35.526315789473685
+            },
+            "BASE": {
+              "expectancy_r": -0.205609555880971,
+              "max_drawdown_r": -19.43447737521916,
+              "profit_factor": 0.5416751029361497,
+              "return_r": -15.831935802834765,
+              "trades": 77,
+              "win_rate_pct": 33.76623376623377
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": -0.33260341571836566,
+              "max_drawdown_r": -25.80229640341583,
+              "profit_factor": 0.3437650995350413,
+              "return_r": -24.61265276315906,
+              "trades": 74,
+              "win_rate_pct": 28.37837837837838
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": -0.3296384068456038,
+              "max_drawdown_r": -24.031013599397788,
+              "profit_factor": 0.3335112030405093,
+              "return_r": -23.074688479192265,
+              "trades": 70,
+              "win_rate_pct": 31.428571428571427
+            },
+            "FEES_X1_5": {
+              "expectancy_r": -0.23633419786177035,
+              "max_drawdown_r": -20.86215876151305,
+              "profit_factor": 0.48238638555029956,
+              "return_r": -18.197733235356317,
+              "trades": 77,
+              "win_rate_pct": 33.76623376623377
+            },
+            "FEES_X2": {
+              "expectancy_r": -0.2645679564849112,
+              "max_drawdown_r": -22.178679652112415,
+              "profit_factor": 0.42971066512279504,
+              "return_r": -20.371732649338163,
+              "trades": 77,
+              "win_rate_pct": 33.76623376623377
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": -0.24338192214422835,
+              "max_drawdown_r": -20.894393646664064,
+              "profit_factor": 0.47476115734219115,
+              "return_r": -18.740408005105582,
+              "trades": 77,
+              "win_rate_pct": 33.76623376623377
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.02,
+            "q05_mean_r": -0.3735096773454783,
+            "q10_mean_r": -0.33715563494910344,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.027155835971718556,
+            "q95_max_drawdown_abs": 0.042222789618725894,
+            "q99_max_drawdown_abs": 0.04888851827110252,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "RANGE_EXTREME_REVERSION__SHORT",
+        "family_size": 12,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.9730067483129218,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "SHORT",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "TREND_PULLBACK_RESUMPTION",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "TREND_PULLBACK_RESUMPTION__LONG",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": false,
+          "annual_pf": false,
+          "annual_positive_ratio": false,
+          "bootstrap_probability": true,
+          "bootstrap_q10": true,
+          "central_expectancy": false,
+          "central_pf": false,
+          "central_trades": true,
+          "cost_expectancy": true,
+          "cost_pf": true,
+          "delay1_expectancy": true,
+          "delay1_pf": true,
+          "delay2_expectancy": true,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": true,
+          "monte_carlo_drawdown": true,
+          "neighbour_fraction": false,
+          "nested_expectancy": true,
+          "nested_pf": true,
+          "nested_trades": true,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": false,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": -0.1483083027542232,
+              "fold": "Y2022",
+              "max_drawdown_r": -8.629839487583236,
+              "profit_factor": 0.7019054164089206,
+              "return_r": -8.305264954236499,
+              "trades": 56,
+              "win_rate_pct": 35.714285714285715
+            },
+            {
+              "expectancy_r": -0.006211766153561021,
+              "fold": "Y2023",
+              "max_drawdown_r": -7.849110659107897,
+              "profit_factor": 0.9839184988178871,
+              "return_r": -0.33543537229229514,
+              "trades": 54,
+              "win_rate_pct": 31.48148148148148
+            },
+            {
+              "expectancy_r": 0.17703156675714474,
+              "fold": "Y2024",
+              "max_drawdown_r": -5.156016048049129,
+              "profit_factor": 1.478149768923689,
+              "return_r": 9.73673617164296,
+              "trades": 55,
+              "win_rate_pct": 45.45454545454545
+            },
+            {
+              "expectancy_r": 0.00937077649531727,
+              "fold": "Y2025",
+              "max_drawdown_r": -6.9077058073428175,
+              "profit_factor": 1.0182719046995872,
+              "return_r": 0.449797271775229,
+              "trades": 48,
+              "win_rate_pct": 43.75
+            },
+            {
+              "expectancy_r": -0.18346486705330298,
+              "fold": "Y2026",
+              "max_drawdown_r": -5.669630220659013,
+              "profit_factor": 0.6242907776763722,
+              "return_r": -2.5685081387462416,
+              "trades": 14,
+              "win_rate_pct": 35.714285714285715
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": -0.00450517630773942,
+            "max_drawdown_r": -10.962365575113278,
+            "profit_factor": 0.9878449176874216,
+            "return_r": -1.0226750218568483,
+            "trades": 227,
+            "win_rate_pct": 38.76651982378855
+          },
+          "central": {
+            "expectancy_r": 0.0008572404098975472,
+            "max_drawdown_r": -25.547993774542686,
+            "profit_factor": 1.0000585641427775,
+            "return_r": 0.2743169311672151,
+            "trades": 320,
+            "win_rate_pct": 39.6875
+          },
+          "failed_checks": [
+            "central_pf",
+            "central_expectancy",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "annual_positive_ratio",
+            "annual_pf",
+            "annual_expectancy",
+            "worst_annual",
+            "neighbour_fraction",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 0.5,
+          "nested_outer": {
+            "expectancy_r": 0.09447199967170608,
+            "max_drawdown_r": -6.273480951093232,
+            "profit_factor": 1.2291453662048752,
+            "return_r": 18.894399934341216,
+            "trades": 200,
+            "win_rate_pct": 43.0
+          },
+          "nested_outer_holm_adjusted_p": 0.4798800299925019,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 3.7735849056603774,
+            "mean_signals_per_week": 0.8658008658008658,
+            "median_signals_per_month": 3.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 200,
+            "weeks": 231,
+            "zero_signal_months": 4,
+            "zero_signal_weeks": 128
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": 0.06145569879276403,
+              "max_drawdown_r": -7.737012464989949,
+              "profit_factor": 1.1442102132216148,
+              "return_r": 12.168228360967278,
+              "trades": 198,
+              "win_rate_pct": 42.42424242424242
+            },
+            "BASE": {
+              "expectancy_r": 0.09447199967170608,
+              "max_drawdown_r": -6.273480951093232,
+              "profit_factor": 1.2291453662048752,
+              "return_r": 18.894399934341216,
+              "trades": 200,
+              "win_rate_pct": 43.0
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": 0.11943115317916554,
+              "max_drawdown_r": -6.95517821805604,
+              "profit_factor": 1.3086071384451898,
+              "return_r": 22.691919104041453,
+              "trades": 190,
+              "win_rate_pct": 42.10526315789473
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": 0.11131950617620628,
+              "max_drawdown_r": -6.970325817974654,
+              "profit_factor": 1.2663751519015507,
+              "return_r": 20.03751111171713,
+              "trades": 180,
+              "win_rate_pct": 40.55555555555556
+            },
+            "FEES_X1_5": {
+              "expectancy_r": 0.07011273160417204,
+              "max_drawdown_r": -6.633929035246323,
+              "profit_factor": 1.1678762173804074,
+              "return_r": 14.022546320834408,
+              "trades": 200,
+              "win_rate_pct": 42.0
+            },
+            "FEES_X2": {
+              "expectancy_r": 0.04696156329011097,
+              "max_drawdown_r": -6.9756250547308,
+              "profit_factor": 1.1106098375358577,
+              "return_r": 9.392312658022194,
+              "trades": 200,
+              "win_rate_pct": 41.5
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": 0.07641685393692244,
+              "max_drawdown_r": -6.406380811933129,
+              "profit_factor": 1.1842102923512998,
+              "return_r": 15.206953933447565,
+              "trades": 199,
+              "win_rate_pct": 43.71859296482412
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.9505,
+            "q05_mean_r": 0.00027684635730616634,
+            "q10_mean_r": 0.022264353959408744,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.011893702205270418,
+            "q95_max_drawdown_abs": 0.018868356032819233,
+            "q99_max_drawdown_abs": 0.02408182346641516,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "TREND_PULLBACK_RESUMPTION__LONG",
+        "family_size": 12,
+        "holm_adjusted_p": 0.4798800299925019,
+        "p_value": 0.04123969007748063,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "LONG",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "TREND_PULLBACK_RESUMPTION",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "TREND_PULLBACK_RESUMPTION__SHORT",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": false,
+          "annual_pf": false,
+          "annual_positive_ratio": false,
+          "bootstrap_probability": false,
+          "bootstrap_q10": false,
+          "central_expectancy": false,
+          "central_pf": false,
+          "central_trades": true,
+          "cost_expectancy": false,
+          "cost_pf": false,
+          "delay1_expectancy": false,
+          "delay1_pf": false,
+          "delay2_expectancy": false,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": false,
+          "monte_carlo_drawdown": false,
+          "neighbour_fraction": false,
+          "nested_expectancy": false,
+          "nested_pf": false,
+          "nested_trades": true,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": false,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": -0.15850152579473736,
+              "fold": "Y2022",
+              "max_drawdown_r": -14.887551411399173,
+              "profit_factor": 0.6626311220692126,
+              "return_r": -11.253608331426353,
+              "trades": 71,
+              "win_rate_pct": 32.3943661971831
+            },
+            {
+              "expectancy_r": -0.17025764137547658,
+              "fold": "Y2023",
+              "max_drawdown_r": -12.597405644994502,
+              "profit_factor": 0.6522744597376072,
+              "return_r": -9.023654992900259,
+              "trades": 53,
+              "win_rate_pct": 28.30188679245283
+            },
+            {
+              "expectancy_r": 0.010907573965795916,
+              "fold": "Y2024",
+              "max_drawdown_r": -7.073332906851187,
+              "profit_factor": 1.0218547023539264,
+              "return_r": 0.5017484024266121,
+              "trades": 46,
+              "win_rate_pct": 34.78260869565217
+            },
+            {
+              "expectancy_r": -0.0429888387050696,
+              "fold": "Y2025",
+              "max_drawdown_r": -8.940991529691354,
+              "profit_factor": 0.9071959824191075,
+              "return_r": -2.665307999714315,
+              "trades": 62,
+              "win_rate_pct": 35.483870967741936
+            },
+            {
+              "expectancy_r": 0.2917902486277278,
+              "fold": "Y2026",
+              "max_drawdown_r": -2.1855073737539783,
+              "profit_factor": 1.9470916370341016,
+              "return_r": 7.002965967065467,
+              "trades": 24,
+              "win_rate_pct": 41.66666666666667
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": -0.06030412872870644,
+            "max_drawdown_r": -31.777378769552275,
+            "profit_factor": 0.8647675029732637,
+            "return_r": -15.437856954548849,
+            "trades": 256,
+            "win_rate_pct": 33.59375
+          },
+          "central": {
+            "expectancy_r": -0.03449544727299628,
+            "max_drawdown_r": -42.59588265827537,
+            "profit_factor": 0.9195876016078486,
+            "return_r": -11.900929309183716,
+            "trades": 345,
+            "win_rate_pct": 34.20289855072463
+          },
+          "failed_checks": [
+            "central_pf",
+            "central_expectancy",
+            "nested_pf",
+            "nested_expectancy",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "annual_positive_ratio",
+            "annual_pf",
+            "annual_expectancy",
+            "worst_annual",
+            "cost_pf",
+            "cost_expectancy",
+            "delay1_pf",
+            "delay1_expectancy",
+            "delay2_expectancy",
+            "gap_expectancy",
+            "neighbour_fraction",
+            "bootstrap_probability",
+            "bootstrap_q10",
+            "monte_carlo_drawdown",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 0.0,
+          "nested_outer": {
+            "expectancy_r": -0.06232828153429295,
+            "max_drawdown_r": -37.8166882804045,
+            "profit_factor": 0.8595803308329704,
+            "return_r": -16.01836835431329,
+            "trades": 257,
+            "win_rate_pct": 34.24124513618677
+          },
+          "nested_outer_holm_adjusted_p": 1.0,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 4.849056603773585,
+            "mean_signals_per_week": 1.1125541125541125,
+            "median_signals_per_month": 5.0,
+            "median_signals_per_week": 1.0,
+            "months": 53,
+            "signals": 257,
+            "weeks": 231,
+            "zero_signal_months": 5,
+            "zero_signal_weeks": 107
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": -0.1241469143045759,
+              "max_drawdown_r": -50.016865713577246,
+              "profit_factor": 0.7341601169052624,
+              "return_r": -31.533316233362278,
+              "trades": 254,
+              "win_rate_pct": 33.07086614173229
+            },
+            "BASE": {
+              "expectancy_r": -0.06232828153429295,
+              "max_drawdown_r": -37.8166882804045,
+              "profit_factor": 0.8595803308329704,
+              "return_r": -16.01836835431329,
+              "trades": 257,
+              "win_rate_pct": 34.24124513618677
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": -0.1518166856979347,
+              "max_drawdown_r": -53.0438918344078,
+              "profit_factor": 0.6854202413462476,
+              "return_r": -36.58782125320226,
+              "trades": 241,
+              "win_rate_pct": 33.19502074688796
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": -0.15692409589611872,
+              "max_drawdown_r": -50.16934047172581,
+              "profit_factor": 0.669338911061778,
+              "return_r": -35.62176976841895,
+              "trades": 227,
+              "win_rate_pct": 30.396475770925107
+            },
+            "FEES_X1_5": {
+              "expectancy_r": -0.08335487533275505,
+              "max_drawdown_r": -41.605304245474734,
+              "profit_factor": 0.814556581924031,
+              "return_r": -21.42220296051805,
+              "trades": 257,
+              "win_rate_pct": 34.24124513618677
+            },
+            "FEES_X2": {
+              "expectancy_r": -0.1031895837081156,
+              "max_drawdown_r": -45.17755440519304,
+              "profit_factor": 0.7728464439093511,
+              "return_r": -26.519723012985708,
+              "trades": 257,
+              "win_rate_pct": 34.24124513618677
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": -0.06866371829154469,
+              "max_drawdown_r": -39.372013049632685,
+              "profit_factor": 0.8471534881967621,
+              "return_r": -17.646575600926987,
+              "trades": 257,
+              "win_rate_pct": 35.019455252918284
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.17625,
+            "q05_mean_r": -0.17914434909545227,
+            "q10_mean_r": -0.15641505969659406,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.04070118310025744,
+            "q95_max_drawdown_abs": 0.07311578423238634,
+            "q99_max_drawdown_abs": 0.08620044488643613,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "TREND_PULLBACK_RESUMPTION__SHORT",
+        "family_size": 12,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.8135466133466633,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "SHORT",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "VOLATILITY_COMPRESSION_EXPANSION",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "VOLATILITY_COMPRESSION_EXPANSION__LONG",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": false,
+          "annual_pf": false,
+          "annual_positive_ratio": false,
+          "bootstrap_probability": false,
+          "bootstrap_q10": false,
+          "central_expectancy": false,
+          "central_pf": false,
+          "central_trades": true,
+          "cost_expectancy": false,
+          "cost_pf": false,
+          "delay1_expectancy": true,
+          "delay1_pf": true,
+          "delay2_expectancy": true,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": true,
+          "monte_carlo_drawdown": true,
+          "neighbour_fraction": true,
+          "nested_expectancy": false,
+          "nested_pf": false,
+          "nested_trades": false,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": false,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": -0.10088795003675385,
+              "fold": "Y2022",
+              "max_drawdown_r": -4.444915999753641,
+              "profit_factor": 0.7399570193608288,
+              "return_r": -2.118646950771831,
+              "trades": 21,
+              "win_rate_pct": 52.38095238095239
+            },
+            {
+              "expectancy_r": -0.11556196696426072,
+              "fold": "Y2023",
+              "max_drawdown_r": -6.822946710505261,
+              "profit_factor": 0.7511767744029603,
+              "return_r": -3.697982942856343,
+              "trades": 32,
+              "win_rate_pct": 31.25
+            },
+            {
+              "expectancy_r": 0.12316041422176002,
+              "fold": "Y2024",
+              "max_drawdown_r": -4.886972947075715,
+              "profit_factor": 1.3937971953855541,
+              "return_r": 3.694812426652801,
+              "trades": 30,
+              "win_rate_pct": 56.666666666666664
+            },
+            {
+              "expectancy_r": 0.10459357262691418,
+              "fold": "Y2025",
+              "max_drawdown_r": -2.7889829977203027,
+              "profit_factor": 1.2322059985355283,
+              "return_r": 2.0918714525382835,
+              "trades": 20,
+              "win_rate_pct": 40.0
+            },
+            {
+              "expectancy_r": 0.22379395655541914,
+              "fold": "Y2026",
+              "max_drawdown_r": -1.5408266299642492,
+              "profit_factor": 1.6122969338835749,
+              "return_r": 1.566557695887934,
+              "trades": 7,
+              "win_rate_pct": 28.57142857142857
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": 0.013969197104098585,
+            "max_drawdown_r": -9.189652174444689,
+            "profit_factor": 1.033284312250319,
+            "return_r": 1.5366116814508444,
+            "trades": 110,
+            "win_rate_pct": 43.63636363636363
+          },
+          "central": {
+            "expectancy_r": 0.05273296326178924,
+            "max_drawdown_r": -13.130541506081581,
+            "profit_factor": 1.1360114732671471,
+            "return_r": 8.173609305577331,
+            "trades": 155,
+            "win_rate_pct": 45.16129032258064
+          },
+          "failed_checks": [
+            "central_pf",
+            "central_expectancy",
+            "nested_trades",
+            "nested_pf",
+            "nested_expectancy",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "annual_positive_ratio",
+            "annual_pf",
+            "annual_expectancy",
+            "worst_annual",
+            "cost_pf",
+            "cost_expectancy",
+            "bootstrap_probability",
+            "bootstrap_q10",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 1.0,
+          "nested_outer": {
+            "expectancy_r": 0.039083694876518894,
+            "max_drawdown_r": -9.148387047814962,
+            "profit_factor": 1.094103503854568,
+            "return_r": 3.791118403022333,
+            "trades": 97,
+            "win_rate_pct": 45.36082474226804
+          },
+          "nested_outer_holm_adjusted_p": 1.0,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 1.830188679245283,
+            "mean_signals_per_week": 0.4199134199134199,
+            "median_signals_per_month": 1.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 97,
+            "weeks": 231,
+            "zero_signal_months": 11,
+            "zero_signal_weeks": 159
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": 0.003954225641019044,
+              "max_drawdown_r": -10.214329207739596,
+              "profit_factor": 1.0068837141703053,
+              "return_r": 0.38355988717884726,
+              "trades": 97,
+              "win_rate_pct": 40.20618556701031
+            },
+            "BASE": {
+              "expectancy_r": 0.039083694876518894,
+              "max_drawdown_r": -9.148387047814962,
+              "profit_factor": 1.094103503854568,
+              "return_r": 3.791118403022333,
+              "trades": 97,
+              "win_rate_pct": 45.36082474226804
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": 0.05531245063266422,
+              "max_drawdown_r": -6.98360641031763,
+              "profit_factor": 1.1405049284426203,
+              "return_r": 4.646245853143794,
+              "trades": 84,
+              "win_rate_pct": 42.857142857142854
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": 0.11506633926556398,
+              "max_drawdown_r": -5.198817552720452,
+              "profit_factor": 1.291497960891608,
+              "return_r": 8.97517446271399,
+              "trades": 78,
+              "win_rate_pct": 46.15384615384615
+            },
+            "FEES_X1_5": {
+              "expectancy_r": 0.019032108121647778,
+              "max_drawdown_r": -10.1339358100077,
+              "profit_factor": 1.0440934181818968,
+              "return_r": 1.8461144877998346,
+              "trades": 97,
+              "win_rate_pct": 43.29896907216495
+            },
+            "FEES_X2": {
+              "expectancy_r": -0.00016184374963145256,
+              "max_drawdown_r": -11.074201934838356,
+              "profit_factor": 0.9969063977308485,
+              "return_r": -0.0156988437142509,
+              "trades": 97,
+              "win_rate_pct": 41.23711340206185
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": 0.0316613476893069,
+              "max_drawdown_r": -9.532217689196322,
+              "profit_factor": 1.0754751975140422,
+              "return_r": 3.0711507258627693,
+              "trades": 97,
+              "win_rate_pct": 43.29896907216495
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.667,
+            "q05_mean_r": -0.10838434885729817,
+            "q10_mean_r": -0.07681893909636187,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.012776363928264811,
+            "q95_max_drawdown_abs": 0.02513916111504446,
+            "q99_max_drawdown_abs": 0.031750074062610226,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "VOLATILITY_COMPRESSION_EXPANSION__LONG",
+        "family_size": 12,
+        "holm_adjusted_p": 1.0,
+        "p_value": 0.33716570857285677,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "LONG",
+      "variant_count": 9
+    },
+    {
+      "android_integration_allowed": false,
+      "architecture": "VOLATILITY_COMPRESSION_EXPANSION",
+      "best_full_variant_holm_adjusted_p": 1.0,
+      "candidate": "VOLATILITY_COMPRESSION_EXPANSION__SHORT",
+      "gate": {
+        "checks": {
+          "active_months": true,
+          "annual_active_folds": true,
+          "annual_expectancy": true,
+          "annual_pf": true,
+          "annual_positive_ratio": true,
+          "bootstrap_probability": true,
+          "bootstrap_q10": true,
+          "central_expectancy": true,
+          "central_pf": true,
+          "central_trades": false,
+          "cost_expectancy": true,
+          "cost_pf": true,
+          "delay1_expectancy": true,
+          "delay1_pf": true,
+          "delay2_expectancy": true,
+          "frequency_month_mean": true,
+          "frequency_month_median": true,
+          "frequency_week_mean": true,
+          "full_variant_holm": false,
+          "gap_expectancy": true,
+          "monte_carlo_drawdown": true,
+          "neighbour_fraction": true,
+          "nested_expectancy": true,
+          "nested_pf": true,
+          "nested_trades": true,
+          "outer_holm": false,
+          "positive_month_ratio": false,
+          "positive_quarter_ratio": false,
+          "worst_annual": true,
+          "worst_quarter": false
+        },
+        "diagnostics": {
+          "annual_folds": [
+            {
+              "expectancy_r": 0.2513185544311114,
+              "fold": "Y2022",
+              "max_drawdown_r": -2.298754796284223,
+              "profit_factor": 1.9657805995872726,
+              "return_r": 6.0316453063466735,
+              "trades": 24,
+              "win_rate_pct": 45.83333333333333
+            },
+            {
+              "expectancy_r": 0.05716199144731017,
+              "fold": "Y2023",
+              "max_drawdown_r": -3.066182002543523,
+              "profit_factor": 1.2044847503188152,
+              "return_r": 1.028915846051583,
+              "trades": 18,
+              "win_rate_pct": 27.77777777777778
+            },
+            {
+              "expectancy_r": 0.1194283537949895,
+              "fold": "Y2024",
+              "max_drawdown_r": -3.6109361611219395,
+              "profit_factor": 1.3712567760658207,
+              "return_r": 2.9857088448747375,
+              "trades": 25,
+              "win_rate_pct": 44.0
+            },
+            {
+              "expectancy_r": 0.3949365020962297,
+              "fold": "Y2025",
+              "max_drawdown_r": -2.1959396656626247,
+              "profit_factor": 2.471282689776825,
+              "return_r": 9.478476050309514,
+              "trades": 24,
+              "win_rate_pct": 54.166666666666664
+            },
+            {
+              "expectancy_r": -0.010740519263918825,
+              "fold": "Y2026",
+              "max_drawdown_r": -3.5455360755908476,
+              "profit_factor": 0.969142496900932,
+              "return_r": -0.11814571190310708,
+              "trades": 11,
+              "win_rate_pct": 54.54545454545454
+            }
+          ],
+          "annual_outer": {
+            "expectancy_r": 0.19026078760469997,
+            "max_drawdown_r": -3.610936161121937,
+            "profit_factor": 1.651960602354099,
+            "return_r": 19.406600335679396,
+            "trades": 102,
+            "win_rate_pct": 45.09803921568628
+          },
+          "central": {
+            "expectancy_r": 0.1407322796407853,
+            "max_drawdown_r": -5.519960571932556,
+            "profit_factor": 1.436736400699479,
+            "return_r": 16.324944438331094,
+            "trades": 116,
+            "win_rate_pct": 43.96551724137931
+          },
+          "failed_checks": [
+            "central_trades",
+            "positive_month_ratio",
+            "positive_quarter_ratio",
+            "worst_quarter",
+            "full_variant_holm",
+            "outer_holm"
+          ],
+          "full_variant_holm_adjusted_p": 1.0,
+          "neighbour_positive_fraction": 1.0,
+          "nested_outer": {
+            "expectancy_r": 0.13476076226086653,
+            "max_drawdown_r": -4.519960571932556,
+            "profit_factor": 1.403293901241099,
+            "return_r": 13.476076226086654,
+            "trades": 100,
+            "win_rate_pct": 44.0
+          },
+          "nested_outer_holm_adjusted_p": 0.4798800299925019,
+          "signal_frequency": {
+            "calendar_end_exclusive": "2026-06-01T00:00:00+00:00",
+            "calendar_start": "2022-01-01T00:00:00+00:00",
+            "mean_signals_per_month": 1.8867924528301887,
+            "mean_signals_per_week": 0.4329004329004329,
+            "median_signals_per_month": 2.0,
+            "median_signals_per_week": 0.0,
+            "months": 53,
+            "signals": 100,
+            "weeks": 231,
+            "zero_signal_months": 13,
+            "zero_signal_weeks": 161
+          },
+          "stress": {
+            "ADVERSE_GAP_10BP": {
+              "expectancy_r": 0.0722531397823495,
+              "max_drawdown_r": -4.948613041912267,
+              "profit_factor": 1.203520755697408,
+              "return_r": 7.22531397823495,
+              "trades": 100,
+              "win_rate_pct": 38.0
+            },
+            "BASE": {
+              "expectancy_r": 0.13476076226086653,
+              "max_drawdown_r": -4.519960571932556,
+              "profit_factor": 1.403293901241099,
+              "return_r": 13.476076226086654,
+              "trades": 100,
+              "win_rate_pct": 44.0
+            },
+            "ENTRY_DELAY_1H": {
+              "expectancy_r": 0.13224310759527264,
+              "max_drawdown_r": -5.0078509313634365,
+              "profit_factor": 1.3608463051002593,
+              "return_r": 11.108421038002902,
+              "trades": 84,
+              "win_rate_pct": 42.857142857142854
+            },
+            "ENTRY_DELAY_2H": {
+              "expectancy_r": 0.02071824346325785,
+              "max_drawdown_r": -5.507860903499841,
+              "profit_factor": 1.05312753397804,
+              "return_r": 1.533150016281081,
+              "trades": 74,
+              "win_rate_pct": 32.432432432432435
+            },
+            "FEES_X1_5": {
+              "expectancy_r": 0.11261162812708995,
+              "max_drawdown_r": -4.546492093253059,
+              "profit_factor": 1.3319832860863374,
+              "return_r": 11.261162812708996,
+              "trades": 100,
+              "win_rate_pct": 42.0
+            },
+            "FEES_X2": {
+              "expectancy_r": 0.09150822811854113,
+              "max_drawdown_r": -4.89627580311232,
+              "profit_factor": 1.2656525160452163,
+              "return_r": 9.150822811854113,
+              "trades": 100,
+              "win_rate_pct": 40.0
+            },
+            "SLIPPAGE_X2": {
+              "expectancy_r": 0.127152599359423,
+              "max_drawdown_r": -4.533299120066795,
+              "profit_factor": 1.3787490738589119,
+              "return_r": 12.7152599359423,
+              "trades": 100,
+              "win_rate_pct": 42.0
+            }
+          },
+          "temporal_bootstrap": {
+            "block_months": 3,
+            "p_mean_positive": 0.9685,
+            "q05_mean_r": 0.013920868680305424,
+            "q10_mean_r": 0.03932297396081318,
+            "samples": 4000
+          },
+          "temporal_cluster_monte_carlo": {
+            "block_months": 3,
+            "cluster_key": "entry_time",
+            "q50_max_drawdown_abs": 0.0076603563735471725,
+            "q95_max_drawdown_abs": 0.012941807883360223,
+            "q99_max_drawdown_abs": 0.01569950082010486,
+            "samples": 4000
+          }
+        },
+        "passes_all": false
+      },
+      "nested_outer_selection_correction": {
+        "alpha": 0.05,
+        "candidate": "VOLATILITY_COMPRESSION_EXPANSION__SHORT",
+        "family_size": 12,
+        "holm_adjusted_p": 0.4798800299925019,
+        "p_value": 0.039990002499375156,
+        "passes_holm_fwer": false
+      },
+      "passes_all": false,
+      "round22_holdout_used": false,
+      "side": "SHORT",
+      "variant_count": 9
+    }
+  ],
+  "combined_portfolio": {
+    "constructed": false,
+    "passes_all": false,
+    "reason": "LONG_AND_SHORT_MUST_PASS_SEPARATELY"
+  },
+  "corpus_sha256": "358ed25f46e123deefeda86be464a34e912c53551ff7abc8285132a79fcacbc2",
+  "decision": "ROUND24_REJECTED_NO_DIRECTION_PASSED_ALL_LOCKED_GATES",
+  "eligible_direction_count": 0,
+  "eligible_directions": [],
+  "protocol_sha256": "ee6649b4667617805d2b4a88bb11dfb731302705d806e66a49fcf1eb1f25fa3e",
+  "research_only": true,
+  "round": 24,
+  "round22_holdout_loaded": false,
+  "round22_holdout_used_for_selection": false,
+  "round22_holdout_used_for_validation": false,
+  "scalp_engine_touched": false,
+  "stable": false
+}

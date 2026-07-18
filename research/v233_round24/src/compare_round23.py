@@ -29,6 +29,17 @@ def delta(before: dict, after: dict) -> dict:
     }
 
 
+def metrics_equal(left: dict, right: dict, tolerance: float = 1e-12) -> bool:
+    for key in METRICS:
+        a, b = left.get(key), right.get(key)
+        if a is None or b is None:
+            if a is not None or b is not None:
+                return False
+        elif abs(float(a) - float(b)) > tolerance:
+            return False
+    return True
+
+
 def central_gate(metrics: dict) -> bool:
     return bool(
         metrics["trades"] >= 100
@@ -70,8 +81,8 @@ def main() -> None:
     rows = []
     for candidate in ids:
         old_a, old_b, new_a, new_b = (m[candidate] for m in maps)
-        old_deterministic = old_a["trade_hash"] == old_b["trade_hash"]
-        new_deterministic = new_a["trade_hash"] == new_b["trade_hash"]
+        old_deterministic = old_a["trade_hash"] == old_b["trade_hash"] and metrics_equal(old_a["metrics"], old_b["metrics"])
+        new_deterministic = new_a["trade_hash"] == new_b["trade_hash"] and metrics_equal(new_a["metrics"], new_b["metrics"])
         selection = new_a["selection_correction"]
         direction_checks = {}
         for side in ("LONG", "SHORT"):
@@ -106,8 +117,10 @@ def main() -> None:
         )
 
     packaged_deltas = []
+    packaged_signature_matches = 0
     for row in rows:
         reference = row.get("packaged_round23_reproduction") or {}
+        packaged_signature_matches += bool(reference.get("trade_signature_match"))
         for value in (reference.get("metric_delta") or {}).values():
             if value is not None:
                 packaged_deltas.append(abs(float(value)))
@@ -116,7 +129,8 @@ def main() -> None:
         "legacy_deterministic": all(row["legacy_deterministic"] for row in rows),
         "corrected_deterministic": all(row["corrected_deterministic"] for row in rows),
         "legacy_packaged_reproduction_max_abs_metric_delta": max(packaged_deltas, default=0.0),
-        "legacy_packaged_reproduction_pass_at_1e_12": max(packaged_deltas, default=0.0) <= 1e-12,
+        "legacy_packaged_trade_signature_matches": packaged_signature_matches,
+        "legacy_packaged_reproduction_pass_at_1e_12": max(packaged_deltas, default=0.0) <= 1e-12 and packaged_signature_matches == 43,
         "trade_sequences_changed": sum(row["trade_sequence_changed"] for row in rows),
         "holm_fwer_pass_count": sum(row["selection_correction"]["passes_holm_fwer"] for row in rows),
         "classifications": pd.Series([row["classification"] for row in rows]).value_counts().sort_index().to_dict(),

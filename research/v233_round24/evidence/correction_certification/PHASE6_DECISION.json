@@ -1,0 +1,220 @@
+{
+  "phase": "ROUND23_PHASE6_CORRECTED",
+  "stable": false,
+  "admitted_count": 0,
+  "round22_holdout_used": false,
+  "scalp_engine_touched": false,
+  "android_integration_allowed": false,
+  "portfolio_rules": {
+    "rule_id": "ROUND23_CORRECTION_PORTFOLIO_V1",
+    "module_priority": [
+      "DRE_SHORT",
+      "VCE_SHORT",
+      "FOLLOW_SHORT",
+      "MOMENTUM_LONG",
+      "VCE_LONG"
+    ],
+    "same_direction_overlap": "REJECT_NEW",
+    "same_timestamp_collision": "FIXED_MODULE_PRIORITY",
+    "opposite_direction_overlap": "ALLOW_WITHIN_CAPS",
+    "risk_per_sleeve": 0.0015,
+    "max_total_risk": 0.003,
+    "leverage_per_sleeve_upper_bound": 1.0,
+    "max_total_leverage": 2.0
+  },
+  "protocol_hashes": {
+    "phase6_architectures": "0fccd2ed4c3d5752521a75c50a90b66f0ab4a417a751ae150665c35752e2fa12",
+    "criteria": "cb14cacdf893e38684f9d586f444cfc510d9b2ded8ccb261e53d6555ba53f7ef"
+  },
+  "candidate_reports": [
+    {
+      "architecture": "ASYMMETRIC_MULTI_PATTERN_ENSEMBLE",
+      "side": "LONG_SHORT_COMBINED_LOCKED",
+      "passes_all": false,
+      "central": {
+        "trades": 341,
+        "profit_factor": 1.1952900261072166,
+        "expectancy_r": 0.0727020694299754,
+        "return_r": 24.79140567562161,
+        "win_rate_pct": 44.868035190615835,
+        "max_drawdown_r": -11.018627267559957
+      },
+      "direction_metrics": {
+        "LONG": {
+          "trades": 155,
+          "profit_factor": 1.1360114732671471,
+          "expectancy_r": 0.05273296326178924,
+          "return_r": 8.173609305577331,
+          "win_rate_pct": 45.16129032258064,
+          "max_drawdown_r": -13.130541506081581
+        },
+        "SHORT": {
+          "trades": 186,
+          "profit_factor": 1.2474195348088561,
+          "expectancy_r": 0.08934299123679719,
+          "return_r": 16.617796370044278,
+          "win_rate_pct": 44.623655913978496,
+          "max_drawdown_r": -7.947962461264467
+        },
+        "COMBINED": {
+          "trades": 341,
+          "profit_factor": 1.1952900261072166,
+          "expectancy_r": 0.0727020694299754,
+          "return_r": 24.79140567562161,
+          "win_rate_pct": 44.868035190615835,
+          "max_drawdown_r": -11.018627267559957
+        }
+      },
+      "purged_monthly_outer": {
+        "trades": 252,
+        "profit_factor": 1.1774530125317173,
+        "expectancy_r": 0.06707096398645347,
+        "return_r": 16.901882924586275,
+        "win_rate_pct": 44.047619047619044,
+        "max_drawdown_r": -11.003131346909441
+      },
+      "expanding_annual_outer": {
+        "trades": 264,
+        "profit_factor": 1.1851809650694134,
+        "expectancy_r": 0.06837369900499334,
+        "return_r": 18.05065653731824,
+        "win_rate_pct": 44.31818181818182,
+        "max_drawdown_r": -12.675067398317188
+      },
+      "blocked_year_outer": {
+        "trades": 309,
+        "profit_factor": 1.1622340072495776,
+        "expectancy_r": 0.06102752611594001,
+        "return_r": 18.857505569825463,
+        "win_rate_pct": 43.689320388349515,
+        "max_drawdown_r": -13.026520220315422
+      },
+      "failed_checks": {
+        "LONG": [
+          "central_pf",
+          "central_exp",
+          "positive_month_ratio",
+          "positive_quarter_ratio",
+          "worst_quarter",
+          "nested_pf",
+          "nested_exp",
+          "annual_positive_ratio",
+          "annual_pf",
+          "annual_exp",
+          "blocked_positive_ratio",
+          "blocked_pf",
+          "cost_pf",
+          "iid_q10",
+          "month_boot_prob",
+          "month_boot_q10",
+          "mc_dd",
+          "regime_concentration"
+        ],
+        "SHORT": [
+          "central_pf",
+          "positive_month_ratio",
+          "positive_quarter_ratio",
+          "worst_quarter",
+          "blocked_positive_ratio",
+          "month_boot_prob",
+          "regime_concentration"
+        ],
+        "COMBINED": [
+          "central_pf",
+          "positive_quarter_ratio",
+          "worst_quarter"
+        ]
+      },
+      "report_path": "ASYMMETRIC_MULTI_PATTERN_ENSEMBLE/REPORT.json",
+      "minimum_annual_expectancy": -0.10135385381758587,
+      "mc_q95_dd": 0.027058076713514016
+    },
+    {
+      "architecture": "TWO_SLEEVE_MOMENTUM_ENSEMBLE",
+      "side": "LONG_SHORT_COMBINED_LOCKED",
+      "passes_all": false,
+      "central": {
+        "trades": 201,
+        "profit_factor": 1.4697629074526342,
+        "expectancy_r": 0.15441668696718133,
+        "return_r": 31.03775408040345,
+        "win_rate_pct": 48.756218905472636,
+        "max_drawdown_r": -5.047637699343783
+      },
+      "direction_metrics": {
+        "LONG": {
+          "trades": 56,
+          "profit_factor": 1.6200695470930744,
+          "expectancy_r": 0.17774987608439471,
+          "return_r": 9.953993060726104,
+          "win_rate_pct": 53.57142857142857,
+          "max_drawdown_r": -2.557897961524016
+        },
+        "SHORT": {
+          "trades": 145,
+          "profit_factor": 1.4218034216538864,
+          "expectancy_r": 0.14540524841156788,
+          "return_r": 21.083761019677343,
+          "win_rate_pct": 46.89655172413793,
+          "max_drawdown_r": -5.055211565716432
+        },
+        "COMBINED": {
+          "trades": 201,
+          "profit_factor": 1.4697629074526342,
+          "expectancy_r": 0.15441668696718133,
+          "return_r": 31.03775408040345,
+          "win_rate_pct": 48.756218905472636,
+          "max_drawdown_r": -5.047637699343783
+        }
+      },
+      "purged_monthly_outer": {
+        "trades": 134,
+        "profit_factor": 1.6100733401145473,
+        "expectancy_r": 0.1978654959950093,
+        "return_r": 26.513976463331247,
+        "win_rate_pct": 49.25373134328358,
+        "max_drawdown_r": -4.487718276629691
+      },
+      "expanding_annual_outer": {
+        "trades": 139,
+        "profit_factor": 1.7067859652643385,
+        "expectancy_r": 0.2183920284220442,
+        "return_r": 30.356491950664143,
+        "win_rate_pct": 51.07913669064749,
+        "max_drawdown_r": -4.487718276629691
+      },
+      "blocked_year_outer": {
+        "trades": 176,
+        "profit_factor": 1.5226223294838337,
+        "expectancy_r": 0.16373609649989504,
+        "return_r": 28.81755298398153,
+        "win_rate_pct": 48.86363636363637,
+        "max_drawdown_r": -4.487718276629691
+      },
+      "failed_checks": {
+        "LONG": [
+          "central_trades",
+          "positive_month_ratio",
+          "positive_quarter_ratio",
+          "worst_quarter",
+          "nested_trades",
+          "neighbours",
+          "month_boot_prob"
+        ],
+        "SHORT": [
+          "positive_month_ratio",
+          "positive_quarter_ratio",
+          "worst_quarter",
+          "regime_concentration"
+        ],
+        "COMBINED": [
+          "positive_month_ratio",
+          "worst_quarter"
+        ]
+      },
+      "report_path": "TWO_SLEEVE_MOMENTUM_ENSEMBLE/REPORT.json",
+      "minimum_annual_expectancy": 0.14438525510981842,
+      "mc_q95_dd": 0.015453137223673774
+    }
+  ]
+}

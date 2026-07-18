@@ -175,17 +175,18 @@ def nested_monthly(variants: list[Variant], trades: dict[str, pd.DataFrame], pro
     rules = protocol["validation"]
     start = pd.Timestamp(rules["outer_monthly_start"])
     end = pd.Timestamp(rules["outer_monthly_end_exclusive"])
-    purge = pd.Timedelta(hours=rules["outer_purge_hours"])
+    outer_purge = pd.Timedelta(hours=rules["outer_purge_hours"])
+    inner_purge = pd.Timedelta(hours=rules["inner_purge_hours"])
     embargo = pd.Timedelta(hours=rules["outer_embargo_hours_each_edge"])
     inner_embargo = pd.Timedelta(hours=rules["inner_embargo_hours_each_edge"])
     max_months = rules["inner_validation_months_max"]
     parts, folds = [], []
     for outer_start in pd.date_range(start, end - pd.offsets.MonthBegin(1), freq="MS"):
         outer_end = min(outer_start + pd.offsets.MonthBegin(1), end)
-        train_end = outer_start - purge
+        train_end = outer_start - outer_purge
         inner_start = max(pd.Timestamp("2021-01-01T00:00:00Z"), outer_start - pd.DateOffset(months=max_months))
         inner_test_start = inner_start + inner_embargo
-        inner_test_end = train_end - inner_embargo
+        inner_test_end = outer_start - inner_purge - inner_embargo
         scored = []
         for variant in variants:
             inner = slice_complete(trades[variant.candidate_id], inner_test_start, inner_test_end)

@@ -58,7 +58,15 @@ def canonical_trade_hash(trades: pd.DataFrame) -> str:
             "exit_reason",
             "entry",
             "exit",
+            "stop_initial",
+            "target_initial",
             "r_net",
+            "net_pnl",
+            "fees",
+            "bars_held",
+            "completed_bars_before_exit",
+            "exit_at_bar_open",
+            "partial_taken",
         )
         if c in trades
     ]
@@ -70,6 +78,22 @@ def canonical_trade_hash(trades: pd.DataFrame) -> str:
         frame[column] = frame[column].map(lambda x: "" if pd.isna(x) else f"{float(x):.12g}")
     payload = frame.fillna("").to_csv(index=False, lineterminator="\n").encode()
     return hashlib.sha256(payload).hexdigest()
+
+
+def canonical_trade_structure_hash(trades: pd.DataFrame) -> str:
+    """Hash trade ordering and lifecycle independently of CSV float rendering."""
+    if not len(trades):
+        return hashlib.sha256(b"EMPTY\n").hexdigest()
+    columns = [
+        column
+        for column in ("module", "architecture", "side", "signal_time", "entry_time", "exit_time", "exit_reason")
+        if column in trades
+    ]
+    frame = trades[columns].copy()
+    for column in ("signal_time", "entry_time", "exit_time"):
+        if column in frame:
+            frame[column] = pd.to_datetime(frame[column], utc=True).dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+    return hashlib.sha256(frame.fillna("").to_csv(index=False, lineterminator="\n").encode()).hexdigest()
 
 
 def metric_delta(before: dict, after: dict) -> dict:
@@ -117,6 +141,7 @@ def main() -> None:
     parser.add_argument("--engine-label", choices=("legacy", "corrected"), required=True)
     parser.add_argument("--corpus", type=Path, required=True)
     parser.add_argument("--reference-root", type=Path)
+    parser.add_argument("--reference-summary", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -124,6 +149,14 @@ def main() -> None:
     trades_dir.mkdir(exist_ok=True)
 
     e, p2, p3, p4, p5, p6, p7 = load_engine(args.engine_dir)
+    if args.reference_root and args.reference_summary:
+        raise RuntimeError("choose exactly one reference route")
+    reference_summary = None
+    if args.reference_summary:
+        payload = json.loads(args.reference_summary.read_text(encoding="utf-8"))
+        if payload["candidate_count"] != 43:
+            raise RuntimeError("reference summary candidate count mismatch")
+        reference_summary = {row["candidate"]: row for row in payload["candidates"]}
     raw = e.load_ohlcv(args.corpus)
     features = e.prepare_features(raw)
     rows = []
@@ -148,6 +181,7 @@ def main() -> None:
             "metrics": metrics,
             "direction_metrics": {**directions, "COMBINED": metrics},
             "trade_hash": canonical_trade_hash(trades),
+            "trade_structure_hash": canonical_trade_structure_hash(trades),
             "trade_file": f"trades/{file_name}",
         }
         if args.engine_label == "corrected":
@@ -168,7 +202,18 @@ def main() -> None:
                 "metrics": reference_metrics,
                 "metric_delta": metric_delta(reference_metrics, metrics),
                 "trade_hash": canonical_trade_hash(reference),
-                "trade_signature_match": canonical_trade_hash(reference) == canonical_trade_hash(trades),
+                "trade_structure_hash": canonical_trade_structure_hash(reference),
+                "trade_signature_match": canonical_trade_structure_hash(reference) == canonical_trade_structure_hash(trades),
+            }
+        elif reference_summary is not None:
+            reference = reference_summary[candidate_id]
+            expected_structure = reference.get("trade_structure_hash", reference.get("trade_hash"))
+            row["packaged_reference"] = {
+                "path": str(args.reference_summary),
+                "metrics": reference["metrics"],
+                "metric_delta": metric_delta(reference["metrics"], metrics),
+                "trade_structure_hash": expected_structure,
+                "trade_signature_match": expected_structure == canonical_trade_structure_hash(trades),
             }
         rows.append(row)
 

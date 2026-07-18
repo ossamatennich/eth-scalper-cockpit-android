@@ -1,0 +1,525 @@
+{
+  "source": "ETH_V233_ROUND23_HISTORICAL_VALIDATION_2026-07-18 packaged central_trades.csv",
+  "audit_package_sha256": "c2269992751bda3419a41e833f5ebcdfba4431660cba490b3787b1d4f943adcd",
+  "corpus_sha256": "358ed25f46e123deefeda86be464a34e912c53551ff7abc8285132a79fcacbc2",
+  "candidate_count": 43,
+  "tolerance": 1E-12,
+  "candidates": [
+    {
+      "candidate": "phase1/TREND_PULLBACK_RESUMPTION__LONG",
+      "metrics": {
+        "expectancy_r": -0.021625466185845543,
+        "max_drawdown_r": -28.724855513505368,
+        "profit_factor": 0.9497991554408687,
+        "return_r": -6.985025578028111,
+        "trades": 323,
+        "win_rate_pct": 38.69969040247678
+      },
+      "trade_structure_hash": "b92fd833e478759a00c9a26e7678db379dbd94625bf24e55a56777523e375ae6"
+    },
+    {
+      "candidate": "phase1/VOLATILITY_COMPRESSION_EXPANSION__LONG",
+      "metrics": {
+        "expectancy_r": 0.05423381288103336,
+        "max_drawdown_r": -13.075275805263004,
+        "profit_factor": 1.1441886632515497,
+        "return_r": 8.40624099656017,
+        "trades": 155,
+        "win_rate_pct": 43.225806451612904
+      },
+      "trade_structure_hash": "26df9820f6074f86135485b96a742f17570a9a7dd262f706fb70ec8a83e3ad9c"
+    },
+    {
+      "candidate": "phase1/RANGE_EXTREME_REVERSION__LONG",
+      "metrics": {
+        "expectancy_r": -0.11437612008628155,
+        "max_drawdown_r": -15.216179489495703,
+        "profit_factor": 0.7111414110843153,
+        "return_r": -13.496382170181223,
+        "trades": 118,
+        "win_rate_pct": 43.22033898305085
+      },
+      "trade_structure_hash": "7da5edcf9710bf6afdf91c0dd60582fe0b538f5bb7b88548b7d19c1e4f8a362b"
+    },
+    {
+      "candidate": "phase1/MOMENTUM_ACCELERATION__LONG",
+      "metrics": {
+        "expectancy_r": 0.1506334258442584,
+        "max_drawdown_r": -2.6498574866502214,
+        "profit_factor": 1.5051873603986543,
+        "return_r": 8.435471847278471,
+        "trades": 56,
+        "win_rate_pct": 50
+      },
+      "trade_structure_hash": "c3ae84ee1f7b6dccfef033b0107bbcc3fdcd52fac62d5c2e3865a53b32ff2c73"
+    },
+    {
+      "candidate": "phase1/DUAL_EMA_IMPULSE__LONG",
+      "metrics": {
+        "expectancy_r": 0.03522573547994146,
+        "max_drawdown_r": -11.782646597269833,
+        "profit_factor": 1.0933595869840385,
+        "return_r": 2.4658014835959023,
+        "trades": 70,
+        "win_rate_pct": 41.42857142857143
+      },
+      "trade_structure_hash": "296d465c2cbd648bc7bd291580e6d05b30612eb1e2767cbcd6e854f644661ed3"
+    },
+    {
+      "candidate": "phase1/TREND_PULLBACK_RESUMPTION__SHORT",
+      "metrics": {
+        "expectancy_r": -0.018442346343984693,
+        "max_drawdown_r": -37.615247961592786,
+        "profit_factor": 0.9551190578347641,
+        "return_r": -6.491705913082612,
+        "trades": 352,
+        "win_rate_pct": 34.94318181818182
+      },
+      "trade_structure_hash": "4e4b5cdc6cbe24d1e3dd1fe006efc4152ae60f2ade3b2df2fa3511a9f431c4fe"
+    },
+    {
+      "candidate": "phase1/VOLATILITY_COMPRESSION_EXPANSION__SHORT",
+      "metrics": {
+        "expectancy_r": 0.1628575137279546,
+        "max_drawdown_r": -5.551369511501683,
+        "profit_factor": 1.5225752707075364,
+        "return_r": 18.891471592442734,
+        "trades": 116,
+        "win_rate_pct": 44.827586206896555
+      },
+      "trade_structure_hash": "1d5a9dbd2d5c47d23bbf2ad0a5e59df83a1150931c5b297a01d05d8632cea369"
+    },
+    {
+      "candidate": "phase1/RANGE_EXTREME_REVERSION__SHORT",
+      "metrics": {
+        "expectancy_r": -0.16477417723556365,
+        "max_drawdown_r": -14.170579242258475,
+        "profit_factor": 0.6103189520240462,
+        "return_r": -14.170579242258473,
+        "trades": 86,
+        "win_rate_pct": 39.53488372093023
+      },
+      "trade_structure_hash": "c0c7b62a46551838a4130c66f3344aae3687861804adb72d2891bbe261513f2d"
+    },
+    {
+      "candidate": "phase1/MOMENTUM_ACCELERATION__SHORT",
+      "metrics": {
+        "expectancy_r": 0.09293723945241078,
+        "max_drawdown_r": -3.6853624021346922,
+        "profit_factor": 1.3491608085179696,
+        "return_r": 3.6245523386440204,
+        "trades": 39,
+        "win_rate_pct": 38.46153846153847
+      },
+      "trade_structure_hash": "b4601abad3fb313f91279fde8f89377e9077260c57d589cc5bc63f64a01f7e46"
+    },
+    {
+      "candidate": "phase1/DUAL_EMA_IMPULSE__SHORT",
+      "metrics": {
+        "expectancy_r": 0.08707079942624356,
+        "max_drawdown_r": -6.423451968628713,
+        "profit_factor": 1.2474843282309156,
+        "return_r": 7.923442747788164,
+        "trades": 91,
+        "win_rate_pct": 41.75824175824176
+      },
+      "trade_structure_hash": "ef3f984286600af7240f54f93eeb050467bfbc2d15dd35dd0e13fb48dfba66f5"
+    },
+    {
+      "candidate": "phase2/DIRECTIONAL_RANGE_EXPANSION__LONG",
+      "metrics": {
+        "expectancy_r": 0.011581870463523613,
+        "max_drawdown_r": -15.010959656169593,
+        "profit_factor": 1.0281882716671928,
+        "return_r": 2.1079004243612975,
+        "trades": 182,
+        "win_rate_pct": 42.857142857142854
+      },
+      "trade_structure_hash": "5abcdfce3e19908f8081a89190e4175809059aa12cd8e796a8bf4fa331ba3a77"
+    },
+    {
+      "candidate": "phase2/COMPRESSION_SCALE_OUT__LONG",
+      "metrics": {
+        "expectancy_r": 0.030909383991496474,
+        "max_drawdown_r": -11.678822336997154,
+        "profit_factor": 1.0819192954806807,
+        "return_r": 5.440051582503379,
+        "trades": 176,
+        "win_rate_pct": 52.27272727272727
+      },
+      "trade_structure_hash": "3bc39bda19d5a24e489860ff3d428d36f5c98fd7cc8239f35c6d176e3eaafbb0"
+    },
+    {
+      "candidate": "phase2/COMPRESSION_TIME_DECAY__LONG",
+      "metrics": {
+        "expectancy_r": 0.0011290772725242708,
+        "max_drawdown_r": -19.788841224772337,
+        "profit_factor": 1.0016074001527413,
+        "return_r": 0.21113744996203865,
+        "trades": 187,
+        "win_rate_pct": 33.155080213903744
+      },
+      "trade_structure_hash": "ff16526b2b87a7116acabe637f201c51ed2251717b34cc04da521b709782bd1e"
+    },
+    {
+      "candidate": "phase2/VOLATILITY_TRANSITION_BREAK__LONG",
+      "metrics": {
+        "expectancy_r": 0.15980853411431578,
+        "max_drawdown_r": -0.9999999999999998,
+        "profit_factor": 1.8360729511043201,
+        "return_r": 1.1186597388002104,
+        "trades": 7,
+        "win_rate_pct": 71.42857142857143
+      },
+      "trade_structure_hash": "59142fb2483f463edca67cfd7f08f883e7c815ec6cd12f9309f1708f5c9de8e0"
+    },
+    {
+      "candidate": "phase2/DIRECTIONAL_RANGE_EXPANSION__SHORT",
+      "metrics": {
+        "expectancy_r": 0.18414370065268088,
+        "max_drawdown_r": -5.485321970763975,
+        "profit_factor": 1.5708982757023089,
+        "return_r": 27.06912399594409,
+        "trades": 147,
+        "win_rate_pct": 49.65986394557823
+      },
+      "trade_structure_hash": "90ed9029c1d8c867bcad9e137cd2c44d186a699afdaa2ffac5e3e3956bc99af0"
+    },
+    {
+      "candidate": "phase2/COMPRESSION_SCALE_OUT__SHORT",
+      "metrics": {
+        "expectancy_r": 0.10821988691053325,
+        "max_drawdown_r": -4.616816498490374,
+        "profit_factor": 1.3357971345504929,
+        "return_r": 15.042564280564122,
+        "trades": 139,
+        "win_rate_pct": 59.71223021582733
+      },
+      "trade_structure_hash": "06732c7fea3d832ee8637258a48d077edbd58a99c8f9ab9b16cdde4b93a6617d"
+    },
+    {
+      "candidate": "phase2/COMPRESSION_TIME_DECAY__SHORT",
+      "metrics": {
+        "expectancy_r": 0.09037597348789213,
+        "max_drawdown_r": -5.747926703998303,
+        "profit_factor": 1.282465969044603,
+        "return_r": 12.562260314817006,
+        "trades": 139,
+        "win_rate_pct": 34.53237410071942
+      },
+      "trade_structure_hash": "4a4fb5b7c319b7d3ae5fd364e17d3b3e4680bf9500b0e82d83568443fcaefd30"
+    },
+    {
+      "candidate": "phase2/VOLATILITY_TRANSITION_BREAK__SHORT",
+      "metrics": {
+        "expectancy_r": 0.17859637796125594,
+        "max_drawdown_r": -4.102900737370968,
+        "profit_factor": 1.5840564241625905,
+        "return_r": 2.857542047380095,
+        "trades": 16,
+        "win_rate_pct": 50
+      },
+      "trade_structure_hash": "4f639eb4d8d60b41155a3e30687ee166f17dc5b465368b7d480874cdf98b525d"
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_SCALEOUT_ONLY__LONG",
+      "metrics": {
+        "expectancy_r": 0.04541584471106513,
+        "max_drawdown_r": -9.699235628612913,
+        "profit_factor": 1.1443430429795818,
+        "return_r": 8.084020358569592,
+        "trades": 178,
+        "win_rate_pct": 58.42696629213483
+      },
+      "trade_structure_hash": "7751aca7c2e4ba5b7e89ee2d90ac0c0f0818860d88d570cb55e7827a1a45bb8a"
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_RISK_SHAPED__LONG",
+      "metrics": {
+        "expectancy_r": 0.03558864078977046,
+        "max_drawdown_r": -9.325459671696859,
+        "profit_factor": 1.1294293074085153,
+        "return_r": 6.548309905317765,
+        "trades": 184,
+        "win_rate_pct": 50
+      },
+      "trade_structure_hash": "6b452adcc07738cc19032753a539ee34524da134504c19a4b73897c56833809b"
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_EARLY_PROTECT__LONG",
+      "metrics": {
+        "expectancy_r": 0.050823280051065046,
+        "max_drawdown_r": -10.394264812813036,
+        "profit_factor": 1.1445675077156117,
+        "return_r": 9.097367129140643,
+        "trades": 179,
+        "win_rate_pct": 37.988826815642454
+      },
+      "trade_structure_hash": "1ddba7a7c6c75a60322e9de7af34e4183324cc5d4101ba5edb66d298ea700c9e"
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_SCALEOUT_ONLY__SHORT",
+      "metrics": {
+        "expectancy_r": 0.11951270406238822,
+        "max_drawdown_r": -4.902052466640441,
+        "profit_factor": 1.430450294531163,
+        "return_r": 17.44885479310868,
+        "trades": 146,
+        "win_rate_pct": 63.013698630136986
+      },
+      "trade_structure_hash": "e3b0decdc98ef7cb3b9bcf70e9092456b1c813878fec2f19b2f55aa4778fe7cb"
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_RISK_SHAPED__SHORT",
+      "metrics": {
+        "expectancy_r": 0.04675534229553939,
+        "max_drawdown_r": -5.048982007120414,
+        "profit_factor": 1.1682701553664696,
+        "return_r": 7.060056686626448,
+        "trades": 151,
+        "win_rate_pct": 50.993377483443716
+      },
+      "trade_structure_hash": "c4705d2800900ce67e667e9b835299f96d4e71024c690190b991ac197aaaeb90"
+    },
+    {
+      "candidate": "phase3/DIRECTIONAL_RANGE_EXPANSION_EARLY_PROTECT__SHORT",
+      "metrics": {
+        "expectancy_r": 0.14372392341479112,
+        "max_drawdown_r": -4.752013213455989,
+        "profit_factor": 1.4675455039393672,
+        "return_r": 20.839968895144715,
+        "trades": 145,
+        "win_rate_pct": 34.48275862068966
+      },
+      "trade_structure_hash": "f2f5d829452f95820d2a1d5161f34cbb69627f0768e1f9e1179c43bc535cf344"
+    },
+    {
+      "candidate": "phase4/BREAKOUT_FOLLOW_THROUGH_CONFIRMATION__LONG",
+      "metrics": {
+        "expectancy_r": -0.034610623355107006,
+        "max_drawdown_r": -5,
+        "profit_factor": 0.8973103923567798,
+        "return_r": -1.1767611940736382,
+        "trades": 34,
+        "win_rate_pct": 44.11764705882353
+      },
+      "trade_structure_hash": "fdc2b60557f927b7bf090a415701e4e028cf232b5644fbab5aff70105243d061"
+    },
+    {
+      "candidate": "phase4/BREAKOUT_RETEST_CONTINUATION__LONG",
+      "metrics": {
+        "expectancy_r": -0.07301552495585792,
+        "max_drawdown_r": -20.051072389445114,
+        "profit_factor": 0.8225148768162999,
+        "return_r": -9.857095869040819,
+        "trades": 135,
+        "win_rate_pct": 35.55555555555556
+      },
+      "trade_structure_hash": "0475cbe969cebdf3517a7d96f3dceb92f7fc3731bf3d1d3f5dcb380296fcb3d1"
+    },
+    {
+      "candidate": "phase4/TREND_EMA_REJECTION__LONG",
+      "metrics": {
+        "expectancy_r": -0.02780753487465981,
+        "max_drawdown_r": -31.72928283678737,
+        "profit_factor": 0.9212938470519972,
+        "return_r": -15.349759250812216,
+        "trades": 552,
+        "win_rate_pct": 37.13768115942029
+      },
+      "trade_structure_hash": "80903f04e64038ffc6e8377733aa6843acabe4f6680972d795ba33128767523c"
+    },
+    {
+      "candidate": "phase4/CHANDELIER_TIME_SERIES_MOMENTUM__LONG",
+      "metrics": {
+        "expectancy_r": 0.02587795944902874,
+        "max_drawdown_r": -20.007956017756243,
+        "profit_factor": 1.0617356424850741,
+        "return_r": 6.029564551623697,
+        "trades": 233,
+        "win_rate_pct": 48.927038626609445
+      },
+      "trade_structure_hash": "05f9ee9f4b19db8b9569580b8c33b0587446b1a77b7061b9d9620974309b0b09"
+    },
+    {
+      "candidate": "phase4/BREAKOUT_FOLLOW_THROUGH_CONFIRMATION__SHORT",
+      "metrics": {
+        "expectancy_r": 0.11986230119516285,
+        "max_drawdown_r": -4.964744539661106,
+        "profit_factor": 1.4012384557186117,
+        "return_r": 5.154078951392003,
+        "trades": 43,
+        "win_rate_pct": 46.51162790697674
+      },
+      "trade_structure_hash": "3eb8e7b007524f7b9681b71b3efc33e5cec7f6edd449d164027283d6bcad9662"
+    },
+    {
+      "candidate": "phase4/BREAKOUT_RETEST_CONTINUATION__SHORT",
+      "metrics": {
+        "expectancy_r": -0.01683692592083542,
+        "max_drawdown_r": -9.920040011209888,
+        "profit_factor": 0.9543730052177612,
+        "return_r": -2.2561480733919463,
+        "trades": 134,
+        "win_rate_pct": 36.56716417910448
+      },
+      "trade_structure_hash": "e44bceaf2de6d925e519fdd7f8d985e6081501ba8091395e717a8b0589dfe2f9"
+    },
+    {
+      "candidate": "phase4/TREND_EMA_REJECTION__SHORT",
+      "metrics": {
+        "expectancy_r": -0.010486590629028899,
+        "max_drawdown_r": -23.7077514926172,
+        "profit_factor": 0.968583161002927,
+        "return_r": -5.4740003083530855,
+        "trades": 522,
+        "win_rate_pct": 36.7816091954023
+      },
+      "trade_structure_hash": "1a1382c2168c27df9507d5c12592ad7a14601dc647a89150d055d07d89200afb"
+    },
+    {
+      "candidate": "phase4/CHANDELIER_TIME_SERIES_MOMENTUM__SHORT",
+      "metrics": {
+        "expectancy_r": -0.005342619870105529,
+        "max_drawdown_r": -20.23622359026637,
+        "profit_factor": 0.9845010724939187,
+        "return_r": -1.2501730496046939,
+        "trades": 234,
+        "win_rate_pct": 49.14529914529914
+      },
+      "trade_structure_hash": "584af19d6acf97f1a843313b3df082ef5b2906439413205f4140fcd429b7df0a"
+    },
+    {
+      "candidate": "phase5/DRE_FAST_FAILURE__LONG",
+      "metrics": {
+        "expectancy_r": 0.0339362277769275,
+        "max_drawdown_r": -11.604908014015193,
+        "profit_factor": 1.1070130675179866,
+        "return_r": 6.346074594285443,
+        "trades": 187,
+        "win_rate_pct": 29.946524064171122
+      },
+      "trade_structure_hash": "d4d47ce91caf08229b5c277aae572d755d3f97fc1174d4dc36fc6da19af0a6d2"
+    },
+    {
+      "candidate": "phase5/DRE_FAST_FAILURE_SCALEOUT__LONG",
+      "metrics": {
+        "expectancy_r": 0.014121243936143134,
+        "max_drawdown_r": -9.800565637926791,
+        "profit_factor": 1.049902448249925,
+        "return_r": 2.640672616058766,
+        "trades": 187,
+        "win_rate_pct": 45.98930481283423
+      },
+      "trade_structure_hash": "564c162d3c73a03f2c02b4e7d23fee41d37c542eb9f0aaa91ded9926694158d4"
+    },
+    {
+      "candidate": "phase5/DRE_SHORT_HORIZON_ASYMMETRY__LONG",
+      "metrics": {
+        "expectancy_r": -0.018507817850678156,
+        "max_drawdown_r": -12.25744571158576,
+        "profit_factor": 0.930845854708913,
+        "return_r": -3.5164853916288497,
+        "trades": 190,
+        "win_rate_pct": 33.68421052631579
+      },
+      "trade_structure_hash": "217c4b211e5d41582e9ef094b0d441759157e7eae9c7eaf4b4f40e0af87afe80"
+    },
+    {
+      "candidate": "phase5/DRE_FAST_FAILURE__SHORT",
+      "metrics": {
+        "expectancy_r": 0.13924630868165022,
+        "max_drawdown_r": -5.440427124845391,
+        "profit_factor": 1.4975770980799836,
+        "return_r": 20.469207376202583,
+        "trades": 147,
+        "win_rate_pct": 31.97278911564626
+      },
+      "trade_structure_hash": "a6e3a662c183cafda762c824b87ce1a603a9757e0b1d86334b06c0e17fb0178b"
+    },
+    {
+      "candidate": "phase5/DRE_FAST_FAILURE_SCALEOUT__SHORT",
+      "metrics": {
+        "expectancy_r": 0.10441858657186089,
+        "max_drawdown_r": -5.079891809452303,
+        "profit_factor": 1.406819135873579,
+        "return_r": 15.45395081263541,
+        "trades": 148,
+        "win_rate_pct": 56.08108108108109
+      },
+      "trade_structure_hash": "10427d32a57ceea5f7d6d5702ad06ed0feecb328df117ca04672eae883b754c7"
+    },
+    {
+      "candidate": "phase5/DRE_SHORT_HORIZON_ASYMMETRY__SHORT",
+      "metrics": {
+        "expectancy_r": 0.07449149775158313,
+        "max_drawdown_r": -6.0430322295208,
+        "profit_factor": 1.2800020659897307,
+        "return_r": 11.471690653743803,
+        "trades": 154,
+        "win_rate_pct": 33.76623376623377
+      },
+      "trade_structure_hash": "b8fa21534b5f2d78174f3ac9d85b53061111b72a055662b3a20d1f49a41088db"
+    },
+    {
+      "candidate": "phase6/ASYMMETRIC_MULTI_PATTERN_ENSEMBLE",
+      "metrics": {
+        "expectancy_r": 0.1291126150462885,
+        "max_drawdown_r": -9.358536498601609,
+        "profit_factor": 1.3866150614789952,
+        "return_r": 59.520915536339,
+        "trades": 461,
+        "win_rate_pct": 45.98698481561822
+      },
+      "trade_structure_hash": "de47b73afa4dd91adcb7bdc761e1965a1407fe02b19eba2e4ccf1a7e36ff7b96"
+    },
+    {
+      "candidate": "phase6/TWO_SLEEVE_MOMENTUM_ENSEMBLE",
+      "metrics": {
+        "expectancy_r": 0.1748994869124264,
+        "max_drawdown_r": -4.985215859348713,
+        "profit_factor": 1.553961053389487,
+        "return_r": 35.50459584322256,
+        "trades": 203,
+        "win_rate_pct": 49.75369458128079
+      },
+      "trade_structure_hash": "f27649964ff02077cbd400366b25fa378fdd731bdc61c3679f30e47e6b0bee7a"
+    },
+    {
+      "candidate": "phase7/PORTFOLIO_LOSS_CLUSTER_COOLDOWN",
+      "metrics": {
+        "expectancy_r": 0.13577082411268848,
+        "max_drawdown_r": -7.758738203166267,
+        "profit_factor": 1.4037075400483312,
+        "return_r": 54.98718376563883,
+        "trades": 405,
+        "win_rate_pct": 46.666666666666664
+      },
+      "trade_structure_hash": "7617bce2386bd23f91cba0bedbc8f4913c9fd53cb184d7430dd821139bb7cc14"
+    },
+    {
+      "candidate": "phase7/SLEEVE_CONSECUTIVE_LOSS_COOLDOWN",
+      "metrics": {
+        "expectancy_r": 0.1335580540491712,
+        "max_drawdown_r": -8.887661651143258,
+        "profit_factor": 1.4065411605915012,
+        "return_r": 58.36486961948782,
+        "trades": 437,
+        "win_rate_pct": 46.681922196796336
+      },
+      "trade_structure_hash": "863048930807f54a0bf8bcbf320f64c8ae9ed91df3d6bb2036f4c649fa716360"
+    },
+    {
+      "candidate": "phase7/DUAL_RISK_GOVERNOR",
+      "metrics": {
+        "expectancy_r": 0.16193838964822915,
+        "max_drawdown_r": -9.896887261365254,
+        "profit_factor": 1.5084790058168216,
+        "return_r": 68.01412365225625,
+        "trades": 420,
+        "win_rate_pct": 48.333333333333336
+      },
+      "trade_structure_hash": "2f18c82944006ae7a9fac06fe61b5e76594fc9525f01ff74acf5af3df7b2c8a1"
+    }
+  ]
+}
