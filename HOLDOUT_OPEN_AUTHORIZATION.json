@@ -1,0 +1,7 @@
+{
+  "authorized": false,
+  "candidate_count": 0,
+  "candidate": null,
+  "reason": "CORPUS_AUDIT_FAILED_HOLDOUT_REMAINS_SEALED",
+  "no_parameter_change_after_authorization": true
+}
