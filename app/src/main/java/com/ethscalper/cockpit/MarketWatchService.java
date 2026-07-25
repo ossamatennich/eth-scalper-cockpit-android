@@ -65,7 +65,8 @@ public class MarketWatchService extends Service {
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final long OBSERVATION_MAX_AGE_MS = 15 * 60 * 1000L;
     private static final long LIMIT_ORDER_MAX_AGE_MS = 45 * 60 * 1000L;
-    private static final long LIMIT_MANUAL_ENTRY_DELAY_MS = 15 * 1000L;
+    // Diagnostic comparison only. It must never delay fill-time confirmation.
+    private static final long LEGACY_LIMIT_MANUAL_ENTRY_DELAY_MS = 15 * 1000L;
     private static final long ETH_BOOK_MAX_AGE_MS = 8_000L;
     private static final String PERSISTENT_DIR = "eth_scalper_overnight_recorder";
     private static final String PERSISTENT_OBSERVATIONS_FILE = "persistent_observation_journal.jsonl";
@@ -799,21 +800,16 @@ public class MarketWatchService extends Service {
         }
 
         SignalDecision rawDecision = signalEngine.evaluate(snapshot);
-
-        if (rawDecision != null && rawDecision.isSignal()
-                && shouldBlockByScenarioMemory(rawDecision, snapshot, now)) {
-            rawDecision = SignalDecision.waiting("V230_SCENARIO_MEMORY_VETO",
-                    "Scénario précédent encore vivant : signal inverse bloqué",
-                    rawDecision.score,
-                    rawDecision.impulse,
-                    rawDecision.resetConfirmed,
-                    rawDecision.movementOrigin,
-                    rawDecision.movementExtreme,
-                    rawDecision.movementDistance,
-                    rawDecision.movementConsumed);
-        }
-
-        SignalDecision decision = applyAiGate(snapshot, rawDecision, now);
+        boolean oppositeScenarioActive = rawDecision != null && rawDecision.isSignal()
+                && shouldBlockByScenarioMemory(rawDecision, snapshot, now);
+        String replayRiskDiagnostic = rawDecision != null && rawDecision.isSignal()
+                ? replayRiskVetoCode(snapshot, rawDecision, -1) : "";
+        CandidateLifecycle.AdmissionResult admission = CandidateLifecycle.admit(
+                rawDecision, feedFresh, oppositeScenarioActive, replayRiskDiagnostic);
+        SignalDecision decision = admission.decision;
+        aiStatus = AiAdvisor.isEnabled(this)
+                ? "AI_INFORMATIONAL_POST_SIGNAL"
+                : "AI_OFF_ENGINE_COMPLETE";
 
         recordMarketFrame(snapshot, decision, now);
 
@@ -824,8 +820,9 @@ public class MarketWatchService extends Service {
         }
 
         lastDecision = decision;
-        if (decision != null && decision.isSignal()) {
-            activateSignalDecision(decision, snapshot, now, "signal_observation", decision.reasonCode);
+        if (admission.observed && decision != null && decision.isSignal()) {
+            activateSignalDecision(decision, snapshot, now,
+                    admission.replayRiskReasonCode, admission.replayRiskDetail);
         }
     }
 
@@ -836,45 +833,11 @@ public class MarketWatchService extends Service {
         return now - lastEthBookTickerAt <= ETH_BOOK_MAX_AGE_MS;
     }
 
-    private SignalDecision applyAiGate(MarketSnapshot snapshot, SignalDecision decision, long now) {
-        if (decision == null || !decision.isSignal()) return decision;
-
-        SignalDecision replayDecision = applyReplayRiskArbiter(snapshot, decision, -1, false);
-        if (replayDecision == null || !replayDecision.isSignal()) {
-            aiStatus = "REPLAY_RISK_VETO";
-            return replayDecision;
-        }
-        aiStatus = AiAdvisor.isEnabled(this)
-                ? "AI_INFORMATIONAL_POST_SIGNAL"
-                : "AI_OFF_ENGINE_COMPLETE";
-        return replayDecision;
-    }
-
     private synchronized void handleAiResult(String signature, AiAdvisor.AiResult result) {
         lastAiDecisionJson = result == null ? "{}" : result.rawJson;
         aiStatus = result == null ? "AI_INFORMATIONAL_EMPTY" : "AI_INFORMATIONAL_RECORDED";
         broadcastStatus("ai_informational_recorded",
                 result == null ? "Avis IA informatif indisponible" : result.reason);
-    }
-
-    private SignalDecision applyReplayRiskArbiter(MarketSnapshot snapshot, SignalDecision decision,
-                                                   int aiConfidence, boolean afterAi) {
-        if (decision == null || !decision.isSignal()) return decision;
-
-        String veto = replayRiskVetoCode(snapshot, decision, aiConfidence);
-        if (veto != null && !veto.isEmpty()) {
-            return SignalDecision.waiting("V232_REPLAY_RISK_VETO",
-                    "Veto replay v2.32 : " + veto,
-                    decision.score,
-                    decision.impulse,
-                    decision.resetConfirmed,
-                    decision.movementOrigin,
-                    decision.movementExtreme,
-                    decision.movementDistance,
-                    decision.movementConsumed);
-        }
-
-        return decision;
     }
 
     private String replayRiskVetoCode(MarketSnapshot snapshot, SignalDecision decision, int aiConfidence) {
@@ -1278,7 +1241,9 @@ public class MarketWatchService extends Service {
                 + "|" + Math.round(decision.stopDistance * 10.0) + "|" + rpBucket + "|" + decision.family;
     }
 
-    private void activateSignalDecision(SignalDecision decision, MarketSnapshot snapshot, long now, String type, String message) {
+    private void activateSignalDecision(SignalDecision decision, MarketSnapshot snapshot, long now,
+                                        String replayRiskReasonCode,
+                                        String replayRiskDetail) {
         lastDecision = SignalDecision.waiting("V2327_ANALYSIS_IN_PROGRESS",
                 "Analyse du marché en cours", 0, "", false, 0, 0, 0, false);
         if (isDuplicateRecentObservation(decision, now)) {
@@ -1287,8 +1252,19 @@ public class MarketWatchService extends Service {
         }
 
         // Raw plans are internal candidates. They are never public and never audible.
-        recordObservedSignal(decision, snapshot, now);
-        broadcastStatus("analysis", "Analyse du marché en cours");
+        ObservedSignal item = recordObservedSignal(decision, snapshot, now,
+                replayRiskReasonCode, replayRiskDetail);
+        boolean confirmedNow = false;
+        if (item != null && CandidateLifecycle.readyForImmediateConfirmation(
+                item.marketableAtCreation, limitEntryTouched(item.signal, snapshot))) {
+            MarketSnapshot fillSnapshot = buildSnapshot(now);
+            markFirstEntryTouch(item, fillSnapshot, now);
+            confirmedNow = attemptCandidateFill(
+                    item, fillSnapshot, now, ethExecutionFeedFresh(now));
+        }
+        if (!confirmedNow) {
+            broadcastStatus("analysis", "Analyse du marché en cours");
+        }
     }
 
     private void requestPostPublicationAiAdvisory(MarketSnapshot snapshot, SignalDecision published) {
@@ -1358,6 +1334,9 @@ public class MarketWatchService extends Service {
             o.put("lastUpdateAt", item.lastUpdateAt);
             o.put("closedAt", item.closedAt);
             o.put("status", item.status);
+            o.put("exitAt", item.exitAt > 0 ? item.exitAt : JSONObject.NULL);
+            putMetric(o, "exitPrice", item.exitPrice);
+            o.put("exitReason", item.exitReason);
             o.put("entryState", item.entryTriggered ? "TRIGGERED" : "PENDING");
             o.put("entryTriggered", item.entryTriggered);
             o.put("entryTriggeredAt", item.entryTriggeredAt);
@@ -1378,6 +1357,11 @@ public class MarketWatchService extends Service {
             o.put("manualEntryAt", item.manualEntryConfirmed && item.manualEntryAt > 0
                     ? item.manualEntryAt : JSONObject.NULL);
             o.put("finalConfirmedAt", item.finalConfirmedAt > 0 ? item.finalConfirmedAt : JSONObject.NULL);
+            o.put("legacyManualEntryDelayMs", LEGACY_LIMIT_MANUAL_ENTRY_DELAY_MS);
+            o.put("legacyDelayApplied", false);
+            o.put("replayRiskReasonCode", item.replayRiskReasonCode);
+            o.put("replayRiskDetail", item.replayRiskDetail);
+            o.put("replayRiskVetoBlocking", item.replayRiskBlocking);
             o.put("executionClassification", executionClassification(item));
             o.put("entryRevalidationCode", item.entryRevalidationCode);
             o.put("confirmationReasonCode", item.lastConfirmationCode);
@@ -1391,16 +1375,18 @@ public class MarketWatchService extends Service {
             o.put("timeoutExtended", item.timeoutExtended);
             o.put("timeoutDecisionAt", item.timeoutDecisionAt);
             o.put("timeoutExtensionUntil", item.timeoutExtensionUntil);
-            putMetric(o, "unrealizedMove", favorableMoveFor(item.signal, item.lastPrice));
-            putMetric(o, "unrealizedNetAfterFees",
-                    favorableMoveFor(item.signal, item.lastPrice)
+            double unresolvedMove = terminalResolved(item)
+                    ? 0.0 : favorableMoveFor(item.signal, item.lastPrice);
+            putMetric(o, "unrealizedMove", unresolvedMove);
+            putMetric(o, "unrealizedNetAfterFees", terminalResolved(item)
+                    ? 0.0 : unresolvedMove
                             - SignalSafetyPolicies.RESEARCH_ROUND_TRIP_COST_PER_ETH);
             o.put("updates", item.updates);
 
             o.put("side", item.signal.side);
             o.put("family", item.signal.family);
             o.put("score", item.signal.score);
-            o.put("qty", item.signal.quantity);
+            o.put("qty", ConfirmedSignalPayload.from(item.signal).quantityForDiagnostic());
             o.put("entry", item.signal.entry);
             o.put("tp", item.signal.takeProfit);
             o.put("sl", item.signal.stopLoss);
@@ -1752,12 +1738,33 @@ public class MarketWatchService extends Service {
         return false;
     }
 
-    private void recordObservedSignal(SignalDecision decision, MarketSnapshot snapshot, long now) {
+    private ObservedSignal recordObservedSignal(SignalDecision decision, MarketSnapshot snapshot,
+                                                long now, String replayRiskReasonCode,
+                                                String replayRiskDetail) {
         double price = Double.isFinite(snapshot.ethLast) && snapshot.ethLast > 0 ? snapshot.ethLast : decision.entry;
         ObservedSignal item = new ObservedSignal(++observedSignalId, now, decision, price, snapshot);
+        item.replayRiskReasonCode = replayRiskReasonCode == null ? "" : replayRiskReasonCode;
+        item.replayRiskDetail = replayRiskDetail == null ? "" : replayRiskDetail;
+        item.replayRiskBlocking = false;
         observedSignals.addLast(item);
         while (observedSignals.size() > 200) observedSignals.removeFirst();
         persistObservedSignalEvent(item, "CREATED", snapshot, now);
+        return item;
+    }
+
+    private void markFirstEntryTouch(ObservedSignal item, MarketSnapshot snapshot, long now) {
+        if (item == null || snapshot == null || item.firstEntryTouchAt > 0) return;
+        item.firstEntryTouchAt = now;
+        item.firstEntryTouchPrice = snapshot.ethLast;
+        item.firstEntryTouchBid = snapshot.ethBid;
+        item.firstEntryTouchAsk = snapshot.ethAsk;
+        persistObservedSignalEvent(item, "FIRST_ENTRY_TOUCH", snapshot, now);
+    }
+
+    private boolean attemptCandidateFill(ObservedSignal item, MarketSnapshot snapshot,
+                                         long now, boolean feedFresh) {
+        if (item == null || snapshot == null || !"LIMIT_PENDING".equals(item.status)) return false;
+        return confirmCandidateAtFill(item, snapshot, now, feedFresh);
     }
 
     private void updateObservedSignals(MarketSnapshot snapshot, long now, boolean feedFresh) {
@@ -1775,26 +1782,14 @@ public class MarketWatchService extends Service {
 
             if ("LIMIT_PENDING".equals(item.status)) {
                 boolean entryTouched = limitEntryTouched(item.signal, snapshot);
-                if (entryTouched && item.firstEntryTouchAt <= 0) {
-                    item.firstEntryTouchAt = now;
-                    item.firstEntryTouchPrice = price;
-                    item.firstEntryTouchBid = snapshot.ethBid;
-                    item.firstEntryTouchAsk = snapshot.ethAsk;
-                    persistObservedSignalEvent(item, "FIRST_ENTRY_TOUCH", snapshot, now);
-                }
+                if (entryTouched) markFirstEntryTouch(item, snapshot, now);
 
-                if (now - item.createdAt >= LIMIT_MANUAL_ENTRY_DELAY_MS && entryTouched) {
-                    String triggerVeto = entryTriggerRevalidationCode(item, snapshot, price);
-                    if (!triggerVeto.isEmpty()) {
-                        item.status = "ENTRY_REVALIDATION_REJECTED";
-                        item.entryRevalidationCode = triggerVeto;
-                        item.closedAt = now;
-                        notifyObservationStatus(item, "ENTRY_REVALIDATION_REJECTED");
-                        persistObservedSignalEvent(item, "ENTRY_REVALIDATION_REJECTED_" + triggerVeto, snapshot, now);
-                        continue;
-                    }
-
-                    if (!confirmCandidateAtFill(item, snapshot, now, feedFresh)) continue;
+                if (CandidateLifecycle.readyForImmediateConfirmation(
+                        item.marketableAtCreation, entryTouched)) {
+                    // Rebuild at the actual trigger; the legacy 15-second delay is diagnostic only.
+                    MarketSnapshot fillSnapshot = buildSnapshot(now);
+                    if (!attemptCandidateFill(item, fillSnapshot, now,
+                            ethExecutionFeedFresh(now))) continue;
                 } else {
                     String pendingStatus = "ACTIVE";
 
@@ -1814,8 +1809,7 @@ public class MarketWatchService extends Service {
                     }
 
                     if (!"ACTIVE".equals(pendingStatus)) {
-                        item.status = pendingStatus;
-                        item.closedAt = now;
+                        closeObservedSignal(item, pendingStatus, snapshot, now);
                         notifyObservationStatus(item, pendingStatus);
                         persistObservedSignalEvent(item, pendingStatus, snapshot, now);
                     }
@@ -1860,8 +1854,7 @@ public class MarketWatchService extends Service {
             }
 
             if (!"ACTIVE".equals(status) && !"NONE".equals(status) && !"NO_PRICE".equals(status)) {
-                item.status = status;
-                item.closedAt = now;
+                closeObservedSignal(item, status, snapshot, now);
                 notifyObservationStatus(item, status);
                 persistObservedSignalEvent(item, status, snapshot, now);
             }
@@ -1871,53 +1864,28 @@ public class MarketWatchService extends Service {
     private boolean confirmCandidateAtFill(ObservedSignal item, MarketSnapshot snapshot,
                                            long now, boolean feedFresh) {
         SignalDecision candidate = item.signal;
-        String family = candidate.family == null ? "" : candidate.family;
-        boolean continuation = family.contains("CONTINUATION");
-
-        ContinuationConfirmation.Result confirmation = null;
-        if (continuation) {
-            confirmation = ContinuationConfirmation.evaluate(candidate.side, snapshot, feedFresh,
-                    item.createdAt, pendingProgressBeforeFill(item));
-            item.lastConfirmationCode = confirmation.reasonCode;
+        boolean continuation = ContinuationConfirmation.requiresP01(candidate.family);
+        CandidateLifecycle.FillResult fill = CandidateLifecycle.processAtFill(
+                candidate, snapshot, feedFresh, item.createdAt, pendingProgressBeforeFill(item));
+        ContinuationConfirmation.Result confirmation = fill.continuationConfirmation;
+        item.lastConfirmationCode = fill.reasonCode;
+        if (confirmation != null) {
             item.p01Move1Aligned = confirmation.move1Aligned;
             item.p01Move3Aligned = confirmation.move3Aligned;
             item.p01Move8Aligned = confirmation.move8Aligned;
             item.p01Move15Aligned = confirmation.move15Aligned;
             item.p01Flow30Aligned = confirmation.flow30Aligned;
-            if (!confirmation.confirmed) {
-                item.status = "ENTRY_REVALIDATION_REJECTED";
-                item.entryRevalidationCode = confirmation.reasonCode;
-                item.closedAt = now;
-                persistObservedSignalEvent(item, "ENTRY_REVALIDATION_REJECTED_" + confirmation.reasonCode,
-                        snapshot, now);
-                return false;
-            }
+        }
+        if (!fill.confirmed) {
+            item.status = "ENTRY_REVALIDATION_REJECTED";
+            item.entryRevalidationCode = fill.reasonCode;
+            item.closedAt = now;
+            persistObservedSignalEvent(item,
+                    "ENTRY_REVALIDATION_REJECTED_" + fill.reasonCode, snapshot, now);
+            return false;
         }
 
-        boolean premium15m = confirmation != null && confirmation.premium15m;
-        String finalFamily = family;
-        String finalCode;
-        String finalText;
-        if (continuation) {
-            finalFamily += " · P01" + (premium15m ? " · P01_PREMIUM_15M" : "");
-            finalCode = ContinuationConfirmation.P01_CONFIRMED;
-            finalText = premium15m
-                    ? "CONTINUATION confirmée — Qualité premium 15 min"
-                    : "CONTINUATION confirmée";
-        } else {
-            // RANGE_FADE keeps its own engine and vetoes; P01 is intentionally not applied.
-            finalCode = "RANGE_FADE_CONFIRMED_AT_FILL";
-            finalText = "RANGE_FADE confirmé au niveau d'entrée";
-        }
-
-        int finalQuantity = SignalEngine.computeFinalConfirmedQuantity(candidate.score);
-        SignalDecision published = SignalDecision.confirmed(candidate.side, finalFamily,
-                finalCode, finalText, candidate.score, finalQuantity,
-                candidate.entry, candidate.takeProfit, candidate.stopLoss,
-                candidate.targetMove, candidate.stopDistance, candidate.impulse,
-                candidate.resetConfirmed, candidate.movementOrigin,
-                candidate.movementExtreme, candidate.movementDistance);
-
+        SignalDecision published = fill.publishedSignal;
         item.signal = published;
         item.status = "ACTIVE";
         item.entryTriggered = true;
@@ -1926,7 +1894,7 @@ public class MarketWatchService extends Service {
         item.simulatedFillAt = now;
         item.simulatedFillPrice = theoreticalFillPrice(published, snapshot);
         item.finalConfirmedAt = now;
-        item.premium15m = premium15m;
+        item.premium15m = fill.premium15m;
         item.maxPrice = snapshot.ethLast;
         item.minPrice = snapshot.ethLast;
         item.mfe = 0;
@@ -1940,11 +1908,11 @@ public class MarketWatchService extends Service {
         if (continuation) lastP01ConfirmedAt = now;
         lastDecision = published;
 
-        persistObservedSignalEvent(item, continuation ? finalCode : "RANGE_FADE_FINAL_CONFIRMED",
+        persistObservedSignalEvent(item, continuation ? fill.reasonCode : "RANGE_FADE_FINAL_CONFIRMED",
                 snapshot, now);
         notifyObservationSignal(item);
         requestPostPublicationAiAdvisory(snapshot, published);
-        broadcastStatus("signal_final_confirmed", finalCode);
+        broadcastStatus("signal_final_confirmed", fill.reasonCode);
         return true;
     }
 
@@ -1979,69 +1947,6 @@ public class MarketWatchService extends Service {
         if ("LONG".equals(signal.side)) return price - signal.entry;
         if ("SHORT".equals(signal.side)) return signal.entry - price;
         return -99.0;
-    }
-
-    private String entryTriggerRevalidationCode(ObservedSignal item, MarketSnapshot s, double price) {
-        if (item == null || item.signal == null || s == null) return "DONNEES_MANQUANTES";
-
-        int side = "LONG".equals(item.signal.side) ? 1 : "SHORT".equals(item.signal.side) ? -1 : 0;
-        if (side == 0) return "COTE_INVALIDE";
-
-        double stop = Math.max(0.10, item.signal.stopDistance);
-        double adverse = adverseMoveFor(item.signal, price);
-
-        // La LIMIT a été traversée trop loin : le contexte d'entrée n'est plus celui du signal.
-        if (adverse >= Math.min(0.30, stop * 0.24)) {
-            return "PRIX_DEJA_TROP_LOIN";
-        }
-
-        double avg = Math.max(0.35, s.avgRange20);
-        double move1 = side * s.move1;
-        double move3 = side * s.move3;
-        double move8 = side * s.move8;
-        double flow30 = side * s.flow30;
-        double flow60 = side * s.flow60;
-        double btc8 = side * s.btcMove8;
-        double rp = Double.isFinite(s.rangePosition) ? s.rangePosition : 0.5;
-        String family = item.signal.family == null ? "" : item.signal.family;
-
-        if (family.contains("CONTINUATION")) {
-            boolean extendedWithoutFreshFlow = move3 > avg * 2.80
-                    && move8 > avg * 2.50
-                    && flow30 < 0.05;
-            if (extendedWithoutFreshFlow) return "CONTINUATION_CONSOMMEE";
-
-            boolean flowPriceDivergence = flow60 > 1.50
-                    && move3 < avg * 0.60
-                    && move8 < avg * 0.80;
-            if (flowPriceDivergence) return "CONTINUATION_DIVERGENCE_FLOW_PRIX";
-        }
-
-        if (family.contains("RANGE_FADE")) {
-            if (side > 0) {
-                boolean oppositeDrift = move8 < -avg * 1.30
-                        && move3 < 0
-                        && flow30 < 0;
-                if (oppositeDrift) return "RANGE_FADE_LONG_DERIVE_OPPOSEE";
-
-                boolean persistentTrend = move8 < -avg * 2.50
-                        && (flow30 < 0 || btc8 < -0.0020);
-                if (persistentTrend) return "RANGE_FADE_LONG_TENDANCE_PERSISTANTE";
-
-                boolean noReboundWithBtc = move8 < -avg * 2.20
-                        && move1 < 0
-                        && btc8 < -0.0010
-                        && flow60 < 0.10;
-                if (noReboundWithBtc) return "RANGE_FADE_LONG_SANS_REBOND";
-            } else {
-                boolean notExtremeAndTrendAlive = move8 < -avg * 2.00
-                        && rp < 0.85
-                        && flow30 < 0;
-                if (notExtremeAndTrendAlive) return "RANGE_FADE_SHORT_PAS_ASSEZ_EXTREME";
-            }
-        }
-
-        return "";
     }
 
     private boolean shouldExtendAfterRealEntryTimeout(ObservedSignal item, MarketSnapshot snapshot) {
@@ -2243,7 +2148,7 @@ public class MarketWatchService extends Service {
 
         for (ObservedSignal item : observedSignals) {
             if (item == null || item.signal == null) continue;
-            if (!"ACTIVE".equals(item.status) && !"LIMIT_PENDING".equals(item.status)) continue;
+            if (!SignalSafetyPolicies.isOpenActiveRisk(item.status, item.entryTriggered)) continue;
             if (!oppositeSide(item.signal.side, candidate.side)) continue;
 
             if (shouldKeepScenarioAlive(item, snapshot, now)) {
@@ -2362,16 +2267,29 @@ public class MarketWatchService extends Service {
         return item.mae / stop;
     }
 
+    private static void closeObservedSignal(ObservedSignal item, String status,
+                                            MarketSnapshot snapshot, long now) {
+        if (item == null) return;
+        item.status = status;
+        item.closedAt = now;
+        CandidateLifecycle.TerminalResolution resolution = CandidateLifecycle.resolveTerminal(
+                status, item.signal, item.entryTriggered, now,
+                snapshot == null ? item.lastPrice : snapshot.ethLast);
+        if (resolution.terminalResolved) {
+            item.exitAt = resolution.exitAt;
+            item.exitPrice = resolution.exitPrice;
+            item.exitReason = resolution.exitReason;
+        }
+    }
+
     private static boolean terminalResolved(ObservedSignal item) {
-        if (item == null) return false;
-        return "TP_TOUCHED".equals(item.status) || "SL_TOUCHED".equals(item.status);
+        return item != null && SignalSafetyPolicies.isTerminalStatus(item.status);
     }
 
     private static double realizedMovePerEth(ObservedSignal item) {
-        if (item == null || item.signal == null) return 0.0;
-        if ("TP_TOUCHED".equals(item.status)) return item.signal.targetMove;
-        if ("SL_TOUCHED".equals(item.status)) return -item.signal.stopDistance;
-        return 0.0;
+        if (item == null || item.signal == null || !item.entryTriggered
+                || !terminalResolved(item) || !Double.isFinite(item.exitPrice)) return 0.0;
+        return favorableMoveFor(item.signal, item.exitPrice);
     }
 
     private static String executionClassification(ObservedSignal item) {
@@ -2386,17 +2304,20 @@ public class MarketWatchService extends Service {
                 item.firstEntryTouchAt,
                 pendingProgressBeforeFill(item),
                 item.entryTriggered,
-                terminalResolved(item));
+                item.status);
     }
 
     private static void appendSeparatedResultFields(JSONObject object, ObservedSignal item, long now)
             throws Exception {
         boolean terminal = terminalResolved(item);
         double markedMove = favorableMoveFor(item.signal, item.lastPrice);
-        long riskAge = item.entryTriggeredAt > 0 ? Math.max(0L, now - item.entryTriggeredAt) : 0L;
+        long riskAge = SignalSafetyPolicies.isOpenActiveRisk(item.status, item.entryTriggered)
+                && item.entryTriggeredAt > 0 ? Math.max(0L, now - item.entryTriggeredAt) : 0L;
         SignalSafetyPolicies.RealizedAndLatentResult result = SignalSafetyPolicies.result(
-                terminal, realizedMovePerEth(item), markedMove, item.signal.quantity, riskAge);
+                terminal, item.entryTriggered, realizedMovePerEth(item), markedMove,
+                item.signal.quantity, riskAge);
         object.put("terminalResolved", result.terminalResolved);
+        object.put("realizedResult", terminal && item.entryTriggered);
         putMetric(object, "realizedGross", result.realizedGross);
         putMetric(object, "realizedFees", result.realizedFees);
         putMetric(object, "realizedNet", result.realizedNet);
@@ -2425,6 +2346,9 @@ public class MarketWatchService extends Service {
             o.put("lastUpdateAt", item.lastUpdateAt);
             o.put("closedAt", item.closedAt);
             o.put("status", item.status);
+            o.put("exitAt", item.exitAt > 0 ? item.exitAt : JSONObject.NULL);
+            putMetric(o, "exitPrice", item.exitPrice);
+            o.put("exitReason", item.exitReason);
             o.put("entryState", item.entryTriggered ? "TRIGGERED" : "PENDING");
             o.put("entryTriggered", item.entryTriggered);
             o.put("entryTriggeredAt", item.entryTriggeredAt);
@@ -2444,6 +2368,11 @@ public class MarketWatchService extends Service {
             o.put("manualEntryPrice", item.manualEntryConfirmed ? item.manualEntryPrice : JSONObject.NULL);
             o.put("manualEntryAt", item.manualEntryConfirmed && item.manualEntryAt > 0
                     ? item.manualEntryAt : JSONObject.NULL);
+            o.put("legacyManualEntryDelayMs", LEGACY_LIMIT_MANUAL_ENTRY_DELAY_MS);
+            o.put("legacyDelayApplied", false);
+            o.put("replayRiskReasonCode", item.replayRiskReasonCode);
+            o.put("replayRiskDetail", item.replayRiskDetail);
+            o.put("replayRiskVetoBlocking", item.replayRiskBlocking);
             o.put("executionClassification", executionClassification(item));
             o.put("confirmationReasonCode", item.lastConfirmationCode);
             o.put("p01Premium15m", item.premium15m);
@@ -2452,7 +2381,7 @@ public class MarketWatchService extends Service {
             o.put("side", item.signal.side);
             o.put("family", item.signal.family);
             o.put("score", item.signal.score);
-            o.put("qty", item.signal.quantity);
+            o.put("qty", ConfirmedSignalPayload.from(item.signal).quantityForDiagnostic());
             o.put("entry", item.signal.entry);
             o.put("tp", item.signal.takeProfit);
             o.put("sl", item.signal.stopLoss);
@@ -2471,9 +2400,11 @@ public class MarketWatchService extends Service {
             o.put("scenarioMemoryProtected", shouldKeepScenarioAlive(item, buildSnapshot(System.currentTimeMillis()), System.currentTimeMillis()));
 
             if ("LONG".equals(item.signal.side)) {
-                putMetric(o, "unrealizedMove", item.lastPrice - item.signal.entry);
+                putMetric(o, "unrealizedMove",
+                        terminalResolved(item) ? 0.0 : item.lastPrice - item.signal.entry);
             } else if ("SHORT".equals(item.signal.side)) {
-                putMetric(o, "unrealizedMove", item.signal.entry - item.lastPrice);
+                putMetric(o, "unrealizedMove",
+                        terminalResolved(item) ? 0.0 : item.signal.entry - item.lastPrice);
             }
 
             out.put(o);
@@ -2921,12 +2852,10 @@ public class MarketWatchService extends Service {
     private void notifyObservationSignal(ObservedSignal item) {
         if (item == null || item.signal == null || item.finalConfirmedAt <= 0) return;
         SignalDecision decision = item.signal;
+        ConfirmedSignalPayload payload = ConfirmedSignalPayload.from(decision);
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         String title = "🚨 SIGNAL ETH CONFIRMÉ — " + decision.side;
-        String body = String.format(Locale.US,
-                "LIMIT %.2f · TP %.2f · SL %.2f · %d ETH%s",
-                decision.entry, decision.takeProfit, decision.stopLoss, decision.quantity,
-                item.premium15m ? " · PREMIUM 15M" : "");
+        String body = payload.notificationBody(item.premium15m);
 
         if (manager != null) {
             String signature = item.notificationSignature;
@@ -3238,9 +3167,10 @@ public class MarketWatchService extends Service {
     }
 
     private static JSONObject signalJson(SignalDecision decision) throws Exception {
+        ConfirmedSignalPayload payload = ConfirmedSignalPayload.from(decision);
         JSONObject signal = new JSONObject();
         signal.put("side", decision.side); signal.put("family", decision.family);
-        signal.put("score", decision.score); signal.put("qty", decision.quantity);
+        signal.put("score", decision.score); signal.put("qty", payload.quantityForScreen());
         signal.put("entry", decision.entry); signal.put("tp", decision.takeProfit);
         signal.put("sl", decision.stopLoss); signal.put("targetMove", decision.targetMove);
         signal.put("stopDistance", decision.stopDistance); signal.put("reason", decision.reasonText);
@@ -3720,6 +3650,9 @@ public class MarketWatchService extends Service {
         SignalDecision signal;
         long lastUpdateAt;
         long closedAt;
+        long exitAt;
+        double exitPrice = Double.NaN;
+        String exitReason = "";
         int updates;
         String status = "LIMIT_PENDING";
         double lastPrice;
@@ -3755,6 +3688,9 @@ public class MarketWatchService extends Service {
         boolean alertSent;
         String entryRevalidationCode = "";
         String lastConfirmationCode = "";
+        String replayRiskReasonCode = "";
+        String replayRiskDetail = "";
+        boolean replayRiskBlocking;
         double p01Move1Aligned = Double.NaN;
         double p01Move3Aligned = Double.NaN;
         double p01Move8Aligned = Double.NaN;

@@ -83,17 +83,17 @@ public class SignalEngineRulesTest {
     @Test public void executionClassificationsAreDistinct() {
         long created = 1_000;
         assertEquals("FAST_DEPARTURE", SignalSafetyPolicies.executionClassification(
-                false, created, created + 120_000, 0, 0, false, false));
+                false, created, created + 120_000, 0, 0, false, "LIMIT_PENDING"));
         assertEquals("DELAYED_DEPARTURE", SignalSafetyPolicies.executionClassification(
-                false, created, created + 120_001, 0, 0, false, false));
+                false, created, created + 120_001, 0, 0, false, "LIMIT_PENDING"));
         assertEquals("POST_TIMEOUT_DEPARTURE", SignalSafetyPolicies.executionClassification(
-                false, created, created + 15 * 60_000L, 0, 0, false, false));
+                false, created, created + 15 * 60_000L, 0, 0, false, "LIMIT_PENDING"));
         assertEquals("LATE_RETURN_PARTIAL", SignalSafetyPolicies.executionClassification(
-                false, created, created + 100_000, created + 200_000, .50, true, false));
+                false, created, created + 100_000, created + 200_000, .50, true, "ACTIVE"));
         assertEquals("LATE_RETURN_NEAR_TARGET", SignalSafetyPolicies.executionClassification(
-                false, created, created + 100_000, created + 200_000, .80, true, false));
+                false, created, created + 100_000, created + 200_000, .80, true, "ACTIVE"));
         assertEquals("OPEN_ACTIVE_RISK", SignalSafetyPolicies.executionClassification(
-                true, created, 0, created, 0, true, false));
+                true, created, 0, created, 0, true, "ACTIVE"));
     }
 
     @Test public void openRiskIsNotRealizedLoss() {

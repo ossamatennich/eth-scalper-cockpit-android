@@ -16,22 +16,21 @@ Le dépôt ne contenait pas de wrapper fonctionnel et `gradle` n’était pas in
 Équivalents locaux des commandes demandées :
 
 ```powershell
-gradle test
-gradle test --rerun-tasks
-gradle assembleDebug
-gradle assembleDebug --rerun-tasks
+gradle --no-daemon --max-workers=1 test --rerun-tasks
+gradle --no-daemon --max-workers=1 assembleDebug --rerun-tasks
 ```
 
-Les commandes ont été exécutées avec le binaire Gradle 8.10.2 temporaire et les variables `JAVA_HOME`, `ANDROID_HOME` et `ANDROID_SDK_ROOT` positionnées pour le processus.
+Les commandes ont été exécutées avec le binaire Gradle 8.10.2 temporaire, une JVM locale plafonnée à 384 Mio et les variables `JAVA_HOME`/`ANDROID_HOME` positionnées pour le processus.
 
 ## Résultats
 
-- 33 tests unitaires distincts.
-- 33/33 réussis sur la variante debug.
-- 33/33 réussis sur la variante release.
+- 41 tests distincts, dont 8 tests d’intégration du parcours candidat.
+- 41/41 réussis sur la variante debug.
+- 41/41 réussis sur la variante release.
+- 82 exécutions réussies au total sur la dernière passe complète.
 - 0 échec, 0 erreur, 0 test ignoré.
-- Deux passes complètes réussies ; la seconde a utilisé `--rerun-tasks` pour vérifier le déterminisme au lieu d’accepter seulement l’état `UP-TO-DATE`.
-- `assembleDebug` réussi, puis reconstruit avec `--rerun-tasks`.
+- Deux passes complètes de 41 tests ont réussi pendant le correctif, plus une passe ciblée des 8 tests d’intégration.
+- La dernière passe complète et `assembleDebug` ont utilisé `--rerun-tasks`.
 
 Couverture principale :
 
@@ -49,18 +48,26 @@ Couverture principale :
 - séparation résultat réalisé/latent
 - action de gestion après 120 secondes
 - trading réel désactivé.
+- CONTINUATION historiquement marquée `V232_REPLAY_RISK_VETO` admise jusqu’à P01
+- publication finale après revalidation + C04/C07/C08/P01
+- `marketableAtCreation` confirmé au même instant, sans délai historique
+- silence avant publication et un seul son par signature finale
+- invalidation/timeout remplis terminaux, réalisés et jamais `OPEN_ACTIVE_RISK`
+- quantité identique plan/notification/écran/diagnostic
+- RANGE_FADE toujours protégé par ses veto replay et hors P01.
 
 ## Incidents corrigés pendant la validation
 
 1. `gradle` absent du `PATH` : utilisation autonome de Gradle 8.10.2 dans le dossier temporaire.
 2. `Notification.Builder.setSilent` indisponible dans cette configuration : remplacement par un canal Android silencieux dédié aux mises à jour, avec le même ID de notification.
 3. Ordre de classification `OPEN_ACTIVE_RISK`/`LATE_RETURN_*` : la priorité a été corrigée et le test a été relancé avec succès.
+4. Pression mémoire Windows pendant la première relance d’audit : un daemon Gradle configuré à 2 Gio a échoué faute de mémoire native. Les daemons ont été arrêtés proprement, les tests unitaires limités à 128 Mio et les validations relancées en mono-worker avec une JVM Gradle à 384 Mio. Toutes les passes finales ont réussi.
 
 ## APK
 
 - Chemin exact : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\debug\app-debug.apk`
-- Taille : `4 488 152` octets
-- SHA-256 : `83789EA54F32E721AB526AA5B9DDF491EC9D21420FF915319B4C1A676C307BCC`
+- Taille : `4 491 788` octets
+- SHA-256 : `81C4046A08E0F922E87F24E88A8BCCD1F15E686F86741341F523DF758FCB262C`
 
 ## Replay historique
 

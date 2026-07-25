@@ -15,6 +15,8 @@ La première tentative de commit a été refusée car aucune identité Git local
 
 - `app/build.gradle`
 - `app/src/main/java/com/ethscalper/cockpit/AiAdvisor.java`
+- `app/src/main/java/com/ethscalper/cockpit/CandidateLifecycle.java` (nouveau au correctif d’audit)
+- `app/src/main/java/com/ethscalper/cockpit/ConfirmedSignalPayload.java` (nouveau au correctif d’audit)
 - `app/src/main/java/com/ethscalper/cockpit/ContinuationConfirmation.java` (nouveau)
 - `app/src/main/java/com/ethscalper/cockpit/MainActivity.java`
 - `app/src/main/java/com/ethscalper/cockpit/MarketSnapshot.java`
@@ -24,6 +26,7 @@ La première tentative de commit a été refusée car aucune identité Git local
 - `app/src/main/java/com/ethscalper/cockpit/SignalSafetyPolicies.java` (nouveau)
 - `app/src/test/java/com/ethscalper/cockpit/SignalEngineTest.java`
 - `app/src/test/java/com/ethscalper/cockpit/SignalEngineRulesTest.java`
+- `app/src/test/java/com/ethscalper/cockpit/CandidateLifecycleIntegrationTest.java` (nouveau au correctif d’audit)
 - `.github/workflows/build-apk.yml`
 - `.github/workflows/build-v2327-candidate.yml` (nouveau)
 - `.gitignore` (cache Gradle et produits de build)
@@ -41,6 +44,17 @@ La première tentative de commit a été refusée car aucune identité Git local
 - **C08** : veto si au moins 40 % de cible a déjà été parcouru avant fill, latence ≥ 120 s, et mouvements 1 min/3 min opposés. Code `CONTINUATION_MOUVEMENT_CONSOMME_AVANT_FILL`.
 
 Les règles C04/C07/C08 ne changent jamais l’entrée, le TP, le SL ou la quantité.
+
+## Correctifs obligatoires de l’audit externe
+
+Le second commit de la même branche corrige les quatre blocages signalés, sans créer de branche supplémentaire :
+
+1. **Veto replay CONTINUATION non bloquant** : `evaluateSignal()` ne passe plus les candidats CONTINUATION par `applyAiGate()`/`applyReplayRiskArbiter()` avant observation. `CandidateLifecycle.admit()` conserve `V232_REPLAY_RISK_VETO` et son détail dans les diagnostics comparatifs, mais laisse le plan brut atteindre la revalidation puis P01. Les veto replay RANGE_FADE restent bloquants.
+2. **Confirmation immédiate** : `marketableAtCreation || entryTouched` déclenche immédiatement la reconstruction du snapshot et le parcours revalidation → C04/C07/C08 → P01. La constante historique de 15 secondes est conservée uniquement sous `legacyManualEntryDelayMs`, avec `legacyDelayApplied=false`.
+3. **Résultats terminaux** : `TP_TOUCHED`, `SL_TOUCHED`, `SCENARIO_INVALIDATED`, `TIMEOUT_15M` et `TIMEOUT_45M` sont terminaux. Les journaux exposent `exitAt`, `exitPrice`, `exitReason`, résultat brut/frais/net réalisés, et mettent les champs latents à zéro. Seul `ACTIVE` avec entrée déclenchée peut devenir `OPEN_ACTIVE_RISK`.
+4. **Tests du parcours** : `CandidateLifecycleIntegrationTest` utilise le même parcours de production que le service, depuis l’admission du plan brut et la revalidation jusqu’à P01, publication, politique sonore, quantité et résolution terminale.
+
+La mémoire de scénario opposé ne considère désormais comme protection indispensable qu’un risque réellement `ACTIVE` dont l’entrée a été déclenchée ; une simple LIMIT silencieuse en attente n’écarte plus un candidat.
 
 ## P01 et contexte 15 minutes
 
@@ -66,7 +80,7 @@ Le code final est `CONTINUATION_CONFLUENCE_POSITIVE_AU_FILL`. Le cooldown de 18 
 - 85–89 : 6 ETH
 - ≥ 90 : 7 ETH.
 
-La quantité est calculée lors de la publication finale, puis le même objet de plan alimente l’écran, le recorder et la notification. Les caps aval et les modifications par l’IA ont été retirés du chemin de publication.
+La quantité est calculée lors de la publication finale. `ConfirmedSignalPayload` projette ensuite la même valeur immuable vers l’écran, le recorder et la notification. Les caps aval et les modifications par l’IA ont été retirés du chemin de publication.
 
 ## Notifications et expérience utilisateur
 
@@ -98,7 +112,9 @@ Les champs de fill ajoutés sont :
 
 `marketableAtCreation`, `creationBid`, `creationAsk`, `creationLast`, `plannedEntry`, `firstEntryTouchAt`, `firstEntryTouchPrice`, `firstEntryTouchBid`, `firstEntryTouchAsk`, `simulatedFillAt`, `simulatedFillPrice`, `manualEntryConfirmed=false`, `manualEntryPrice`, `manualEntryAt`.
 
-Les résultats distinguent `terminalResolved`, brut/frais/net réalisés, prix marqué, brut/net latent et âge du risque ouvert. Un risque encore actif n’est pas une perte réalisée. Le coût de recherche/playback natif est unifié à `1,43 USDT/ETH` par aller-retour complet ; aucune configuration de frais réels utilisateur n’est modifiée.
+Les diagnostics de l’audit ajoutent aussi `replayRiskReasonCode`, `replayRiskDetail`, `replayRiskVetoBlocking`, `legacyManualEntryDelayMs`, `legacyDelayApplied`, `exitAt`, `exitPrice` et `exitReason`.
+
+Les résultats distinguent `terminalResolved`, `realizedResult`, brut/frais/net réalisés, prix marqué, brut/net latent et âge du risque ouvert. Un risque encore actif n’est pas une perte réalisée ; une invalidation ou un timeout rempli est terminal, réalisé et jamais classé comme risque ouvert. Le coût de recherche/playback natif est unifié à `1,43 USDT/ETH` par aller-retour complet ; aucune configuration de frais réels utilisateur n’est modifiée.
 
 ## Limitations restantes
 

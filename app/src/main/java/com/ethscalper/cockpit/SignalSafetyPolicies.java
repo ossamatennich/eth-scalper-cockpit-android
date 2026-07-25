@@ -42,17 +42,38 @@ public final class SignalSafetyPolicies {
                                                  long firstEntryTouchAt,
                                                  double maxProgressBeforeFill,
                                                  boolean simulatedFilled,
-                                                 boolean terminalResolved) {
+                                                 String lifecycleStatus) {
         if (firstEntryTouchAt > 0 && departureAt > 0 && firstEntryTouchAt > departureAt) {
             return maxProgressBeforeFill >= 0.80 ? "LATE_RETURN_NEAR_TARGET" : "LATE_RETURN_PARTIAL";
         }
-        if (simulatedFilled && !terminalResolved) return "OPEN_ACTIVE_RISK";
-        if (marketableAtCreation) return simulatedFilled ? "OPEN_ACTIVE_RISK" : "MARKETABLE_AT_CREATION";
+        if (isTerminalStatus(lifecycleStatus)) return lifecycleStatus;
+        if (simulatedFilled && "ACTIVE".equals(lifecycleStatus)) return "OPEN_ACTIVE_RISK";
+        if (marketableAtCreation) return "MARKETABLE_AT_CREATION";
         if (departureAt <= 0) return "PENDING_NO_DEPARTURE";
         long elapsed = Math.max(0L, departureAt - createdAt);
         if (elapsed <= 120_000L) return "FAST_DEPARTURE";
         if (elapsed < 15 * 60_000L) return "DELAYED_DEPARTURE";
         return "POST_TIMEOUT_DEPARTURE";
+    }
+
+    public static boolean isTerminalStatus(String status) {
+        return "TP_TOUCHED".equals(status)
+                || "SL_TOUCHED".equals(status)
+                || "SCENARIO_INVALIDATED".equals(status)
+                || "TIMEOUT_15M".equals(status)
+                || "TIMEOUT_45M".equals(status);
+    }
+
+    public static boolean isOpenActiveRisk(String status, boolean entryTriggered) {
+        return "ACTIVE".equals(status) && entryTriggered;
+    }
+
+    public static double terminalExitPrice(String status, SignalDecision signal,
+                                           double markedPrice) {
+        if (signal == null || !isTerminalStatus(status)) return Double.NaN;
+        if ("TP_TOUCHED".equals(status)) return signal.takeProfit;
+        if ("SL_TOUCHED".equals(status)) return signal.stopLoss;
+        return finitePositive(markedPrice) ? markedPrice : signal.entry;
     }
 
     public static String deterministicSignature(SignalDecision signal, long timestampBucket) {
@@ -105,15 +126,24 @@ public final class SignalSafetyPolicies {
     public static RealizedAndLatentResult result(boolean terminalResolved, double realizedMovePerEth,
                                                   double markedMovePerEth, int quantity,
                                                   long openRiskAgeMs) {
+        return result(terminalResolved, true, realizedMovePerEth, markedMovePerEth,
+                quantity, openRiskAgeMs);
+    }
+
+    public static RealizedAndLatentResult result(boolean terminalResolved, boolean positionOpened,
+                                                  double realizedMovePerEth,
+                                                  double markedMovePerEth, int quantity,
+                                                  long openRiskAgeMs) {
         int qty = Math.max(0, quantity);
-        double fee = terminalResolved ? RESEARCH_ROUND_TRIP_COST_PER_ETH * qty : 0.0;
-        double realizedGross = terminalResolved ? realizedMovePerEth * qty : 0.0;
-        double realizedNet = terminalResolved ? realizedGross - fee : 0.0;
-        double latentGross = terminalResolved ? 0.0 : markedMovePerEth * qty;
-        double latentNet = terminalResolved ? 0.0
+        boolean realized = terminalResolved && positionOpened;
+        double fee = realized ? RESEARCH_ROUND_TRIP_COST_PER_ETH * qty : 0.0;
+        double realizedGross = realized ? realizedMovePerEth * qty : 0.0;
+        double realizedNet = realized ? realizedGross - fee : 0.0;
+        double latentGross = terminalResolved || !positionOpened ? 0.0 : markedMovePerEth * qty;
+        double latentNet = terminalResolved || !positionOpened ? 0.0
                 : latentGross - RESEARCH_ROUND_TRIP_COST_PER_ETH * qty;
         return new RealizedAndLatentResult(terminalResolved, realizedGross, fee, realizedNet,
-                latentGross, latentNet, Math.max(0L, openRiskAgeMs));
+                latentGross, latentNet, terminalResolved ? 0L : Math.max(0L, openRiskAgeMs));
     }
 
     private static boolean finitePositive(double value) {
