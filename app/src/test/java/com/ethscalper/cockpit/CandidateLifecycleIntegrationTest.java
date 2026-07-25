@@ -49,11 +49,12 @@ public class CandidateLifecycleIntegrationTest {
         assertFalse(SignalSafetyPolicies.candidateIsAudible());
 
         CandidateLifecycle.FillResult fill = CandidateLifecycle.processAtFill(
-                admission.decision, p01Snapshot(createdAt), true, createdAt, 0.0);
+                admission.decision, p01Snapshot(createdAt), true, createdAt, 0.0, true);
         assertTrue(fill.confirmed);
         assertEquals(ContinuationConfirmation.P01_CONFIRMED, fill.reasonCode);
         assertNotNull(fill.publishedSignal);
-        assertEquals(5, fill.publishedSignal.quantity);
+        assertEquals(4, fill.publishedSignal.quantity);
+        assertTrue(fill.sizing.replayRiskCapApplied);
     }
 
     @Test public void marketableCandidateConfirmsAtCreationWithoutLegacyDelay() {
@@ -70,7 +71,7 @@ public class CandidateLifecycleIntegrationTest {
 
         assertTrue(fill.confirmed);
         assertEquals(createdAt, p01Snapshot(createdAt).now);
-        assertEquals(7, fill.publishedSignal.quantity);
+        assertEquals(4, fill.publishedSignal.quantity);
     }
 
     @Test public void candidateIsSilentAndFinalSignatureSoundsOnlyOnce() {
@@ -139,11 +140,11 @@ public class CandidateLifecycleIntegrationTest {
         int notificationQuantity = payload.quantityForNotification();
         int screenQuantity = payload.quantityForScreen();
         int diagnosticQuantity = payload.quantityForDiagnostic();
-        assertEquals(6, planQuantity);
+        assertEquals(4, planQuantity);
         assertEquals(planQuantity, notificationQuantity);
         assertEquals(planQuantity, screenQuantity);
         assertEquals(planQuantity, diagnosticQuantity);
-        assertTrue(payload.notificationBody(false).contains("· 6 ETH"));
+        assertTrue(payload.notificationBody(false).contains("· 4 ETH"));
     }
 
     @Test public void allRequiredLifecycleStatusesAreTerminal() {

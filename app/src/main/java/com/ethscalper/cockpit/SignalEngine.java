@@ -77,11 +77,8 @@ public final class SignalEngine {
         double sl = entry - plan.side * plan.stop;
 
         int score = scoreToInt(plan.strength);
-        int quantity = computeFinalConfirmedQuantity(score);
-
-        if (quantity <= 0) {
-            return reject(s, "V230_SIZE_ZERO", "Signal refusé : taille research nulle", score, movement);
-        }
+        // Raw candidates are silent and conservatively sized. Final sizing happens at fill.
+        int quantity = ConfirmedSizing.BASE_QUANTITY;
 
         String family = "v2.32 " + plan.family + " — hybrid AI ready";
 
@@ -422,9 +419,10 @@ public final class SignalEngine {
     }
 
     /**
-     * Deterministic sizing applied only when a candidate becomes a final confirmed signal.
-     * No downstream component, including the optional AI advisor, may change this value.
+     * Legacy score-only mapping retained for playback compatibility tests.
+     * Final publication must use ConfirmedSizing instead.
      */
+    @Deprecated
     public static int computeFinalConfirmedQuantity(int finalScore) {
         if (finalScore <= 74) return 3;
         if (finalScore <= 79) return 4;

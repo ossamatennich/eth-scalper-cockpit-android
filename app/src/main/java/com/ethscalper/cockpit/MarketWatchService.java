@@ -1371,6 +1371,7 @@ public class MarketWatchService extends Service {
             putMetric(o, "p01Move8Aligned", item.p01Move8Aligned);
             putMetric(o, "p01Move15Aligned", item.p01Move15Aligned);
             putMetric(o, "p01Flow30Aligned", item.p01Flow30Aligned);
+            o.put("confirmedSizing", confirmedSizingJson(item.confirmedSizing));
             o.put("entryAgeSec", item.entryTriggeredAt > 0 ? Math.max(0, (now - item.entryTriggeredAt) / 1000) : -1);
             o.put("timeoutExtended", item.timeoutExtended);
             o.put("timeoutDecisionAt", item.timeoutDecisionAt);
@@ -1866,7 +1867,8 @@ public class MarketWatchService extends Service {
         SignalDecision candidate = item.signal;
         boolean continuation = ContinuationConfirmation.requiresP01(candidate.family);
         CandidateLifecycle.FillResult fill = CandidateLifecycle.processAtFill(
-                candidate, snapshot, feedFresh, item.createdAt, pendingProgressBeforeFill(item));
+                candidate, snapshot, feedFresh, item.createdAt, pendingProgressBeforeFill(item),
+                !item.replayRiskReasonCode.isEmpty());
         ContinuationConfirmation.Result confirmation = fill.continuationConfirmation;
         item.lastConfirmationCode = fill.reasonCode;
         if (confirmation != null) {
@@ -1886,6 +1888,7 @@ public class MarketWatchService extends Service {
         }
 
         SignalDecision published = fill.publishedSignal;
+        item.confirmedSizing = fill.sizing;
         item.signal = published;
         item.status = "ACTIVE";
         item.entryTriggered = true;
@@ -2329,6 +2332,37 @@ public class MarketWatchService extends Service {
                 SignalSafetyPolicies.RESEARCH_ROUND_TRIP_COST_PER_ETH);
     }
 
+    private static Object confirmedSizingJson(ConfirmedSizing.Result sizing) throws Exception {
+        if (sizing == null) return JSONObject.NULL;
+        JSONObject o = new JSONObject();
+        o.put("policy", "CONFIRMED_FILL_EVIDENCE_V2327");
+        o.put("engineScoreDiagnosticOnly", sizing.engineScoreDiagnosticOnly);
+        o.put("sizingFamily", sizing.sizingFamily);
+        o.put("baseQuantity", sizing.baseQuantity);
+        o.put("evidencePoints", sizing.evidencePoints);
+        o.put("maxAllowedQuantity", sizing.maxAllowedQuantity);
+        o.put("finalQuantity", sizing.finalQuantity);
+        putMetric(o, "avgRange20", sizing.avgRange20);
+        putMetric(o, "move1Aligned", sizing.move1Aligned);
+        putMetric(o, "move1BonusThreshold", sizing.move1BonusThreshold);
+        o.put("move1Bonus", sizing.move1Bonus);
+        putMetric(o, "move3Aligned", sizing.move3Aligned);
+        putMetric(o, "move3BonusThreshold", sizing.move3BonusThreshold);
+        o.put("move3Bonus", sizing.move3Bonus);
+        putMetric(o, "move8Aligned", sizing.move8Aligned);
+        putMetric(o, "move15Aligned", sizing.move15Aligned);
+        putMetric(o, "flow30Aligned", sizing.flow30Aligned);
+        putMetric(o, "flow60Aligned", sizing.flow60Aligned);
+        putMetric(o, "btcMove3Aligned", sizing.btcMove3Aligned);
+        putMetric(o, "volumeRatio", sizing.volumeRatio);
+        o.put("premium15mBonus", sizing.premium15mBonus);
+        o.put("cleanContextBonus", sizing.cleanContextBonus);
+        o.put("historicalReplayRiskVeto", sizing.historicalReplayRiskVeto);
+        o.put("replayRiskCapApplied", sizing.replayRiskCapApplied);
+        o.put("rangeFadeCapApplied", sizing.rangeFadeCapApplied);
+        return o;
+    }
+
     private static double adverseMoveFor(SignalDecision signal, double price) {
         if (signal == null || !Double.isFinite(price) || price <= 0) return 99.0;
         if ("LONG".equals(signal.side)) return Math.max(0, signal.entry - price);
@@ -2376,6 +2410,7 @@ public class MarketWatchService extends Service {
             o.put("executionClassification", executionClassification(item));
             o.put("confirmationReasonCode", item.lastConfirmationCode);
             o.put("p01Premium15m", item.premium15m);
+            o.put("confirmedSizing", confirmedSizingJson(item.confirmedSizing));
             o.put("updates", item.updates);
 
             o.put("side", item.signal.side);
@@ -3691,6 +3726,7 @@ public class MarketWatchService extends Service {
         String replayRiskReasonCode = "";
         String replayRiskDetail = "";
         boolean replayRiskBlocking;
+        ConfirmedSizing.Result confirmedSizing;
         double p01Move1Aligned = Double.NaN;
         double p01Move3Aligned = Double.NaN;
         double p01Move8Aligned = Double.NaN;

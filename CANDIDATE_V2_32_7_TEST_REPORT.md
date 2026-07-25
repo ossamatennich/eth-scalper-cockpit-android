@@ -24,12 +24,12 @@ Les commandes ont été exécutées avec le binaire Gradle 8.10.2 temporaire, un
 
 ## Résultats
 
-- 41 tests distincts, dont 8 tests d’intégration du parcours candidat.
-- 41/41 réussis sur la variante debug.
-- 41/41 réussis sur la variante release.
-- 82 exécutions réussies au total sur la dernière passe complète.
+- 50 tests distincts : les 41 tests précédents plus 9 tests dédiés au sizing confirmé.
+- 50/50 réussis sur la variante debug.
+- 50/50 réussis sur la variante release.
+- 100 exécutions réussies au total sur la dernière passe complète.
 - 0 échec, 0 erreur, 0 test ignoré.
-- Deux passes complètes de 41 tests ont réussi pendant le correctif, plus une passe ciblée des 8 tests d’intégration.
+- Une passe ciblée des 9 nouveaux tests de sizing a réussi avant la passe complète.
 - La dernière passe complète et `assembleDebug` ont utilisé `--rerun-tasks`.
 
 Couverture principale :
@@ -55,6 +55,11 @@ Couverture principale :
 - invalidation/timeout remplis terminaux, réalisés et jamais `OPEN_ACTIVE_RISK`
 - quantité identique plan/notification/écran/diagnostic
 - RANGE_FADE toujours protégé par ses veto replay et hors P01.
+- quantités confirmées 3, 4, 5, 6 et 7 produites par des preuves au fill représentatives
+- score moteur 96 ne donnant pas automatiquement 7 ETH
+- ancien veto replay plafonnant à 5 ETH un contexte autrement dimensionné à 7 ETH
+- RANGE_FADE score 96 restant conservateur à 3 ETH et plafonné à 4 ETH
+- valeurs, seuils, bonus et plafonds du sizing exposés dans `confirmedSizing`.
 
 ## Incidents corrigés pendant la validation
 
@@ -66,8 +71,8 @@ Couverture principale :
 ## APK
 
 - Chemin exact : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\debug\app-debug.apk`
-- Taille : `4 491 788` octets
-- SHA-256 : `81C4046A08E0F922E87F24E88A8BCCD1F15E686F86741341F523DF758FCB262C`
+- Taille : `4 494 016` octets
+- SHA-256 : `D320212755A624C87D3255AD327ABAB8A66B7FD2FE717DEE86D345F6357D623D`
 
 ## Replay historique
 
@@ -76,3 +81,4 @@ Recherche effectuée dans le workspace, `C:\Users\Tenni\Downloads` et `C:\Users\
 - Archives trouvées : `0/11`
 - Replay historique : non exécuté
 - Résultats P01/candidate combinée : non revendiqués et non fabriqués.
+- Nouveau sizing 3–7 : aucun résultat historique ni résultat financier revendiqué avant un replay exact.

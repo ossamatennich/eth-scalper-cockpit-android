@@ -52,6 +52,14 @@ public final class CandidateLifecycle {
     public static FillResult confirmAtFill(SignalDecision candidate, MarketSnapshot snapshot,
                                            boolean feedFresh, long candidateCreatedAt,
                                            double targetProgressBeforeFill) {
+        return confirmAtFill(candidate, snapshot, feedFresh, candidateCreatedAt,
+                targetProgressBeforeFill, false);
+    }
+
+    public static FillResult confirmAtFill(SignalDecision candidate, MarketSnapshot snapshot,
+                                           boolean feedFresh, long candidateCreatedAt,
+                                           double targetProgressBeforeFill,
+                                           boolean historicalReplayRiskVeto) {
         if (candidate == null || !candidate.isSignal() || !validPlan(candidate)) {
             return FillResult.rejected(INVALID_DATA, null);
         }
@@ -81,26 +89,36 @@ public final class CandidateLifecycle {
             finalText = "RANGE_FADE confirmé au niveau d'entrée";
         }
 
-        int quantity = SignalEngine.computeFinalConfirmedQuantity(candidate.score);
+        ConfirmedSizing.Result sizing = ConfirmedSizing.computeConfirmedSizingQuantity(
+                candidate, snapshot, confirmation, premium15m, historicalReplayRiskVeto);
+        int quantity = sizing.finalQuantity;
         SignalDecision published = SignalDecision.confirmed(candidate.side, finalFamily,
                 finalCode, finalText, candidate.score, quantity,
                 candidate.entry, candidate.takeProfit, candidate.stopLoss,
                 candidate.targetMove, candidate.stopDistance, candidate.impulse,
                 candidate.resetConfirmed, candidate.movementOrigin,
                 candidate.movementExtreme, candidate.movementDistance);
-        return new FillResult(true, finalCode, published, premium15m, confirmation);
+        return new FillResult(true, finalCode, published, premium15m, confirmation, sizing);
     }
 
     public static FillResult processAtFill(SignalDecision candidate, MarketSnapshot snapshot,
                                            boolean feedFresh, long candidateCreatedAt,
                                            double targetProgressBeforeFill) {
+        return processAtFill(candidate, snapshot, feedFresh, candidateCreatedAt,
+                targetProgressBeforeFill, false);
+    }
+
+    public static FillResult processAtFill(SignalDecision candidate, MarketSnapshot snapshot,
+                                           boolean feedFresh, long candidateCreatedAt,
+                                           double targetProgressBeforeFill,
+                                           boolean historicalReplayRiskVeto) {
         String revalidation = entryRevalidationCode(candidate, snapshot,
                 snapshot == null ? Double.NaN : snapshot.ethLast);
         if (!revalidation.isEmpty()) {
             return FillResult.rejected(revalidation, null);
         }
         return confirmAtFill(candidate, snapshot, feedFresh,
-                candidateCreatedAt, targetProgressBeforeFill);
+                candidateCreatedAt, targetProgressBeforeFill, historicalReplayRiskVeto);
     }
 
     public static String entryRevalidationCode(SignalDecision candidate, MarketSnapshot snapshot,
@@ -250,20 +268,23 @@ public final class CandidateLifecycle {
         public final SignalDecision publishedSignal;
         public final boolean premium15m;
         public final ContinuationConfirmation.Result continuationConfirmation;
+        public final ConfirmedSizing.Result sizing;
 
         private FillResult(boolean confirmed, String reasonCode, SignalDecision publishedSignal,
                            boolean premium15m,
-                           ContinuationConfirmation.Result continuationConfirmation) {
+                           ContinuationConfirmation.Result continuationConfirmation,
+                           ConfirmedSizing.Result sizing) {
             this.confirmed = confirmed;
             this.reasonCode = reasonCode;
             this.publishedSignal = publishedSignal;
             this.premium15m = premium15m;
             this.continuationConfirmation = continuationConfirmation;
+            this.sizing = sizing;
         }
 
         private static FillResult rejected(String reasonCode,
                                            ContinuationConfirmation.Result confirmation) {
-            return new FillResult(false, reasonCode, null, false, confirmation);
+            return new FillResult(false, reasonCode, null, false, confirmation, null);
         }
     }
 

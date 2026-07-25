@@ -16,6 +16,7 @@ La première tentative de commit a été refusée car aucune identité Git local
 - `app/build.gradle`
 - `app/src/main/java/com/ethscalper/cockpit/AiAdvisor.java`
 - `app/src/main/java/com/ethscalper/cockpit/CandidateLifecycle.java` (nouveau au correctif d’audit)
+- `app/src/main/java/com/ethscalper/cockpit/ConfirmedSizing.java` (nouveau au correctif de sizing)
 - `app/src/main/java/com/ethscalper/cockpit/ConfirmedSignalPayload.java` (nouveau au correctif d’audit)
 - `app/src/main/java/com/ethscalper/cockpit/ContinuationConfirmation.java` (nouveau)
 - `app/src/main/java/com/ethscalper/cockpit/MainActivity.java`
@@ -27,6 +28,7 @@ La première tentative de commit a été refusée car aucune identité Git local
 - `app/src/test/java/com/ethscalper/cockpit/SignalEngineTest.java`
 - `app/src/test/java/com/ethscalper/cockpit/SignalEngineRulesTest.java`
 - `app/src/test/java/com/ethscalper/cockpit/CandidateLifecycleIntegrationTest.java` (nouveau au correctif d’audit)
+- `app/src/test/java/com/ethscalper/cockpit/ConfirmedSizingTest.java` (nouveau au correctif de sizing)
 - `.github/workflows/build-apk.yml`
 - `.github/workflows/build-v2327-candidate.yml` (nouveau)
 - `.gitignore` (cache Gradle et produits de build)
@@ -72,15 +74,24 @@ Le code final est `CONTINUATION_CONFLUENCE_POSITIVE_AU_FILL`. Le cooldown de 18 
 
 ## Quantité finale 3–7 ETH
 
-`SignalEngine.computeFinalConfirmedQuantity(int)` applique le mapping déterministe :
+Le troisième commit corrige la saturation du score moteur historique. `ConfirmedSizing.computeConfirmedSizingQuantity(...)` utilise uniquement les preuves observées au fill ; `candidate.score` est conservé sous `engineScoreDiagnosticOnly` et ne participe jamais au calcul.
 
-- score ≤ 74 : 3 ETH
-- 75–79 : 4 ETH
-- 80–84 : 5 ETH
-- 85–89 : 6 ETH
-- ≥ 90 : 7 ETH.
+Sizing CONTINUATION P01 :
 
-La quantité est calculée lors de la publication finale. `ConfirmedSignalPayload` projette ensuite la même valeur immuable vers l’écran, le recorder et la notification. Les caps aval et les modifications par l’IA ont été retirés du chemin de publication.
+- base conservatrice : 3 ETH
+- +1 si `move1Aligned >= avgRange20 × 0,70` (minimum P01 : × 0,40)
+- +1 si `move3Aligned >= avgRange20 × 1,50` (minimum P01 : × 1,00)
+- +1 si `P01_PREMIUM_15M`
+- +1 uniquement si le contexte complémentaire est particulièrement propre : `move8Aligned >= avgRange20 × 1,25`, `flow30Aligned >= 0,15`, `flow60Aligned >= 0,10`, ratio de volume ≥ 0,80 et `btcMove3Aligned >= -0,00010`
+- plafond absolu : 7 ETH.
+
+Un ancien veto replay CONTINUATION non bloquant impose un plafond à 5 ETH, même lorsque les quatre preuves positives seraient réunies. Il reste informatif et ne bloque pas P01.
+
+RANGE_FADE ne bénéficie pas des bonus P01. Il reste à 3 ETH par défaut et ne peut atteindre 4 ETH que si le rebond au fill est particulièrement propre (`move1`, `move3`, `move8`, flow et volume alignés). Son plafond est 4 ETH tant qu’aucune calibration positive équivalente n’est disponible.
+
+Le mapping score-only `SignalEngine.computeFinalConfirmedQuantity(int)` est conservé uniquement comme compatibilité de playback, marqué obsolète et n’est plus utilisé ni pour le candidat brut ni pour la publication finale. Un candidat brut porte 3 ETH en interne.
+
+`ConfirmedSignalPayload` projette la quantité finale immuable vers l’écran, le recorder et la notification. Les diagnostics `confirmedSizing` enregistrent la famille, la base, les quatre bonus, les seuils et valeurs alignées, les points de preuve, le plafond applicable, le veto replay comparatif et la quantité finale.
 
 ## Notifications et expérience utilisateur
 
@@ -112,7 +123,7 @@ Les champs de fill ajoutés sont :
 
 `marketableAtCreation`, `creationBid`, `creationAsk`, `creationLast`, `plannedEntry`, `firstEntryTouchAt`, `firstEntryTouchPrice`, `firstEntryTouchBid`, `firstEntryTouchAsk`, `simulatedFillAt`, `simulatedFillPrice`, `manualEntryConfirmed=false`, `manualEntryPrice`, `manualEntryAt`.
 
-Les diagnostics de l’audit ajoutent aussi `replayRiskReasonCode`, `replayRiskDetail`, `replayRiskVetoBlocking`, `legacyManualEntryDelayMs`, `legacyDelayApplied`, `exitAt`, `exitPrice` et `exitReason`.
+Les diagnostics de l’audit ajoutent aussi `replayRiskReasonCode`, `replayRiskDetail`, `replayRiskVetoBlocking`, `legacyManualEntryDelayMs`, `legacyDelayApplied`, `exitAt`, `exitPrice`, `exitReason` et l’objet détaillé `confirmedSizing`.
 
 Les résultats distinguent `terminalResolved`, `realizedResult`, brut/frais/net réalisés, prix marqué, brut/net latent et âge du risque ouvert. Un risque encore actif n’est pas une perte réalisée ; une invalidation ou un timeout rempli est terminal, réalisé et jamais classé comme risque ouvert. Le coût de recherche/playback natif est unifié à `1,43 USDT/ETH` par aller-retour complet ; aucune configuration de frais réels utilisateur n’est modifiée.
 
@@ -120,6 +131,7 @@ Les résultats distinguent `terminalResolved`, `realizedResult`, brut/frais/net 
 
 - Les 11 archives historiques demandées n’étaient présentes ni dans le workspace, ni dans `Téléchargements`, ni dans `Documents`. Aucun résultat de replay n’a été fabriqué.
 - Les résultats de référence P01/candidate combinée n’ont donc pas été reproduits localement.
+- Le replay exact n’a pas été exécuté avec le nouveau sizing fondé sur les preuves au fill. Aucun résultat historique P01 ou résultat financier n’est revendiqué pour cette politique de quantité.
 - Le recorder compatible JSONL a été préservé sans refonte risquée ; voir `RECORDER_OPTIMIZATION_REPORT.md`.
 - Les recherches historiques v2.33 et actifs anciens sont laissés intacts ; voir `REPO_CLEANUP_REPORT.md`.
 - Les tests unitaires couvrent les politiques pures et leurs raccordements compilables. Un test instrumenté Android réel des canaux sonores reste pertinent avant promotion en release définitive.
