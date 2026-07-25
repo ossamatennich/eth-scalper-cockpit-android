@@ -10,9 +10,9 @@ public final class SignalEngine {
     public static final long COOLDOWN_MS = 18 * 60 * 1000L;
     private static final int MAX_DIAGNOSTICS = 320;
 
-    private static final double FEE_ROUND_TRIP = 1.33;
-    private static final double SLIPPAGE_RESEARCH = 0.10;
-    private static final double EFFECTIVE_COST = FEE_ROUND_TRIP + SLIPPAGE_RESEARCH;
+    private static final double FEE_ROUND_TRIP =
+            SignalSafetyPolicies.RESEARCH_ROUND_TRIP_COST_PER_ETH;
+    private static final double EFFECTIVE_COST = FEE_ROUND_TRIP;
 
     private static final double TP_SCALP = 2.80;
     private static final double TP_STANDARD = 3.50;
@@ -35,10 +35,6 @@ public final class SignalEngine {
 
         if (!positive(s.avgRange20) || !positive(s.avgVolume20)) {
             return reject(s, "V230_HISTORY_BAD", "Historique range/volume incomplet", 0, movement);
-        }
-
-        if (s.lastSignalAt > 0 && s.now - s.lastSignalAt < COOLDOWN_MS) {
-            return reject(s, "V230_COOLDOWN_18M", "Cooldown v2.30 18 minutes", 0, movement);
         }
 
         double spread = liveSpread(s);
@@ -66,6 +62,14 @@ public final class SignalEngine {
             );
         }
 
+        if (plan.family.contains("CONTINUATION")
+                && s.lastSignalAt > 0
+                && s.now - s.lastSignalAt < COOLDOWN_MS) {
+            return reject(s, "V2327_P01_COOLDOWN_18M",
+                    "Cooldown P01 18 minutes depuis la dernière confirmation finale",
+                    scoreToInt(plan.strength), movement);
+        }
+
         double entry = plan.side > 0 ? (positive(s.ethAsk) ? s.ethAsk : s.ethLast)
                 : (positive(s.ethBid) ? s.ethBid : s.ethLast);
 
@@ -73,9 +77,7 @@ public final class SignalEngine {
         double sl = entry - plan.side * plan.stop;
 
         int score = scoreToInt(plan.strength);
-        int quantity = computeQuantity(score, plan.stop, plan.target, movement.consumed, plan.family);
-        quantity = capRiskyRangeFadeQuantity(quantity, s, plan);
-        quantity = capRiskyContinuationQuantity(quantity, s, plan);
+        int quantity = computeFinalConfirmedQuantity(score);
 
         if (quantity <= 0) {
             return reject(s, "V230_SIZE_ZERO", "Signal refusé : taille research nulle", score, movement);
@@ -234,36 +236,6 @@ public final class SignalEngine {
         return best(shortFade, longFade);
     }
 
-    private static int capRiskyContinuationQuantity(int quantity, MarketSnapshot s, Plan plan) {
-        if (s == null || plan == null || plan.family == null || !plan.family.contains("CONTINUATION")) {
-            return quantity;
-        }
-
-        if (exhaustedContinuationTrap(s, plan.side, plan.target)) {
-            return Math.min(quantity, 3);
-        }
-
-        if (weakContinuationSizingContext(s, plan.side, plan.target)) {
-            return Math.min(quantity, 4);
-        }
-
-        return quantity;
-    }
-
-    private static boolean weakContinuationSizingContext(MarketSnapshot s, int side, double target) {
-        double avg = Math.max(0.35, s.avgRange20);
-        double rp = finiteOr(s.rangePosition, 0.5);
-        double room = side > 0 ? s.roomLong : s.roomShort;
-
-        boolean roomNeedsBreakout = room < Math.max(1.75, target * 0.88);
-        boolean freshFlowWeak = side * s.flow15 < 0.08 && side * s.flow30 < 0.25;
-        boolean lowVolume = s.volumeRatio > 0 && s.volumeRatio < 0.35;
-        boolean moveAlreadyExtended = side * s.move3 > avg * 1.45 && side * s.move8 > avg * 1.45;
-        boolean badZone = side > 0 ? rp > 0.68 : rp < 0.32;
-
-        return roomNeedsBreakout && badZone && moveAlreadyExtended && (freshFlowWeak || lowVolume);
-    }
-
     private static boolean exhaustedContinuationTrap(MarketSnapshot s, int side, double target) {
         double avg = Math.max(0.35, s.avgRange20);
         double rp = finiteOr(s.rangePosition, 0.5);
@@ -280,41 +252,6 @@ public final class SignalEngine {
         boolean lowFreshVolume = s.volumeRatio > 0 && s.volumeRatio < 0.25;
 
         return extension && badZone && flowCrowded && (microStall || flowDivergence) && (roomWeak || lowFreshVolume);
-    }
-
-    private static int capRiskyRangeFadeQuantity(int quantity, MarketSnapshot s, Plan plan) {
-        if (s == null || plan == null || plan.family == null || !plan.family.contains("RANGE_FADE")) {
-            return quantity;
-        }
-
-        if (riskyRangeFadeSizingContext(s, plan.side) || weakExtremeRangeFadeTrap(s, plan.side) || rangeFadeAgainstLiveC2Trap(s, plan.side)) {
-            return Math.min(quantity, 3);
-        }
-
-        return quantity;
-    }
-
-    private static boolean riskyRangeFadeSizingContext(MarketSnapshot s, int fadeSide) {
-        double avg = Math.max(0.35, s.avgRange20);
-        double rp = finiteOr(s.rangePosition, 0.5);
-
-        if (fadeSide < 0) {
-            boolean ethStillPushingLong = s.move3 > avg * 0.90 && s.move8 > avg * 1.65 && rp >= 0.86;
-            boolean btcOrFlowStillLong = s.btcMove3 > 0.00020 || s.btcMove8 > 0.00035
-                    || s.flow60 > 0.03 || s.flow120 > 0.25;
-            boolean notARealRejectionYet = s.move1 > -avg * 0.45 && s.flow15 > -0.26;
-            return ethStillPushingLong && btcOrFlowStillLong && notARealRejectionYet;
-        }
-
-        if (fadeSide > 0) {
-            boolean ethStillPushingShort = s.move3 < -avg * 0.90 && s.move8 < -avg * 1.65 && rp <= 0.14;
-            boolean btcOrFlowStillShort = s.btcMove3 < -0.00020 || s.btcMove8 < -0.00035
-                    || s.flow60 < -0.03 || s.flow120 < -0.25;
-            boolean notARealRejectionYet = s.move1 < avg * 0.45 && s.flow15 < 0.26;
-            return ethStillPushingShort && btcOrFlowStillShort && notARealRejectionYet;
-        }
-
-        return false;
     }
 
     private static boolean rangeFadeAgainstLiveC2Trap(MarketSnapshot s, int fadeSide) {
@@ -482,6 +419,18 @@ public final class SignalEngine {
         }
 
         return Math.max(3, Math.min(7, quantity));
+    }
+
+    /**
+     * Deterministic sizing applied only when a candidate becomes a final confirmed signal.
+     * No downstream component, including the optional AI advisor, may change this value.
+     */
+    public static int computeFinalConfirmedQuantity(int finalScore) {
+        if (finalScore <= 74) return 3;
+        if (finalScore <= 79) return 4;
+        if (finalScore <= 84) return 5;
+        if (finalScore <= 89) return 6;
+        return 7;
     }
 
     private SignalDecision reject(MarketSnapshot s, String code, String text, int score, Movement m) {

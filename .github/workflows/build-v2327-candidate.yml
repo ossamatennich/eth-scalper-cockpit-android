@@ -1,12 +1,16 @@
-name: Build Android APK
+name: Version candidate de l'APK v2.32.7
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - agent/v2.32.7-scalp-p01-candidate
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  test-and-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,6 +24,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.10.2
+      - name: Unit tests
+        run: gradle test
       - name: Build debug APK
         run: gradle assembleDebug
       - name: Upload APK artifact

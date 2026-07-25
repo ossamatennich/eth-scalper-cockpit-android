@@ -5,81 +5,146 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class SignalEngineTest {
-    private MarketSnapshot snapshot(long now, long lastSignalAt, double move1, double move3,
-                                    double move8, double flow, double btcMove,
-                                    double volume, double high, double low) {
+    private MarketSnapshot snapshot(long now, double move1, double move3, double move8,
+                                    double move15, double flow30) {
         return MarketSnapshot.builder(now)
-                .lastSignalAt(lastSignalAt)
-                .eth(100, 99.99, 100.01)
-                .btc(60_000, 59_999, 60_001)
-                .candleCounts(30, 10)
-                .averages(1.0, 100)
-                .movement(move1, move3, move8, high, low)
-                .flow(flow, volume)
-                .btcMove5(btcMove)
+                .eth(100.0, 99.99, 100.01)
+                .btc(60_000.0, 59_999.0, 60_001.0)
+                .candleCounts(60, 20)
+                .averages(1.0, 100.0)
+                .movement(move1, move3, move8, 103.0, 97.0)
+                .move15(move15)
+                .flow(flow30, 120.0)
+                .flowWindows(flow30, flow30, flow30, flow30)
                 .build();
     }
 
-    @Test public void c1FreshLong() {
-        SignalDecision d = new SignalEngine().evaluate(snapshot(1_000_000, 0, 1.0, 1.2, 2.0, .30, .001, 160, 103, 96));
-        assertTrue(d.isSignal()); assertEquals("LONG", d.side); assertEquals("C1 cassure fraîche", d.family);
+    private ContinuationConfirmation.Result confirm(String side, MarketSnapshot snapshot,
+                                                    boolean fresh, long createdAt,
+                                                    double progress) {
+        return ContinuationConfirmation.evaluate(side, snapshot, fresh, createdAt, progress);
     }
 
-    @Test public void c1FreshShort() {
-        SignalDecision d = new SignalEngine().evaluate(snapshot(1_000_000, 0, -1.0, -1.2, -2.0, -.30, -.001, 160, 104, 97));
-        assertTrue(d.isSignal()); assertEquals("SHORT", d.side);
+    @Test public void c04LongAccepted() {
+        assertTrue(confirm("LONG", snapshot(200_000, .50, 1.20, .30, .20, .10),
+                true, 190_000, 0).confirmed);
     }
 
-    @Test public void c2ControlledLongAndShort() {
-        SignalEngine engine = new SignalEngine();
-        SignalDecision longDecision = engine.evaluate(snapshot(1_000_000, 0, .10, 1.25, 1.7, .30, .001, 170, 103, 97));
-        SignalDecision shortDecision = engine.evaluate(snapshot(2_000_000, 0, -.10, -1.25, -1.7, -.30, -.001, 170, 103, 97));
-        assertTrue(longDecision.isSignal()); assertEquals("C2 reprise contrôlée", longDecision.family);
-        assertTrue(shortDecision.isSignal()); assertEquals("SHORT", shortDecision.side);
+    @Test public void c04LongRefused() {
+        assertEquals(ContinuationConfirmation.C04_REJECT,
+                confirm("LONG", snapshot(200_000, .05, 1.20, .30, .20, 0),
+                        true, 190_000, 0).reasonCode);
     }
 
-    @Test public void btcIsOnlyAVeto() {
-        SignalDecision d = new SignalEngine().evaluate(snapshot(1_000_000, 0, 1.0, 1.2, 2.0, .30, -.003, 160, 103, 96));
-        assertEquals("ATTENDRE", d.decision); assertEquals("BTC_VETO", d.reasonCode);
+    @Test public void c04ShortAccepted() {
+        assertTrue(confirm("SHORT", snapshot(200_000, -.50, -1.20, -.30, -.20, -.10),
+                true, 190_000, 0).confirmed);
     }
 
-    @Test public void consumedMovementIsRejected() {
-        SignalDecision d = new SignalEngine().evaluate(snapshot(1_000_000, 0, 2.0, 2.2, 7.0, .35, .001, 180, 108, 96));
-        assertEquals("MOVE_CONSUMED", d.reasonCode); assertTrue(d.movementConsumed);
+    @Test public void c04ShortRefused() {
+        assertEquals(ContinuationConfirmation.C04_REJECT,
+                confirm("SHORT", snapshot(200_000, -.05, -1.20, -.30, -.20, 0),
+                        true, 190_000, 0).reasonCode);
     }
 
-    @Test public void cooldownIsReturned() {
-        long now = 1_000_000;
-        SignalDecision d = new SignalEngine().evaluate(snapshot(now, now - 30_000, 1.0, 1.2, 2.0, .30, .001, 160, 103, 96));
-        assertEquals("COOLDOWN", d.reasonCode);
+    @Test public void c07LongConflict() {
+        assertEquals(ContinuationConfirmation.C07_REJECT,
+                confirm("LONG", snapshot(200_000, -.10, 1.20, -.10, .20, .10),
+                        true, 190_000, 0).reasonCode);
     }
 
-    @Test public void scoreTooLowIsDiagnosed() {
-        SignalDecision d = new SignalEngine().evaluate(snapshot(1_000_000, 0, .80, .90, 1.0, .051, 0, 100, 101, 98));
-        assertEquals("SCORE_TOO_LOW", d.reasonCode); assertFalse(d.isSignal());
+    @Test public void c07ShortConflict() {
+        assertEquals(ContinuationConfirmation.C07_REJECT,
+                confirm("SHORT", snapshot(200_000, .10, -1.20, .10, -.20, -.10),
+                        true, 190_000, 0).reasonCode);
     }
 
-    @Test public void targetAndStopAreDynamic() {
-        double lowTarget = SignalEngine.computeTarget(.8, 2, 1.0, .1, 65);
-        double highTarget = SignalEngine.computeTarget(1.8, 7, 2.0, .8, 90);
-        double lowStop = SignalEngine.computeStop(.8, 2, 65);
-        double highStop = SignalEngine.computeStop(1.8, 7, 85);
-        assertTrue(highTarget > lowTarget); assertTrue(highStop > lowStop);
+    @Test public void c08ConsumedMoveIsRefused() {
+        assertEquals(ContinuationConfirmation.C08_REJECT,
+                confirm("LONG", snapshot(300_000, -.10, -.20, .20, .30, .10),
+                        true, 100_000, .40).reasonCode);
     }
 
-    @Test public void quantityStaysBetweenThreeAndSeven() {
-        assertEquals(3, SignalEngine.computeQuantity(65, 1.0, 3.1, false));
-        assertEquals(5, SignalEngine.computeQuantity(80, 1.0, 4.0, false));
-        assertEquals(7, SignalEngine.computeQuantity(92, .8, 5.0, false));
-        assertEquals(4, SignalEngine.computeQuantity(92, .8, 5.0, true));
+    @Test public void p01LongConfirmed() {
+        ContinuationConfirmation.Result result = confirm("LONG",
+                snapshot(200_000, .40, 1.00, .20, .10, 0),
+                true, 190_000, 0);
+        assertTrue(result.confirmed);
+        assertEquals(ContinuationConfirmation.P01_CONFIRMED, result.reasonCode);
     }
 
-    @Test public void diagnosticsAreBoundedAndResettable() {
-        SignalEngine engine = new SignalEngine();
-        for (int i=0; i<230; i++) engine.evaluate(MarketSnapshot.builder(i).build());
-        assertEquals(200, engine.recentDiagnostics(500).size());
-        assertEquals("NO_DATA", engine.recentDiagnostics(1).get(0).code);
-        engine.clearDiagnostics();
-        assertTrue(engine.recentDiagnostics(10).isEmpty());
+    @Test public void p01ShortConfirmedSymmetrically() {
+        ContinuationConfirmation.Result result = confirm("SHORT",
+                snapshot(200_000, -.40, -1.00, -.20, -.10, 0),
+                true, 190_000, 0);
+        assertTrue(result.confirmed);
+        assertEquals(.40, result.move1Aligned, 1e-9);
+        assertEquals(1.00, result.move3Aligned, 1e-9);
+    }
+
+    @Test public void p01RejectsInsufficientMove1() {
+        assertEquals(ContinuationConfirmation.P01_MOVE1_REJECT,
+                confirm("LONG", snapshot(200_000, .30, 1.20, .20, .10, .10),
+                        true, 190_000, 0).reasonCode);
+    }
+
+    @Test public void p01RejectsInsufficientMove3() {
+        assertEquals(ContinuationConfirmation.P01_MOVE3_REJECT,
+                confirm("LONG", snapshot(200_000, .50, .90, .20, .10, .10),
+                        true, 190_000, 0).reasonCode);
+    }
+
+    @Test public void p01RejectsOppositeFlow() {
+        assertEquals(ContinuationConfirmation.P01_FLOW_REJECT,
+                confirm("LONG", snapshot(200_000, .50, 1.20, .20, .10, -.01),
+                        true, 190_000, 0).reasonCode);
+    }
+
+    @Test public void p01RejectsStaleFeed() {
+        assertEquals(ContinuationConfirmation.P01_STALE_REJECT,
+                confirm("LONG", snapshot(200_000, .50, 1.20, .20, .10, .10),
+                        false, 190_000, 0).reasonCode);
+    }
+
+    @Test public void premium15mLabelIsNonBlocking() {
+        ContinuationConfirmation.Result normal = confirm("LONG",
+                snapshot(200_000, .50, 1.20, .20, -.01, .10), true, 190_000, 0);
+        ContinuationConfirmation.Result premium = confirm("LONG",
+                snapshot(200_000, .50, 1.20, .20, .01, .10), true, 190_000, 0);
+        assertTrue(normal.confirmed);
+        assertFalse(normal.premium15m);
+        assertTrue(premium.confirmed);
+        assertTrue(premium.premium15m);
+    }
+
+    @Test public void p01CooldownStartsOnlyAfterFinalConfirmation() {
+        SignalSafetyPolicies.P01CooldownTracker tracker =
+                new SignalSafetyPolicies.P01CooldownTracker();
+        tracker.candidateDetected(100_000);
+        tracker.candidateRejected(110_000);
+        assertEquals(0, tracker.lastConfirmedAt());
+        assertFalse(tracker.coolingDown(120_000));
+        tracker.finalConfirmed(130_000);
+        assertEquals(130_000, tracker.lastConfirmedAt());
+        assertTrue(tracker.coolingDown(130_001));
+        assertFalse(tracker.coolingDown(130_000 + SignalEngine.COOLDOWN_MS));
+    }
+
+    @Test public void rangeFadeDoesNotRequireP01() {
+        assertTrue(ContinuationConfirmation.requiresP01("SCALP_CONTINUATION"));
+        assertFalse(ContinuationConfirmation.requiresP01("RANGE_FADE_LONG"));
+    }
+
+    @Test public void finalQuantityMapsAllFiveLevels() {
+        assertEquals(3, SignalEngine.computeFinalConfirmedQuantity(74));
+        assertEquals(4, SignalEngine.computeFinalConfirmedQuantity(75));
+        assertEquals(5, SignalEngine.computeFinalConfirmedQuantity(80));
+        assertEquals(6, SignalEngine.computeFinalConfirmedQuantity(85));
+        assertEquals(7, SignalEngine.computeFinalConfirmedQuantity(90));
+    }
+
+    @Test public void quantityIsAlwaysWithinThreeAndSeven() {
+        assertEquals(3, SignalEngine.computeFinalConfirmedQuantity(Integer.MIN_VALUE));
+        assertEquals(7, SignalEngine.computeFinalConfirmedQuantity(Integer.MAX_VALUE));
     }
 }

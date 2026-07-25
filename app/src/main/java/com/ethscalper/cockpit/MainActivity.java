@@ -147,7 +147,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.32.6 · Android natif", 12, MUTED, true);
+        TextView version = text("v2.32.7 · Android natif", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -164,9 +164,9 @@ public class MainActivity extends Activity {
 
     private void buildActionCard() {
         LinearLayout card = card("ACTION IMMÉDIATE · EXÉCUTION MANUELLE", ORANGE);
-        actionValue = text("NE PAS ENTRER", 26, TEXT, true);
+        actionValue = text("Analyse du marché en cours", 26, TEXT, true);
         card.addView(actionValue);
-        actionDetails = text("Aucun ordre automatique · attendre un signal confirmé", 14, MUTED, false);
+        actionDetails = text("Le moteur travaille silencieusement · aucun ordre automatique", 14, MUTED, false);
         actionDetails.setPadding(0, dp(8), 0, 0);
         card.addView(actionDetails);
     }
@@ -450,7 +450,10 @@ public class MainActivity extends Activity {
                         state.optString("activeSignalStatus", "NONE"),
                         state.optString("signalExecutionState", "ATTENDRE"));
                 renderDiagnostics(diagnostics, state.optString("engineReason", "NO_DATA"), reason);
-                if (aiInfo != null) aiInfo.setText("IA OpenAI : " + (state.optBoolean("aiEnabled", false) ? "ON · assistance active" : "OFF · moteur seul") + " · " + state.optString("aiStatus", "AI_OFF"));
+                if (aiInfo != null) aiInfo.setText("IA OpenAI : "
+                        + (state.optBoolean("aiEnabled", false)
+                        ? "avis informatif après signal" : "OFF · moteur complet")
+                        + " · hors chemin critique");
                 serviceInfo.setText(visibleServiceInfo);
             });
         } catch (Exception ignored) {}
@@ -472,7 +475,7 @@ public class MainActivity extends Activity {
 
     private void renderDecision(String decision, String reason) {
         int color = "ENTRER".equals(decision) ? CYAN
-                : "GARDER".equals(decision) ? CYAN
+                : ("GARDER".equals(decision) || "GÉRER".equals(decision)) ? CYAN
                 : "FERMER".equals(decision) ? RED : ORANGE;
         decisionValue.setText(decision);
         decisionValue.setTextColor(color);
@@ -520,19 +523,20 @@ public class MainActivity extends Activity {
                 + " · " + signal.optInt("qty", 0) + " ETH";
 
         if (activeSignal) {
-            signalValue.setText("SIGNAL LIMIT VALIDE — ORDRE À PRIX FIXE"
+            String quality = signal.optString("family", "").contains("P01_PREMIUM_15M")
+                    ? "Qualité premium 15 min" : "Qualité normale";
+            signalValue.setText("SIGNAL FINAL CONFIRMÉ"
                     + "\n" + ageText
-                    + "\nValidité : jusqu’à TP / SL / invalidation marché confirmée"
-                    + "\nNe pas entrer au marché : utiliser seulement le prix LIMIT."
+                    + "\n" + quality
                     + "\n" + plan);
             signalValue.setTextColor(CYAN);
         } else {
-            signalValue.setText("SIGNAL PASSÉ — NE PAS ENTRER MAINTENANT"
+            signalValue.setText("SIGNAL EXPIRÉ — NE PAS ENTRER"
                     + "\n" + ageText
                     + "\nInvalidation : " + humanSignalStatus(activeStatus)
                     + "\n\nDernier plan reçu :"
                     + "\n" + plan);
-            signalValue.setTextColor(ORANGE);
+            signalValue.setTextColor(RED);
         }
     }
 
@@ -563,49 +567,24 @@ public class MainActivity extends Activity {
 
     private void renderAction(String action, String decision, JSONObject signal, double eth, long signalAt,
                               boolean activeSignal, String activeStatus, String executionState) {
-        if ("LIMIT_EN_ATTENTE".equals(executionState)
-                && "ENTRER".equals(decision) && signal != null && activeSignal) {
+        if (signal != null && activeSignal
+                && ("À EXÉCUTER MAINTENANT".equals(action)
+                || "GÉRER LE PLAN ACTIF".equals(action))) {
             String side = signal.optString("side", "");
             int qty = signal.optInt("qty", 0);
             int score = signal.optInt("score", 0);
             double entry = number(signal, "entry");
             double tp = number(signal, "tp");
             double sl = number(signal, "sl");
+            boolean premium = signal.optString("family", "").contains("P01_PREMIUM_15M");
 
-            long ageSec = signalAt > 0 ? Math.max(0, (System.currentTimeMillis() - signalAt) / 1000) : 0;
-
-            actionValue.setText("ORDRE LIMIT EN ATTENTE — " + side + " · " + qty + " ETH");
-            actionValue.setTextColor(ORANGE);
-            actionDetails.setText("Prix LIMIT à poser ou garder : " + formatPrice(entry)
-                    + "\nQuantité : " + qty + " ETH · score " + score + "/100"
-                    + "\nPrix actuel : " + formatPrice(eth)
-                    + "\nTP : " + formatPrice(tp) + " · SL : " + formatPrice(sl)
-                    + "\nÉtat : pas encore déclenché par le prix LIMIT"
-                    + "\nÂge du signal : " + formatDuration(ageSec)
-                    + "\nNe pas entrer au marché. Ne pas poursuivre le prix."
-                    + "\nAnnuler seulement si l’app dit SIGNAL ANNULÉ.");
-            return;
-        }
-
-        if (("LIMIT_DECLENCHE".equals(executionState) || "LIMIT_VALIDE".equals(executionState) || "ENTRER_MAINTENANT".equals(executionState))
-                && "ENTRER".equals(decision) && signal != null && activeSignal) {
-            String side = signal.optString("side", "");
-            int qty = signal.optInt("qty", 0);
-            int score = signal.optInt("score", 0);
-            double entry = number(signal, "entry");
-            double tp = number(signal, "tp");
-            double sl = number(signal, "sl");
-
-            long ageSec = signalAt > 0 ? Math.max(0, (System.currentTimeMillis() - signalAt) / 1000) : 0;
-
-            actionValue.setText("ORDRE DÉCLENCHÉ — " + side + " · " + qty + " ETH");
+            actionValue.setText(action);
             actionValue.setTextColor(CYAN);
-            actionDetails.setText("Entrée LIMIT touchée : " + formatPrice(entry)
+            actionDetails.setText(side + " · LIMIT " + formatPrice(entry)
+                    + "\nTP " + formatPrice(tp) + " · SL " + formatPrice(sl)
                     + "\nQuantité : " + qty + " ETH · score " + score + "/100"
-                    + "\nPrix actuel : " + formatPrice(eth)
-                    + "\nTP : " + formatPrice(tp) + " · SL : " + formatPrice(sl)
-                    + "\nÂge du signal : " + formatDuration(ageSec)
-                    + "\nSuivi TP / SL / invalidation confirmée.");
+                    + "\nQualité : " + (premium ? "premium 15 min" : "normale")
+                    + "\nExécution exclusivement manuelle · aucun ordre envoyé par l’application.");
             return;
         }
 
@@ -624,7 +603,7 @@ public class MainActivity extends Activity {
         }
 
         if ("ANNULE".equals(executionState) || "SCENARIO_INVALIDATED".equals(activeStatus)) {
-            actionValue.setText("SIGNAL ANNULÉ — NE PAS ENTRER");
+            actionValue.setText("SIGNAL EXPIRÉ — NE PAS ENTRER");
             actionValue.setTextColor(RED);
             actionDetails.setText("Le scénario marché est invalidé par confirmation forte. Annuler l’ordre limit s’il était posé.");
             return;
@@ -637,16 +616,9 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if ("V230_AI_PENDING".equals(decision) || "AI_PENDING".equals(executionState)) {
-            actionValue.setText("ANALYSE IA EN COURS — ATTENDRE");
-            actionValue.setTextColor(ORANGE);
-            actionDetails.setText("Ne rien faire tant que l’IA n’a pas confirmé.");
-            return;
-        }
-
-        actionValue.setText("NE PAS ENTRER");
+        actionValue.setText("Analyse du marché en cours");
         actionValue.setTextColor(TEXT);
-        actionDetails.setText("Aucun signal exécutable maintenant · attendre un signal validé.");
+        actionDetails.setText("Le moteur travaille silencieusement · aucun ordre automatique.");
     }
 
     private void renderDiagnostics(JSONArray diagnostics, String fallbackCode, String fallbackReason) {
@@ -722,7 +694,7 @@ public class MainActivity extends Activity {
                 addZipText(zip, "persistent_market_frames.jsonl", persistentFramesJsonl == null ? "" : persistentFramesJsonl);
                 addZipText(zip, "overnight_recorder_summary.json", overnightSummary.toString(2));
                 addZipText(zip, "overnight_recorder_summary.txt",
-                        "OVERNIGHT RECORDER v2.32.6\n\n" +
+                        "OVERNIGHT RECORDER v2.32.7\n\n" +
                         "observationEvents=" + overnightSummary.optInt("observationEvents", 0) + "\n" +
                         "marketFrames=" + overnightSummary.optInt("marketFrames", 0) + "\n" +
                         "durationSec=" + overnightSummary.optLong("durationSec", 0) + "\n" +
@@ -762,7 +734,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.32.6 Android natif\n");
+        b.append("Version app: v2.32.7 Android natif\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
         b.append("Mode: V230_HYBRID_AI_SCALP_ENGINE — recherche uniquement, aucun trade réel\n\n");
 
@@ -899,7 +871,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.32.6\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.32.7\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -952,7 +924,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("PRO LABEL LAB — ETH SCALPER v2.32.6\n\n");
+        b.append("PRO LABEL LAB — ETH SCALPER v2.32.7\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -983,7 +955,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.32.6\n\n");
+        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.32.7\n\n");
         b.append("mode=").append(s.optString("mode", "—")).append("\n");
         b.append("frames=").append(s.optInt("frames", 0)).append("\n");
         b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");

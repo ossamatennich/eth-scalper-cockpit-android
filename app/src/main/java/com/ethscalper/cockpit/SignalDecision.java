@@ -64,5 +64,23 @@ public final class SignalDecision {
                 impulse, reset, origin, extreme, distance, false);
     }
 
+    public static SignalDecision confirmed(String side, String family, String reasonCode,
+                                           String reasonText, int score, int quantity,
+                                           double entry, double takeProfit, double stopLoss,
+                                           double targetMove, double stopDistance, String impulse,
+                                           boolean reset, double origin, double extreme,
+                                           double distance) {
+        return new SignalDecision("ENTRER", reasonCode, reasonText, side, family, score,
+                quantity, entry, takeProfit, stopLoss, targetMove, stopDistance,
+                impulse, reset, origin, extreme, distance, false);
+    }
+
+    public SignalDecision withQuantityAndFamily(int finalQuantity, String finalFamily,
+                                                String finalReasonCode, String finalReasonText) {
+        return confirmed(side, finalFamily, finalReasonCode, finalReasonText, score, finalQuantity,
+                entry, takeProfit, stopLoss, targetMove, stopDistance, impulse, resetConfirmed,
+                movementOrigin, movementExtreme, movementDistance);
+    }
+
     public boolean isSignal() { return "ENTRER".equals(decision); }
 }

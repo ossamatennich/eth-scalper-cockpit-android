@@ -19,6 +19,7 @@ public final class MarketSnapshot {
     public final double move1;
     public final double move3;
     public final double move8;
+    public final double move15;
     public final double flowNorm;
     public final double btcMove5;
     public final double recentHigh;
@@ -78,6 +79,7 @@ public final class MarketSnapshot {
         move1 = b.move1;
         move3 = b.move3;
         move8 = b.move8;
+        move15 = b.move15;
         flowNorm = b.flowNorm;
         btcMove5 = b.btcMove5;
         recentHigh = b.recentHigh;
@@ -125,7 +127,7 @@ public final class MarketSnapshot {
         private long lastSignalAt;
         private double ethLast, ethBid, ethAsk, btcLast, btcBid, btcAsk;
         private int ethCandles, btcCandles;
-        private double avgRange20, avgVolume20, lastVolume, move1, move3, move8;
+        private double avgRange20, avgVolume20, lastVolume, move1, move3, move8, move15;
         private double flowNorm, btcMove5, recentHigh, recentLow;
 
         private double recentRange, volumeRatio, rangePosition, distanceToHigh, distanceToLow;
@@ -145,6 +147,10 @@ public final class MarketSnapshot {
 
         public Builder movement(double one, double three, double eight, double high, double low) {
             move1=one; move3=three; move8=eight; recentHigh=high; recentLow=low; return this;
+        }
+
+        public Builder move15(double fifteen) {
+            move15=fifteen; return this;
         }
 
         public Builder flow(double normalized, double volume) {

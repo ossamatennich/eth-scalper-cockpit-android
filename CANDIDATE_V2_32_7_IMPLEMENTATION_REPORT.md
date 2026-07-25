@@ -1,0 +1,109 @@
+# Candidate v2.32.7 — rapport d’implémentation
+
+## Référence Git
+
+- Dépôt : `ossamatennich/eth-scalper-cockpit-android`
+- Branche source verrouillée : `agent/v2.32.6-candidate`
+- HEAD source vérifié : `493820ef1d1a01a65160ffb56c91a8b04b255f62`
+- Branche candidate créée : `agent/v2.32.7-scalp-p01-candidate`
+- Cible Android : `versionCode 23270`, `versionName 2.32.7`
+- Aucun merge vers `main` et aucune release définitive.
+
+La première tentative de commit a été refusée car aucune identité Git locale n’était configurée dans ce clone neuf. L’identité déjà utilisée par l’historique du dépôt (`ossamatennich <ossamatennich@users.noreply.github.com>`) a été configurée uniquement dans ce dépôt, sans modifier la configuration Git globale.
+
+## Fichiers modifiés
+
+- `app/build.gradle`
+- `app/src/main/java/com/ethscalper/cockpit/AiAdvisor.java`
+- `app/src/main/java/com/ethscalper/cockpit/ContinuationConfirmation.java` (nouveau)
+- `app/src/main/java/com/ethscalper/cockpit/MainActivity.java`
+- `app/src/main/java/com/ethscalper/cockpit/MarketSnapshot.java`
+- `app/src/main/java/com/ethscalper/cockpit/MarketWatchService.java`
+- `app/src/main/java/com/ethscalper/cockpit/SignalDecision.java`
+- `app/src/main/java/com/ethscalper/cockpit/SignalEngine.java`
+- `app/src/main/java/com/ethscalper/cockpit/SignalSafetyPolicies.java` (nouveau)
+- `app/src/test/java/com/ethscalper/cockpit/SignalEngineTest.java`
+- `app/src/test/java/com/ethscalper/cockpit/SignalEngineRulesTest.java`
+- `.github/workflows/build-apk.yml`
+- `.github/workflows/build-v2327-candidate.yml` (nouveau)
+- `.gitignore` (cache Gradle et produits de build)
+- les quatre rapports de cette candidate.
+
+## Corrections C01 à C08
+
+- **C01 — feed stale** : le snapshot est construit et le lifecycle des candidats/risques est mis à jour avant le veto `V2326_ETH_FEED_STALE`. Le feed stale interdit une nouvelle entrée mais conserve TP, SL, invalidation et timeout. Texte public : « Nouvelles entrées bloquées — gestion des risques existants maintenue. »
+- **C02 — exécution** : les diagnostics exposent `FAST_DEPARTURE`, `DELAYED_DEPARTURE`, `POST_TIMEOUT_DEPARTURE`, `LATE_RETURN_PARTIAL`, `LATE_RETURN_NEAR_TARGET`, `ENTRY_REVALIDATION_REJECTED`, `OPEN_ACTIVE_RISK` et `MISSED_NO_FILL` uniquement quand un non-fill est démontré.
+- **C03** : le cahier des charges ne définit pas de nouvelle formule C03 autonome. Les veto de qualité, de mémoire de scénario et de revalidation présents sur la source verrouillée sont conservés ; aucun seuil non spécifié n’a été inventé.
+- **C04** : veto symétrique au fill si `move1Aligned < avgRange20 × 0,08` et `flow30Aligned <= 0`, code `CONTINUATION_FRAICHEUR_PERDUE_AU_FILL`.
+- **C05** : une RANGE_FADE remplie ne dépasse 15 minutes que si risque ≤ 0,45, progrès ≥ 0,35, `move3Aligned > 0` et `move8Aligned > -0,25 × avgRange20`. Code journalisé : `RANGE_FADE_TIMEOUT_RECOVERY_CONTEXT`. Le plafond de 45 minutes et les invalidations fortes restent prioritaires.
+- **C06** : après 120 secondes, un signal final encore valide passe à `GÉRER`, action `GÉRER LE PLAN ACTIF`, code `V2326_ACTIVE_RISK_MANAGEMENT`.
+- **C07** : veto symétrique au fill si les mouvements 1 min et 8 min sont opposés, code `CONTINUATION_CONFLIT_1M_8M_AU_FILL`.
+- **C08** : veto si au moins 40 % de cible a déjà été parcouru avant fill, latence ≥ 120 s, et mouvements 1 min/3 min opposés. Code `CONTINUATION_MOUVEMENT_CONSOMME_AVANT_FILL`.
+
+Les règles C04/C07/C08 ne changent jamais l’entrée, le TP, le SL ou la quantité.
+
+## P01 et contexte 15 minutes
+
+Une CONTINUATION brute est désormais un candidat interne silencieux. Au toucher du niveau, un snapshot courant est utilisé. Le signal n’est publié que si :
+
+- `move1Aligned >= avgRange20 × 0,40`
+- `move3Aligned >= avgRange20 × 1,00`
+- `flow30Aligned >= 0`
+- feed ETH frais
+- C04, C07 et C08 validées.
+
+Le code final est `CONTINUATION_CONFLUENCE_POSITIVE_AU_FILL`. Le cooldown de 18 minutes est mémorisé uniquement à la confirmation P01 finale ; un candidat ou rejet ne le démarre pas. RANGE_FADE conserve son moteur et ses veto et ne passe pas par P01.
+
+`move15` est calculé à partir des bougies 1 minute déjà présentes. Un mouvement 15 minutes aligné ajoute `P01_PREMIUM_15M` et l’affichage « Qualité premium 15 min » sans bloquer un P01 normal et sans notification supplémentaire.
+
+## Quantité finale 3–7 ETH
+
+`SignalEngine.computeFinalConfirmedQuantity(int)` applique le mapping déterministe :
+
+- score ≤ 74 : 3 ETH
+- 75–79 : 4 ETH
+- 80–84 : 5 ETH
+- 85–89 : 6 ETH
+- ≥ 90 : 7 ETH.
+
+La quantité est calculée lors de la publication finale, puis le même objet de plan alimente l’écran, le recorder et la notification. Les caps aval et les modifications par l’IA ont été retirés du chemin de publication.
+
+## Notifications et expérience utilisateur
+
+- Aucun candidat, fill en attente, veto, rejet, timeout de candidat ou analyse IA ne sonne.
+- Même la fonction de test de notification est silencieuse afin de préserver la règle « un son = un signal final ».
+- Un signal final utilise un titre `🚨 SIGNAL ETH CONFIRMÉ — LONG/SHORT` et le corps `LIMIT · TP · SL · quantité`, avec `PREMIUM 15M` si nécessaire.
+- La signature SHA-256 logique contient side, famille, entrée, TP, SL et bucket temporel.
+- Une signature déjà alertée est persistée et ne sonne pas une deuxième fois.
+- Les changements de lifecycle réutilisent le même ID de notification sur un canal silencieux.
+- Une invalidation affiche `SIGNAL EXPIRÉ — NE PAS ENTRER` dans la notification et en rouge dans l’application.
+- Avant tout signal final, l’action principale est simplement « Analyse du marché en cours ».
+- Aucun ordre n’est envoyé. `realTradingAllowed=false`.
+
+## IA OpenAI
+
+L’IA est hors chemin critique :
+
+- aucun état `AI_PENDING`
+- aucun veto ou délai IA avant publication
+- aucune modification d’entrée, TP, SL ou quantité
+- aucune notification IA
+- aucun appel requis lorsque l’IA est désactivée.
+
+Si l’utilisateur l’active, un avis asynchrone peut être enregistré après publication. Il ne modifie jamais le plan publié.
+
+## Diagnostics et résultats
+
+Les champs de fill ajoutés sont :
+
+`marketableAtCreation`, `creationBid`, `creationAsk`, `creationLast`, `plannedEntry`, `firstEntryTouchAt`, `firstEntryTouchPrice`, `firstEntryTouchBid`, `firstEntryTouchAsk`, `simulatedFillAt`, `simulatedFillPrice`, `manualEntryConfirmed=false`, `manualEntryPrice`, `manualEntryAt`.
+
+Les résultats distinguent `terminalResolved`, brut/frais/net réalisés, prix marqué, brut/net latent et âge du risque ouvert. Un risque encore actif n’est pas une perte réalisée. Le coût de recherche/playback natif est unifié à `1,43 USDT/ETH` par aller-retour complet ; aucune configuration de frais réels utilisateur n’est modifiée.
+
+## Limitations restantes
+
+- Les 11 archives historiques demandées n’étaient présentes ni dans le workspace, ni dans `Téléchargements`, ni dans `Documents`. Aucun résultat de replay n’a été fabriqué.
+- Les résultats de référence P01/candidate combinée n’ont donc pas été reproduits localement.
+- Le recorder compatible JSONL a été préservé sans refonte risquée ; voir `RECORDER_OPTIMIZATION_REPORT.md`.
+- Les recherches historiques v2.33 et actifs anciens sont laissés intacts ; voir `REPO_CLEANUP_REPORT.md`.
+- Les tests unitaires couvrent les politiques pures et leurs raccordements compilables. Un test instrumenté Android réel des canaux sonores reste pertinent avant promotion en release définitive.
