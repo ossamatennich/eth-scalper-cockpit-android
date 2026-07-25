@@ -102,7 +102,20 @@ Contrôle release local non signé :
 
 ## GitHub Actions
 
-Le run v2.32.8.1 sera renseigné après le push du commit applicatif. La PR reste en brouillon et aucun artefact de release définitive ne sera publié.
+Run du commit applicatif `04d224fb2b8c58208de631345b8251e4f29823d5` :
+
+- Run : `30175973884`
+- URL : `https://github.com/ossamatennich/eth-scalper-cockpit-android/actions/runs/30175973884`
+- Job `test-and-build` : succès (tests, build debug et upload).
+- Artefact : `ETH-Scalper-Cockpit-v2.32.8.1-debug-apk`
+- ID artefact : `8624218470`
+- Taille de l’archive GitHub : `4 044 257` octets
+- Digest de l’archive GitHub : `sha256:e5e749dc4ebb1787a20e29e51fe442886b491a5965880b77b069d9b0219d1e65`
+- Taille de l’APK extraite : `4 503 472` octets
+- SHA-256 de l’APK GitHub Actions : `69E398BFB9D00A0850409E835EBA4AF8A3D69D010C08908C5CA6B456C81D1D68`
+- Manifeste de l’APK CI vérifié par `aapt` : `versionCode 23281`, `versionName 2.32.8.1`, `minSdk 26`, `targetSdk 35`.
+
+La différence de hash avec l’APK locale provient des builds/signatures debug produits dans deux environnements distincts ; les deux manifestes portent la même version. La PR reste en brouillon et aucun artefact de release définitive n’a été publié.
 
 ## Incidents environnementaux corrigés
 
