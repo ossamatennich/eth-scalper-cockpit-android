@@ -77,7 +77,20 @@ Contrôle release local non signé :
 
 ## GitHub Actions
 
-Le workflow candidat est configuré pour publier `ETH-Scalper-Cockpit-v2.32.8-debug-apk`. Le run, l’artefact et son SHA-256 seront ajoutés après le push du commit testé, sans transformer la PR en PR prête et sans créer de release.
+Run du commit applicatif `692752eb558c3711db5d3491efcb6358f896c381` :
+
+- Run : `30172643711`
+- URL : `https://github.com/ossamatennich/eth-scalper-cockpit-android/actions/runs/30172643711`
+- Job `test-and-build` : succès (tests, build debug et upload).
+- Artefact : `ETH-Scalper-Cockpit-v2.32.8-debug-apk`
+- ID artefact : `8623342115`
+- Taille de l’archive GitHub : `4 033 592` octets
+- Digest de l’archive GitHub : `sha256:fcad084af14e20e6fdef723c300043ba12253c308921b389be44d02f720846d0`
+- Taille de l’APK extraite : `4 494 644` octets
+- SHA-256 de l’APK GitHub Actions : `74A9EE1FC2911A3C9CCB44C58A321978FBF0A8E8FEEE0C95BACDC389F5C9A4D6`
+- Manifeste de l’APK CI vérifié : `versionCode 23280`, `versionName 2.32.8`.
+
+La différence de hash avec l’APK locale provient des builds/signatures debug produits dans deux environnements distincts ; les deux manifestes portent la même version. Aucun artefact de release définitive n’a été publié.
 
 ## Incidents environnementaux corrigés
 
