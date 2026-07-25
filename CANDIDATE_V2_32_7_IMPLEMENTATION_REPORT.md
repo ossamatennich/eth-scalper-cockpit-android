@@ -1,6 +1,6 @@
-# Candidate v2.32.8 — rapport d’implémentation
+# Candidate v2.32.8.1 — rapport d’implémentation
 
-> Le nom du fichier est conservé pour la continuité de la candidate, mais l’application produite est **ETH Scalper Cockpit v2.32.8 — TP/SL Only** (`versionCode 23280`, `versionName 2.32.8`).
+> Le nom du fichier est conservé pour la continuité de la candidate, mais l’application produite est **ETH Scalper Cockpit v2.32.8.1 — TP/SL Only** (`versionCode 23281`, `versionName 2.32.8.1`).
 
 ## Référence Git
 
@@ -8,10 +8,10 @@
 - Branche source verrouillée : `agent/v2.32.6-candidate`
 - HEAD source : `493820ef1d1a01a65160ffb56c91a8b04b255f62`
 - Branche candidate reprise : `agent/v2.32.7-scalp-p01-candidate`
-- HEAD au départ de ce correctif : `4483f4c443d23fe8397b60cc204a481a5970ab83`
+- HEAD au départ de ce correctif : `ee29a0d08dfe9020c92b525c0bd226254b0e6628`
 - Aucun merge vers `main`, aucune nouvelle branche et aucune release définitive.
 
-## Portée du correctif v2.32.8
+## Portée du correctif v2.32.8.1
 
 Fichiers modifiés pour ce correctif :
 
@@ -20,16 +20,31 @@ Fichiers modifiés pour ce correctif :
 - `app/src/main/java/com/ethscalper/cockpit/CandidateLifecycle.java`
 - `app/src/main/java/com/ethscalper/cockpit/MainActivity.java`
 - `app/src/main/java/com/ethscalper/cockpit/MarketWatchService.java`
-- `app/src/main/java/com/ethscalper/cockpit/PendingCandidateIndex.java` (nouveau)
+- `app/src/main/java/com/ethscalper/cockpit/ActivePlanPersistence.java` (nouveau)
+- `app/src/main/java/com/ethscalper/cockpit/ActivePlanState.java` (nouveau)
+- `app/src/main/java/com/ethscalper/cockpit/SharedPreferencesActivePlanBackend.java` (nouveau)
+- `app/src/main/java/com/ethscalper/cockpit/SignalEngine.java`
 - `app/src/main/java/com/ethscalper/cockpit/SignalSafetyPolicies.java`
-- `app/src/test/java/com/ethscalper/cockpit/CandidateLifecycleIntegrationTest.java`
-- `app/src/test/java/com/ethscalper/cockpit/SignalEngineRulesTest.java`
-- `app/src/test/java/com/ethscalper/cockpit/TpSlOnlyLifecycleIntegrationTest.java` (nouveau)
+- `app/src/test/java/com/ethscalper/cockpit/ActivePlanPersistenceIntegrationTest.java` (nouveau)
 - `.github/workflows/build-apk.yml`
 - `.github/workflows/build-v2327-candidate.yml`
 - les rapports de candidate.
 
 Les seuils C01–C08, P01, premium 15 minutes, entrée, TP, SL, sizing confirmé 3–7 ETH, plafond replay à 5 ETH, plafond RANGE_FADE à 4 ETH, IA informative et interdiction du trading automatique ne sont pas modifiés.
+
+## ACTIVE PLAN PERSISTENCE
+
+- La confirmation finale est validée dans un état dédié versionné avant toute publication et avant l’alerte sonore.
+- Le stockage repose sur des `SharedPreferences` internes dédiées et un `commit()` synchrone en une seule transaction ; le journal JSONL ne sert pas de source de restauration.
+- L’état contient le plan, les timestamps, le statut `ACTIVE`, le premium 15 minutes, le score, le sizing et ses preuves, les dernières données de marché, `lastP01ConfirmedAt`, la signature et l’identifiant de notification.
+- Au démarrage du service, la restauration précède la première évaluation : `lastSignal`, `lastSignalAt`, `lastP01ConfirmedAt` et l’`ObservedSignal` actif sont reconstruits.
+- Le reason code `V23281_ACTIVE_PLAN_PERSISTED` confirme l’écriture et `V23281_ACTIVE_PLAN_RESTORED` la reprise.
+- Une restauration remet silencieusement à jour le même identifiant de notification avec `PLAN ACTIF RESTAURÉ`; elle ne sonne pas, ne vibre pas et ne publie aucun nouveau signal.
+- Le verrou d’un seul plan reste actif après redémarrage et bloque LONG, SHORT, P01 et RANGE_FADE jusqu’au TP ou au SL.
+- Seuls `TP_TOUCHED` et `SL_TOUCHED` suppriment automatiquement l’état persistant. Le temps, le contexte, le feed stale, une déconnexion ou une invalidation analytique ne le suppriment pas.
+- `ACTION_RESET_DIAGNOSTICS` conserve le plan, ses timestamps, son objet actif, le cooldown P01 et son état persistant ; seuls les diagnostics et candidats non actifs sont effacés.
+- Un état incomplet ou corrompu est rejeté sans plan synthétique ni crash avec `V23281_ACTIVE_PLAN_RESTORE_INVALID`, puis l’analyse normale continue.
+- Le petit correctif Android 26–28 ajouté pendant le lint garde l’export diagnostic fonctionnel sans appeler l’API 29 `MediaStore.Downloads` sur ces versions ; il ne touche pas au moteur.
 
 ## TP/SL ONLY LIFECYCLE
 
@@ -88,5 +103,5 @@ C01–C08 et P01 restent appliqués avant la publication finale. C05 est conserv
 ## Limitations
 
 - Aucun replay historique exact n’a été relancé pour ce changement de lifecycle ; aucun résultat financier historique n’est revendiqué.
-- Les formats historiques de timeout/invalidation restent lisibles en laboratoire, sans influencer le parcours live v2.32.8.
+- Les formats historiques de timeout/invalidation restent lisibles en laboratoire, sans influencer le parcours live v2.32.8.1.
 - Les tests JVM valident les politiques et composants de production ; un essai instrumenté sur appareil réel reste recommandé avant toute promotion hors brouillon.

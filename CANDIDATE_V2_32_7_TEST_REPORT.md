@@ -1,6 +1,6 @@
-# Candidate v2.32.8 — rapport de tests
+# Candidate v2.32.8.1 — rapport de tests
 
-> Le nom du fichier reste historique ; tous les résultats ci-dessous concernent **ETH Scalper Cockpit v2.32.8 — TP/SL Only**.
+> Le nom du fichier reste historique ; tous les résultats ci-dessous concernent **ETH Scalper Cockpit v2.32.8.1 — TP/SL Only**.
 
 ## Environnement
 
@@ -9,29 +9,54 @@
 - JDK : Android Studio JBR 17
 - Gradle : 8.10.2 temporaire, le dépôt ne fournissant pas de wrapper fonctionnel
 - Package debug vérifié par `aapt` : `com.ethscalper.cockpit.debug`
-- `versionCode=23280`, `versionName=2.32.8`, `minSdk=26`, `targetSdk=35`
+- `versionCode=23281`, `versionName=2.32.8.1`, `minSdk=26`, `targetSdk=35`
 
 ## Commandes exécutées
 
 ```powershell
-gradle testDebugUnitTest --rerun-tasks
-gradle testReleaseUnitTest --rerun-tasks
 gradle test --rerun-tasks
 gradle assembleDebug --rerun-tasks
 gradle assembleRelease --rerun-tasks
+gradle lintRelease --rerun-tasks
 ```
 
 Les commandes ont été exécutées en mono-worker avec `JAVA_HOME` et `ANDROID_HOME` limités au processus.
 
 ## Résultats
 
-- 70 tests distincts.
-- 70/70 réussis en debug.
-- 70/70 réussis en release.
-- 140 exécutions réussies pendant la dernière passe globale forcée.
+- 88 tests distincts.
+- 88/88 réussis en debug.
+- 88/88 réussis en release.
+- 176 exécutions réussies pendant la dernière passe globale forcée.
 - 0 échec, 0 erreur, 0 test ignoré.
 - `assembleDebug --rerun-tasks` : succès.
 - `assembleRelease --rerun-tasks` et lint vital release : succès.
+- `lintRelease --rerun-tasks` : succès après ajout de la garde API 29 dans l’export diagnostic.
+
+## ACTIVE PLAN PERSISTENCE
+
+Les 18 nouveaux tests couvrent :
+
+1. écriture du plan après confirmation ;
+2. restauration dans une nouvelle instance de persistance/service ;
+3. blocage d’un nouveau LONG par le plan restauré ;
+4. blocage d’un nouveau SHORT ;
+5. blocage d’un RANGE_FADE ;
+6. restauration silencieuse ;
+7. conservation du même identifiant de notification ;
+8. maintien actif après 15 minutes ;
+9. maintien actif après 45 minutes ;
+10. maintien malgré un contexte défavorable ;
+11. suppression de l’état persistant par TP ;
+12. suppression par SL ;
+13. nouveau signal autorisé après TP ;
+14. nouveau signal autorisé après SL ;
+15. reset diagnostic conservant le plan actif ;
+16. reset normal sans plan actif ;
+17. rejet sans crash d’un état corrompu ;
+18. `realTradingAllowed=false` et aucun ordre automatique.
+
+La restauration vérifie aussi l’identité de la quantité et des preuves de sizing. Aucun seuil C01–C08/P01, TP, SL ou sizing n’a été modifié.
 
 ## TP/SL ONLY LIFECYCLE
 
@@ -65,37 +90,24 @@ Les anciens tests qui réalisaient un timeout ou une invalidation ont été adap
 ## APK locale
 
 - Chemin exact : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\debug\app-debug.apk`
-- Taille : `4 495 440` octets
-- SHA-256 : `146C522E8CBA8D32F83A5B32ACF61DEBCB73600006AB18D4DE4839E0B27295E3`
-- Manifeste vérifié : `versionCode 23280`, `versionName 2.32.8`.
+- Taille : `4 504 264` octets
+- SHA-256 : `123D9DB060B0175FE354D2CB8C47F323DAABE53C5C1F1F383FA258D719830FD1`
+- Manifeste vérifié par `aapt` : `versionCode 23281`, `versionName 2.32.8.1`, `minSdk 26`, `targetSdk 35`.
 
 Contrôle release local non signé :
 
 - Chemin : `app\build\outputs\apk\release\app-release-unsigned.apk`
-- Taille : `3 579 485` octets
-- SHA-256 : `99BB2570AC6EB574C0B1850D19A020A3F63949452091628A14C8D8E07DB70203`
+- Taille : `3 585 505` octets
+- SHA-256 : `970BE00D74B99169CB9CC2701D8EFFF95AE4373D153331030D04D0B34B13A70A`
 
 ## GitHub Actions
 
-Run du commit applicatif `692752eb558c3711db5d3491efcb6358f896c381` :
-
-- Run : `30172643711`
-- URL : `https://github.com/ossamatennich/eth-scalper-cockpit-android/actions/runs/30172643711`
-- Job `test-and-build` : succès (tests, build debug et upload).
-- Artefact : `ETH-Scalper-Cockpit-v2.32.8-debug-apk`
-- ID artefact : `8623342115`
-- Taille de l’archive GitHub : `4 033 592` octets
-- Digest de l’archive GitHub : `sha256:fcad084af14e20e6fdef723c300043ba12253c308921b389be44d02f720846d0`
-- Taille de l’APK extraite : `4 494 644` octets
-- SHA-256 de l’APK GitHub Actions : `74A9EE1FC2911A3C9CCB44C58A321978FBF0A8E8FEEE0C95BACDC389F5C9A4D6`
-- Manifeste de l’APK CI vérifié : `versionCode 23280`, `versionName 2.32.8`.
-
-La différence de hash avec l’APK locale provient des builds/signatures debug produits dans deux environnements distincts ; les deux manifestes portent la même version. Aucun artefact de release définitive n’a été publié.
+Le run v2.32.8.1 sera renseigné après le push du commit applicatif. La PR reste en brouillon et aucun artefact de release définitive ne sera publié.
 
 ## Incidents environnementaux corrigés
 
-Le premier packaging local a échoué après compilation et dex parce qu’un renderer Chrome défaillant retenait environ 18,9 Gio de mémoire privée, épuisant le fichier d’échange Windows. Seul ce renderer a été arrêté ; la session Chrome principale est restée ouverte. La mémoire virtuelle libérée a permis de relancer exactement `assembleDebug --rerun-tasks` avec succès. La première tentative release a ensuite atteint une limite locale de metaspace au lint ; la commande a été relancée avec davantage de metaspace et a réussi.
+Une première passe globale a rencontré un verrou Windows transitoire sur un `R.jar` release généré. `gradle clean` a libéré uniquement les intermédiaires régénérables, puis `test --rerun-tasks` a réussi. Le lint complet a ensuite signalé l’usage non gardé de `MediaStore.Downloads` (API 29) dans l’export diagnostic pour un `minSdk` 26 ; une branche compatible Android 26–28 a été ajoutée et le lint complet a réussi à la relance.
 
 ## Replay historique
 
-Aucun replay historique exact n’a été exécuté pour le lifecycle v2.32.8. Aucun résultat historique P01, sizing ou financier n’est revendiqué ou fabriqué.
+Aucun replay historique exact n’a été exécuté pour la persistance v2.32.8.1. Aucun résultat historique P01, sizing ou financier n’est revendiqué ou fabriqué.

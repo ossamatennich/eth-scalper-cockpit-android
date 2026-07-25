@@ -144,6 +144,15 @@ public final class SignalSafetyPolicies {
         return false;
     }
 
+    public static boolean restoredPlanIsAudible() {
+        return false;
+    }
+
+    public static int restoredNotificationId(int persistedNotificationId, String signature) {
+        return persistedNotificationId > 0
+                ? persistedNotificationId : confirmedNotificationId(signature);
+    }
+
     public static int confirmedNotificationId(String signature) {
         return 30_000 + Math.floorMod(signature == null ? 0 : signature.hashCode(), 60_000);
     }

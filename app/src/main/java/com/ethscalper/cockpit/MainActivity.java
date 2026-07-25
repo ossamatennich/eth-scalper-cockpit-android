@@ -14,6 +14,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.provider.MediaStore;
@@ -147,7 +148,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.32.8 · TP/SL Only", 12, MUTED, true);
+        TextView version = text("v2.32.8.1 · TP/SL Only", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -693,7 +694,7 @@ public class MainActivity extends Activity {
                 addZipText(zip, "persistent_market_frames.jsonl", persistentFramesJsonl == null ? "" : persistentFramesJsonl);
                 addZipText(zip, "overnight_recorder_summary.json", overnightSummary.toString(2));
                 addZipText(zip, "overnight_recorder_summary.txt",
-                        "OVERNIGHT RECORDER v2.32.8\n\n" +
+                        "OVERNIGHT RECORDER v2.32.8.1\n\n" +
                         "observationEvents=" + overnightSummary.optInt("observationEvents", 0) + "\n" +
                         "marketFrames=" + overnightSummary.optInt("marketFrames", 0) + "\n" +
                         "durationSec=" + overnightSummary.optLong("durationSec", 0) + "\n" +
@@ -707,24 +708,35 @@ public class MainActivity extends Activity {
                         "Le trading reste manuel.\n");
             }
 
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
-            values.put(MediaStore.Downloads.MIME_TYPE, "application/zip");
-            values.put(MediaStore.Downloads.IS_PENDING, 1);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+                values.put(MediaStore.Downloads.MIME_TYPE, "application/zip");
+                values.put(MediaStore.Downloads.IS_PENDING, 1);
 
-            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-            if (uri == null) throw new Exception("Impossible de créer le fichier dans Téléchargements");
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) throw new Exception("Impossible de créer le fichier dans Téléchargements");
 
-            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
-                if (out == null) throw new Exception("Impossible d’écrire le fichier");
-                memory.writeTo(out);
+                try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                    if (out == null) throw new Exception("Impossible d’écrire le fichier");
+                    memory.writeTo(out);
+                }
+
+                values.clear();
+                values.put(MediaStore.Downloads.IS_PENDING, 0);
+                getContentResolver().update(uri, values, null, null);
+                Toast.makeText(this, "Diagnostic téléchargé dans Téléchargements : " + fileName,
+                        Toast.LENGTH_LONG).show();
+            } else {
+                File directory = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+                if (directory == null) directory = getFilesDir();
+                File destination = new File(directory, fileName);
+                try (OutputStream out = new FileOutputStream(destination)) {
+                    memory.writeTo(out);
+                }
+                Toast.makeText(this, "Diagnostic enregistré : " + destination.getAbsolutePath(),
+                        Toast.LENGTH_LONG).show();
             }
-
-            values.clear();
-            values.put(MediaStore.Downloads.IS_PENDING, 0);
-            getContentResolver().update(uri, values, null, null);
-
-            Toast.makeText(this, "Diagnostic téléchargé dans Téléchargements : " + fileName, Toast.LENGTH_LONG).show();
         } catch (Exception error) {
             Toast.makeText(this, "Téléchargement impossible : " + error.getMessage(), Toast.LENGTH_LONG).show();
         }
@@ -733,7 +745,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.32.8 Android natif · TP/SL Only\n");
+        b.append("Version app: v2.32.8.1 Android natif · TP/SL Only\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
         b.append("Mode: V230_HYBRID_AI_SCALP_ENGINE — recherche uniquement, aucun trade réel\n\n");
 
@@ -870,7 +882,7 @@ public class MainActivity extends Activity {
         if (m == null) return "Aucune métrique experte disponible.\n";
 
         StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.32.8\n\n");
+        b.append("ENGINE METRICS — ETH SCALPER v2.32.8.1\n\n");
         b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
         b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
         b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
@@ -923,7 +935,7 @@ public class MainActivity extends Activity {
         JSONObject summary = s.optJSONObject("observationSummary");
         JSONArray observed = s.optJSONArray("observedSignals");
         StringBuilder b = new StringBuilder();
-        b.append("PRO LABEL LAB — ETH SCALPER v2.32.8\n\n");
+        b.append("PRO LABEL LAB — ETH SCALPER v2.32.8.1\n\n");
         if (summary != null) {
             b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
             b.append("active=").append(summary.optInt("active", 0)).append("\n");
@@ -954,7 +966,7 @@ public class MainActivity extends Activity {
     }
 
     private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.32.8\n\n");
+        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.32.8.1\n\n");
         b.append("mode=").append(s.optString("mode", "—")).append("\n");
         b.append("frames=").append(s.optInt("frames", 0)).append("\n");
         b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");

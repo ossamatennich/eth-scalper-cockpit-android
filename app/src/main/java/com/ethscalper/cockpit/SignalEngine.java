@@ -376,6 +376,11 @@ public final class SignalEngine {
         diagnostics.clear();
     }
 
+    /** Records service lifecycle events without changing signal evaluation. */
+    public synchronized void recordExternalDiagnostic(long now, String code, String message) {
+        record(now, code, message);
+    }
+
     public static double computeTarget(double avgRange, double recentRange, double volumeRatio, double flowPower, int score) {
         if (score >= 88) return TP_PREMIUM;
         if (score >= 82) return TP_STANDARD;

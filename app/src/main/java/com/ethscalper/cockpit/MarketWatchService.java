@@ -58,8 +58,8 @@ public class MarketWatchService extends Service {
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
     private static final String CH_WATCH = "eth_scalper_watch_v22801";
-    private static final String CH_SIGNAL = "eth_scalper_signal_final_v2328";
-    private static final String CH_SIGNAL_SILENT = "eth_scalper_signal_updates_v2328";
+    private static final String CH_SIGNAL = "eth_scalper_signal_final_v23281";
+    private static final String CH_SIGNAL_SILENT = "eth_scalper_signal_updates_v23281";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
     private static final int NOTIF_WATCH_ID = 22801;
@@ -73,7 +73,7 @@ public class MarketWatchService extends Service {
     private static final String PERSISTENT_OBSERVATIONS_FILE = "persistent_observation_journal.jsonl";
     private static final String PERSISTENT_MARKET_FRAMES_FILE = "persistent_market_frames.jsonl";
     private static final long PERSISTENT_MARKET_FRAME_INTERVAL_MS = 5 * 1000L;
-    private static final String ALERT_DEDUPE_PREFERENCES = "confirmed_signal_alerts_v2328";
+    private static final String ALERT_DEDUPE_PREFERENCES = "confirmed_signal_alerts_v23281";
     private static final String BINANCE_STREAM = "wss://fstream.binance.com/stream?streams=" +
             "ethusdt@kline_1m/ethusdt@aggTrade/ethusdt@bookTicker/" +
             "btcusdt@kline_1m/btcusdt@bookTicker";
@@ -89,6 +89,7 @@ public class MarketWatchService extends Service {
     private final Deque<ObservedSignal> observedSignals = new ArrayDeque<>();
     private final PendingCandidateIndex<ObservedSignal> pendingCandidateIndex =
             new PendingCandidateIndex<>();
+    private ActivePlanPersistence activePlanPersistence;
     private final Deque<MarketFrame> marketFrames = new ArrayDeque<>();
     private long observedSignalId;
     private long lastMarketFrameAt;
@@ -103,6 +104,7 @@ public class MarketWatchService extends Service {
     private long lastMessageAt;
     private long lastSignalAt;
     private long lastP01ConfirmedAt;
+    private long lastActivePlanPersistAt;
     private long lastStatusAt;
     private long lastEvaluationAt;
     private long lastWatchNotificationAt;
@@ -252,7 +254,7 @@ public class MarketWatchService extends Service {
         if (frameNewest > newest) newest = frameNewest;
 
         o.put("mode", "PERSISTENT_OVERNIGHT_RECORDER");
-        o.put("version", "2.32.8");
+        o.put("version", "2.32.8.1");
         o.put("description", "Journal persistant: conserve les signaux et les frames même si l'écran/app est fermé, jusqu'à réinitialisation diagnostic.");
         o.put("observationEvents", obsStats.optInt("count", 0));
         o.put("marketFrames", frameStats.optInt("count", 0));
@@ -301,6 +303,9 @@ public class MarketWatchService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         ensureChannels(this);
+        activePlanPersistence = new ActivePlanPersistence(
+                new SharedPreferencesActivePlanBackend(this));
+        restoreActiveFinalPlan();
         client = new OkHttpClient.Builder()
                 .pingInterval(20, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
@@ -328,18 +333,38 @@ public class MarketWatchService extends Service {
             vibrateAlert();
             broadcastStatus("test_vibration", "Vibration longue testée");
         } else if (ACTION_RESET_DIAGNOSTICS.equals(action)) {
+            ObservedSignal activePlan = activeFinalSignal();
             signalEngine.clearDiagnostics();
             observedSignals.clear();
             pendingCandidateIndex.clear();
             marketFrames.clear();
-            lastDecision = null;
-            lastSignal = null;
-            lastSignalAt = 0;
-            lastP01ConfirmedAt = 0;
-            observedSignalId = 0;
             lastPersistentMarketFrameAt = 0;
             resetPersistentRecorder();
-            broadcastStatus("diagnostics_reset", "Diagnostic moteur + recorder persistant réinitialisés");
+            if (activePlan != null) {
+                observedSignals.addLast(activePlan);
+                observedSignalId = Math.max(observedSignalId, activePlan.id);
+                lastSignal = activePlan.signal;
+                lastSignalAt = activePlan.finalConfirmedAt;
+                lastDecision = activePlan.signal;
+                activePlanPersistence.resetDiagnostics(true);
+                persistObservedSignalEvent(activePlan,
+                        "V23281_DIAGNOSTICS_RESET_ACTIVE_PLAN_PRESERVED",
+                        restoredSnapshot(activePlan.lastPrice, activePlan.signalBid,
+                                activePlan.signalAsk, activePlan.avgRange20,
+                                System.currentTimeMillis()),
+                        System.currentTimeMillis());
+                broadcastStatus("diagnostics_reset_active_plan_preserved",
+                        "Diagnostic réinitialisé — plan actif conservé jusqu’au TP ou au SL.");
+            } else {
+                lastDecision = null;
+                lastSignal = null;
+                lastSignalAt = 0;
+                lastP01ConfirmedAt = 0;
+                lastActivePlanPersistAt = 0;
+                observedSignalId = 0;
+                activePlanPersistence.resetDiagnostics(false);
+                broadcastStatus("diagnostics_reset", "Diagnostic moteur + recorder persistant réinitialisés");
+            }
         } else if (ACTION_SYNC_NOW.equals(action)) {
             broadcastStatus("sync", "État du service natif resynchronisé");
         }
@@ -347,6 +372,116 @@ public class MarketWatchService extends Service {
         prefillHistoricalCandlesIfNeeded();
         scheduleHealthCheck();
         return START_STICKY;
+    }
+
+    private void restoreActiveFinalPlan() {
+        ActivePlanPersistence.RestoreResult restored = activePlanPersistence.restore();
+        long now = System.currentTimeMillis();
+        if (restored.invalid) {
+            signalEngine.recordExternalDiagnostic(now, ActivePlanPersistence.RESTORE_INVALID,
+                    "État persistant du plan actif incomplet ou invalide : restauration ignorée.");
+            activePlanPersistence.clear();
+            return;
+        }
+        ActivePlanState state = restored.state;
+        if (state == null) return;
+
+        SignalDecision signal = state.toSignalDecision();
+        if (signal == null) {
+            signalEngine.recordExternalDiagnostic(now, ActivePlanPersistence.RESTORE_INVALID,
+                    "Plan actif persistant impossible à reconstruire : restauration ignorée.");
+            activePlanPersistence.clear();
+            return;
+        }
+
+        MarketSnapshot snapshot = restoredSnapshot(state.lastPrice, state.lastBid, state.lastAsk,
+                state.avgRange20, now);
+        ObservedSignal item = new ObservedSignal(++observedSignalId, state.createdAt,
+                signal, state.lastPrice, snapshot);
+        item.status = "ACTIVE";
+        item.entryTriggered = true;
+        item.entryTriggeredAt = state.entryTriggeredAt;
+        item.entryTriggerPrice = signal.entry;
+        item.simulatedFillAt = state.entryTriggeredAt;
+        item.simulatedFillPrice = signal.entry;
+        item.finalConfirmedAt = state.finalConfirmedAt;
+        item.premium15m = state.premium15m;
+        item.notificationSignature = state.notificationSignature;
+        item.notificationId = SignalSafetyPolicies.restoredNotificationId(
+                state.notificationId, state.notificationSignature);
+        item.alertSent = true;
+        item.lastPrice = state.lastPrice;
+        item.maxPrice = state.lastPrice;
+        item.minPrice = state.lastPrice;
+        item.lastUpdateAt = now;
+        item.candidateSignature = SignalSafetyPolicies.candidateSignature(signal);
+        item.replayRiskReasonCode = state.replayRiskReasonCode;
+        item.replayRiskDetail = state.replayRiskDetail;
+        item.p01Move1Aligned = state.p01Move1Aligned;
+        item.p01Move3Aligned = state.p01Move3Aligned;
+        item.p01Move8Aligned = state.p01Move8Aligned;
+        item.p01Move15Aligned = state.p01Move15Aligned;
+        item.p01Flow30Aligned = state.p01Flow30Aligned;
+        item.restoredSizingDiagnostic = state.sizingDiagnostic;
+        item.lastConfirmationCode = ActivePlanPersistence.RESTORED;
+        observedSignals.addLast(item);
+
+        lastSignal = signal;
+        lastSignalAt = state.finalConfirmedAt;
+        lastP01ConfirmedAt = state.lastP01ConfirmedAt;
+        lastDecision = signal;
+        lastActivePlanPersistAt = now;
+        signalEngine.recordExternalDiagnostic(now, ActivePlanPersistence.RESTORED,
+                "Plan final actif restauré ; surveillance TP/SL et verrou de publication maintenus.");
+        persistObservedSignalEvent(item, ActivePlanPersistence.RESTORED, snapshot, now);
+        notifyRestoredActivePlan(item);
+    }
+
+    private boolean persistActiveFinalPlan(ObservedSignal item, long confirmedP01At,
+                                           MarketSnapshot snapshot) {
+        if (item == null || item.signal == null || snapshot == null) return false;
+        try {
+            Object sizing = confirmedSizingJson(item);
+            ActivePlanState state = ActivePlanState.builder()
+                    .status("ACTIVE")
+                    .side(item.signal.side).family(item.signal.family)
+                    .reasonCode(item.signal.reasonCode).reasonText(item.signal.reasonText)
+                    .score(item.signal.score).quantity(item.signal.quantity)
+                    .prices(item.signal.entry, item.signal.takeProfit, item.signal.stopLoss)
+                    .risk(item.signal.targetMove, item.signal.stopDistance)
+                    .times(item.createdAt, item.entryTriggeredAt, item.finalConfirmedAt)
+                    .premium15m(item.premium15m)
+                    .notification(item.notificationSignature, item.notificationId)
+                    .lastMarket(snapshot.ethLast, snapshot.ethBid, snapshot.ethAsk,
+                            Math.max(0.35, snapshot.avgRange20))
+                    .lastP01ConfirmedAt(confirmedP01At)
+                    .movement(item.signal.impulse, item.signal.resetConfirmed,
+                            item.signal.movementOrigin, item.signal.movementExtreme,
+                            item.signal.movementDistance)
+                    .replayRisk(item.replayRiskReasonCode, item.replayRiskDetail)
+                    .p01(item.p01Move1Aligned, item.p01Move3Aligned, item.p01Move8Aligned,
+                            item.p01Move15Aligned, item.p01Flow30Aligned)
+                    .sizingDiagnostic(sizing == null ? "" : sizing.toString())
+                    .build();
+            return activePlanPersistence.save(state);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static MarketSnapshot restoredSnapshot(double price, double bid, double ask,
+                                                    double avgRange20, long now) {
+        double avg = Math.max(0.35, avgRange20);
+        return MarketSnapshot.builder(now)
+                .lastSignalAt(now)
+                .eth(price, bid, ask)
+                .averages(avg, 1.0)
+                .movement(0.0, 0.0, 0.0, price + avg, price - avg)
+                .move15(0.0)
+                .flow(0.0, 1.0)
+                .flowWindows(0.0, 0.0, 0.0, 0.0)
+                .btcMoves(0.0, 0.0, 0.0, 0.0)
+                .build();
     }
 
     @Override public void onTaskRemoved(Intent rootIntent) {
@@ -385,7 +520,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH confirmés — v2.32.8",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH confirmés — v2.32.8.1",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Un son signifie exclusivement qu'un signal final manuel est confirmé.");
         signals.enableVibration(true);
@@ -1404,7 +1539,7 @@ public class MarketWatchService extends Service {
             putMetric(o, "p01Move8Aligned", item.p01Move8Aligned);
             putMetric(o, "p01Move15Aligned", item.p01Move15Aligned);
             putMetric(o, "p01Flow30Aligned", item.p01Flow30Aligned);
-            o.put("confirmedSizing", confirmedSizingJson(item.confirmedSizing));
+            o.put("confirmedSizing", confirmedSizingJson(item));
             o.put("entryAgeSec", item.entryTriggeredAt > 0 ? Math.max(0, (now - item.entryTriggeredAt) / 1000) : -1);
             o.put("timeoutExtended", item.timeoutExtended);
             o.put("timeoutDecisionAt", item.timeoutDecisionAt);
@@ -1849,10 +1984,23 @@ public class MarketWatchService extends Service {
 
             String status = SignalSafetyPolicies.liveStatusUntilTpOrSl(
                     marketStatusForSignal(item.signal, snapshot));
+            if ("ACTIVE".equals(status)
+                    && (lastActivePlanPersistAt <= 0 || now - lastActivePlanPersistAt >= 15_000L)) {
+                if (persistActiveFinalPlan(item, lastP01ConfirmedAt, snapshot)) {
+                    lastActivePlanPersistAt = now;
+                }
+            }
             if (SignalSafetyPolicies.isTerminalStatus(status)) {
                 closeObservedSignal(item, status, snapshot, now);
-                notifyObservationStatus(item, status);
                 persistObservedSignalEvent(item, status, snapshot, now);
+                notifyObservationStatus(item, status);
+                if (!activePlanPersistence.clearForTerminal(status)) {
+                    signalEngine.recordExternalDiagnostic(now,
+                            ActivePlanPersistence.PERSIST_FAILED,
+                            "Plan terminé, mais suppression de l’état actif persistant impossible.");
+                } else {
+                    lastActivePlanPersistAt = 0;
+                }
             }
         }
     }
@@ -1922,14 +2070,38 @@ public class MarketWatchService extends Service {
         item.mae = 0;
         item.notificationSignature = SignalSafetyPolicies.deterministicSignature(
                 published, item.createdAt / 60_000L);
+        item.notificationId = confirmedNotificationId(item.notificationSignature);
+
+        long confirmedP01At = continuation ? now : lastP01ConfirmedAt;
+        if (!persistActiveFinalPlan(item, confirmedP01At, snapshot)) {
+            item.signal = candidate;
+            item.status = "LIMIT_PENDING";
+            item.entryTriggered = false;
+            item.entryTriggeredAt = 0;
+            item.entryTriggerPrice = Double.NaN;
+            item.simulatedFillAt = 0;
+            item.simulatedFillPrice = Double.NaN;
+            item.finalConfirmedAt = 0;
+            item.notificationSignature = "";
+            item.notificationId = 0;
+            item.alertSent = false;
+            item.lastConfirmationCode = ActivePlanPersistence.PERSIST_FAILED;
+            item.confirmedSizing = null;
+            persistObservedSignalEvent(item, ActivePlanPersistence.PERSIST_FAILED, snapshot, now);
+            signalEngine.recordExternalDiagnostic(now, ActivePlanPersistence.PERSIST_FAILED,
+                    "Signal final non publié : persistance atomique du plan actif impossible.");
+            return false;
+        }
+        lastActivePlanPersistAt = now;
         pendingCandidateIndex.remove(item.candidateSignature);
 
         lastSignal = published;
         lastSignalAt = now;
         // P01 cooldown starts only here, never at candidate creation or rejection.
-        if (continuation) lastP01ConfirmedAt = now;
+        lastP01ConfirmedAt = confirmedP01At;
         lastDecision = published;
 
+        persistObservedSignalEvent(item, ActivePlanPersistence.PERSISTED, snapshot, now);
         persistObservedSignalEvent(item, continuation ? fill.reasonCode : "RANGE_FADE_FINAL_CONFIRMED",
                 snapshot, now);
         notifyObservationSignal(item);
@@ -1945,6 +2117,14 @@ public class MarketWatchService extends Service {
                     item.status, item.entryTriggered, item.finalConfirmedAt)) return true;
         }
         return false;
+    }
+
+    private ObservedSignal activeFinalSignal() {
+        for (ObservedSignal item : observedSignals) {
+            if (item != null && SignalSafetyPolicies.blocksNewFinalSignal(
+                    item.status, item.entryTriggered, item.finalConfirmedAt)) return item;
+        }
+        return null;
     }
 
     private static double theoreticalFillPrice(SignalDecision signal, MarketSnapshot snapshot) {
@@ -2391,6 +2571,16 @@ public class MarketWatchService extends Service {
         return o;
     }
 
+    private static Object confirmedSizingJson(ObservedSignal item) throws Exception {
+        if (item == null) return JSONObject.NULL;
+        if (item.confirmedSizing != null) return confirmedSizingJson(item.confirmedSizing);
+        if (item.restoredSizingDiagnostic != null
+                && item.restoredSizingDiagnostic.trim().startsWith("{")) {
+            return new JSONObject(item.restoredSizingDiagnostic);
+        }
+        return JSONObject.NULL;
+    }
+
     private static double adverseMoveFor(SignalDecision signal, double price) {
         if (signal == null || !Double.isFinite(price) || price <= 0) return 99.0;
         if ("LONG".equals(signal.side)) return Math.max(0, signal.entry - price);
@@ -2438,7 +2628,7 @@ public class MarketWatchService extends Service {
             o.put("executionClassification", executionClassification(item));
             o.put("confirmationReasonCode", item.lastConfirmationCode);
             o.put("p01Premium15m", item.premium15m);
-            o.put("confirmedSizing", confirmedSizingJson(item.confirmedSizing));
+            o.put("confirmedSizing", confirmedSizingJson(item));
             o.put("updates", item.updates);
 
             o.put("side", item.signal.side);
@@ -2919,6 +3109,26 @@ public class MarketWatchService extends Service {
         updateWatch("Signal final confirmé : " + decision.side + " · ordre manuel uniquement", true);
     }
 
+    private void notifyRestoredActivePlan(ObservedSignal item) {
+        if (item == null || item.signal == null) return;
+        try {
+            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (manager == null) return;
+            ConfirmedSignalPayload payload = ConfirmedSignalPayload.from(item.signal);
+            int id = SignalSafetyPolicies.restoredNotificationId(
+                    item.notificationId, item.notificationSignature);
+            item.notificationId = id;
+            item.alertSent = false;
+            manager.notify(id, buildSignalNotification(
+                    "PLAN ACTIF RESTAURÉ — " + item.signal.side,
+                    payload.notificationBody(item.premium15m),
+                    SignalSafetyPolicies.restoredPlanIsAudible()));
+            updateWatch("Plan actif restauré · surveillance TP/SL maintenue", true);
+        } catch (RuntimeException ignored) {
+            // The restored lock remains active even if Android temporarily rejects notifications.
+        }
+    }
+
     private static int confirmedNotificationId(String signature) {
         return SignalSafetyPolicies.confirmedNotificationId(signature);
     }
@@ -2926,7 +3136,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "TEST NOTIFICATION ETH", "Test silencieux v2.32.8 · aucun ordre n’est envoyé", false));
+                "TEST NOTIFICATION ETH", "Test silencieux v2.32.8.1 · aucun ordre n’est envoyé", false));
     }
 
     private Notification buildSignalNotification(String title, String body, boolean audible) {
@@ -3006,7 +3216,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.32.8-android-tp-sl-only");
+            state.put("version", "2.32.8.1-android-tp-sl-only");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -3182,7 +3392,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper Cockpit v2.32.8 — TP/SL Only");
+        m.put("rulesProfile", "ETH Scalper Cockpit v2.32.8.1 — TP/SL Only");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 
@@ -3741,6 +3951,7 @@ public class MarketWatchService extends Service {
         String replayRiskDetail = "";
         boolean replayRiskBlocking;
         ConfirmedSizing.Result confirmedSizing;
+        String restoredSizingDiagnostic = "";
         double p01Move1Aligned = Double.NaN;
         double p01Move3Aligned = Double.NaN;
         double p01Move8Aligned = Double.NaN;
