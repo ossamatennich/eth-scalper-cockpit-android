@@ -26,12 +26,9 @@ public class SignalEngineRulesTest {
         assertFalse(SignalSafetyPolicies.shouldExtendRangeFade(.45, .35, .01, -.26, 1.0));
     }
 
-    @Test public void absolute45MinuteTimeoutRemains() {
-        long start = 1_000;
-        assertFalse(SignalSafetyPolicies.absoluteTimeoutReached(start,
-                start + 45 * 60_000L - 1));
-        assertTrue(SignalSafetyPolicies.absoluteTimeoutReached(start,
-                start + 45 * 60_000L));
+    @Test public void activeSignalHasNoAbsoluteTimeout() {
+        assertEquals("ACTIVE", SignalSafetyPolicies.liveStatusUntilTpOrSl("TIMEOUT_15M"));
+        assertEquals("ACTIVE", SignalSafetyPolicies.liveStatusUntilTpOrSl("TIMEOUT_45M"));
     }
 
     @Test public void candidateNeverProducesSound() {
@@ -52,9 +49,9 @@ public class SignalEngineRulesTest {
                 SignalSafetyPolicies.confirmedNotificationId(b));
     }
 
-    @Test public void invalidationUpdatesSilently() {
+    @Test public void contextInvalidationKeepsPublicPlanActiveAndSilent() {
         assertFalse(SignalSafetyPolicies.lifecycleUpdateIsAudible());
-        assertEquals("SIGNAL EXPIRÉ — NE PAS ENTRER",
+        assertEquals("GÉRER LE PLAN ACTIF",
                 SignalSafetyPolicies.publicAction(1000, 2000, false));
     }
 
@@ -114,9 +111,9 @@ public class SignalEngineRulesTest {
         assertEquals(14.0 - 7.15, result.realizedNet, 1e-9);
     }
 
-    @Test public void activeRiskActionChangesAfter120Seconds() {
+    @Test public void activeRiskActionNeverExpires() {
         long confirmed = 1_000;
-        assertEquals("À EXÉCUTER MAINTENANT",
+        assertEquals("GÉRER LE PLAN ACTIF",
                 SignalSafetyPolicies.publicAction(confirmed, confirmed + 120_000, true));
         assertEquals("GÉRER LE PLAN ACTIF",
                 SignalSafetyPolicies.publicAction(confirmed, confirmed + 120_001, true));

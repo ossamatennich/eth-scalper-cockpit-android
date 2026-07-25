@@ -189,11 +189,12 @@ public final class CandidateLifecycle {
                                                      double markedPrice) {
         boolean terminal = SignalSafetyPolicies.isTerminalStatus(status);
         if (!terminal || signal == null) {
+            boolean activeRisk = signal != null && entryTriggered;
+            double markedMove = activeRisk ? favorableMove(signal, markedPrice) : 0.0;
             return new TerminalResolution(false, 0L, Double.NaN, "",
-                    SignalSafetyPolicies.result(false, entryTriggered, 0.0, 0.0,
+                    SignalSafetyPolicies.result(false, entryTriggered, 0.0, markedMove,
                             signal == null ? 0 : signal.quantity, 0L),
-                    SignalSafetyPolicies.isOpenActiveRisk(status, entryTriggered)
-                            ? "OPEN_ACTIVE_RISK" : status);
+                    activeRisk ? "OPEN_ACTIVE_RISK" : status);
         }
         double exitPrice = SignalSafetyPolicies.terminalExitPrice(status, signal, markedPrice);
         double realizedMove = entryTriggered ? favorableMove(signal, exitPrice) : 0.0;

@@ -58,7 +58,12 @@ public final class SignalSafetyPolicies {
 
     public static boolean isTerminalStatus(String status) {
         return "TP_TOUCHED".equals(status)
-                || "SL_TOUCHED".equals(status)
+                || "SL_TOUCHED".equals(status);
+    }
+
+    /** Compatibility helper for historical playback files; never use for the live lifecycle. */
+    public static boolean isHistoricalTerminalStatus(String status) {
+        return isTerminalStatus(status)
                 || "SCENARIO_INVALIDATED".equals(status)
                 || "TIMEOUT_15M".equals(status)
                 || "TIMEOUT_45M".equals(status);
@@ -92,6 +97,41 @@ public final class SignalSafetyPolicies {
         }
     }
 
+    /** Pending candidates deliberately omit time so repeated copies update the first object. */
+    public static String candidateSignature(SignalDecision signal) {
+        if (signal == null) return "";
+        String raw = signal.side + "|" + signal.family + "|"
+                + price(signal.entry) + "|" + price(signal.takeProfit) + "|"
+                + price(signal.stopLoss);
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder out = new StringBuilder();
+            for (byte b : digest) out.append(String.format(Locale.US, "%02x", b));
+            return out.toString();
+        } catch (Exception ignored) {
+            return Integer.toHexString(raw.hashCode());
+        }
+    }
+
+    public static boolean blocksNewFinalSignal(String status, boolean entryTriggered,
+                                               long finalConfirmedAt) {
+        return "ACTIVE".equals(status) && entryTriggered && finalConfirmedAt > 0;
+    }
+
+    public static String blockedCandidateReasonCode() {
+        return "V2328_ACTIVE_SIGNAL_ALREADY_RUNNING";
+    }
+
+    public static String blockedCandidateDiagnosticText() {
+        return "Nouveau candidat ignoré : un plan final est déjà actif jusqu’au TP ou au SL.";
+    }
+
+    /** Context weakness and age are diagnostic-only after final publication. */
+    public static String liveStatusUntilTpOrSl(String marketStatus) {
+        return isTerminalStatus(marketStatus) ? marketStatus : "ACTIVE";
+    }
+
     public static boolean candidateIsAudible() {
         return false;
     }
@@ -108,7 +148,8 @@ public final class SignalSafetyPolicies {
         return 30_000 + Math.floorMod(signature == null ? 0 : signature.hashCode(), 60_000);
     }
 
-    public static boolean absoluteTimeoutReached(long activeSince, long now) {
+    /** Historical playback comparison only; the live v2.32.8 lifecycle never calls this. */
+    public static boolean historicalAbsoluteTimeoutReached(long activeSince, long now) {
         return activeSince > 0 && now - activeSince >= 45 * 60_000L;
     }
 
@@ -118,8 +159,6 @@ public final class SignalSafetyPolicies {
     }
 
     public static String publicAction(long confirmedAt, long now, boolean stillValid) {
-        if (!stillValid) return "SIGNAL EXPIRÉ — NE PAS ENTRER";
-        if (confirmedAt > 0 && now - confirmedAt <= 120_000L) return "À EXÉCUTER MAINTENANT";
         return "GÉRER LE PLAN ACTIF";
     }
 

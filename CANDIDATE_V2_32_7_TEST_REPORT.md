@@ -1,84 +1,88 @@
-# Candidate v2.32.7 — rapport de tests
+# Candidate v2.32.8 — rapport de tests
+
+> Le nom du fichier reste historique ; tous les résultats ci-dessous concernent **ETH Scalper Cockpit v2.32.8 — TP/SL Only**.
 
 ## Environnement
 
 - Windows / PowerShell
 - Android SDK : `C:\Users\Tenni\AppData\Local\Android\Sdk`
 - JDK : Android Studio JBR 17
-- Gradle : 8.10.2
-- Package debug vérifié avec `aapt` : `com.ethscalper.cockpit.debug`
-- `versionCode=23270`, `versionName=2.32.7`, `minSdk=26`, `targetSdk=35`
-
-Le dépôt ne contenait pas de wrapper fonctionnel et `gradle` n’était pas installé dans le `PATH`. Gradle 8.10.2 a été téléchargé dans le dossier temporaire utilisateur, sans ajout au dépôt.
+- Gradle : 8.10.2 temporaire, le dépôt ne fournissant pas de wrapper fonctionnel
+- Package debug vérifié par `aapt` : `com.ethscalper.cockpit.debug`
+- `versionCode=23280`, `versionName=2.32.8`, `minSdk=26`, `targetSdk=35`
 
 ## Commandes exécutées
 
-Équivalents locaux des commandes demandées :
-
 ```powershell
-gradle --no-daemon --max-workers=1 test --rerun-tasks
-gradle --no-daemon --max-workers=1 assembleDebug --rerun-tasks
+gradle testDebugUnitTest --rerun-tasks
+gradle testReleaseUnitTest --rerun-tasks
+gradle test --rerun-tasks
+gradle assembleDebug --rerun-tasks
+gradle assembleRelease --rerun-tasks
 ```
 
-Les commandes ont été exécutées avec le binaire Gradle 8.10.2 temporaire, une JVM locale plafonnée à 384 Mio et les variables `JAVA_HOME`/`ANDROID_HOME` positionnées pour le processus.
+Les commandes ont été exécutées en mono-worker avec `JAVA_HOME` et `ANDROID_HOME` limités au processus.
 
 ## Résultats
 
-- 50 tests distincts : les 41 tests précédents plus 9 tests dédiés au sizing confirmé.
-- 50/50 réussis sur la variante debug.
-- 50/50 réussis sur la variante release.
-- 100 exécutions réussies au total sur la dernière passe complète.
+- 70 tests distincts.
+- 70/70 réussis en debug.
+- 70/70 réussis en release.
+- 140 exécutions réussies pendant la dernière passe globale forcée.
 - 0 échec, 0 erreur, 0 test ignoré.
-- Une passe ciblée des 9 nouveaux tests de sizing a réussi avant la passe complète.
-- La dernière passe complète et `assembleDebug` ont utilisé `--rerun-tasks`.
+- `assembleDebug --rerun-tasks` : succès.
+- `assembleRelease --rerun-tasks` et lint vital release : succès.
 
-Couverture principale :
+## TP/SL ONLY LIFECYCLE
 
-- C01, C04 LONG/SHORT, C07 LONG/SHORT, C08
-- P01 LONG/SHORT et refus move1/move3/flow/feed stale
-- premium 15 min non bloquant
-- cooldown après confirmation seulement
-- RANGE_FADE hors P01
-- C05 et plafond absolu 45 minutes
-- politique sonore candidat/final/doublon/invalidation
-- quantités 3, 4, 5, 6, 7
-- immutabilité IA du plan
-- fill marketable LONG/SHORT
-- classifications d’exécution
-- séparation résultat réalisé/latent
-- action de gestion après 120 secondes
-- trading réel désactivé.
-- CONTINUATION historiquement marquée `V232_REPLAY_RISK_VETO` admise jusqu’à P01
-- publication finale après revalidation + C04/C07/C08/P01
-- `marketableAtCreation` confirmé au même instant, sans délai historique
-- silence avant publication et un seul son par signature finale
-- invalidation/timeout remplis terminaux, réalisés et jamais `OPEN_ACTIVE_RISK`
-- quantité identique plan/notification/écran/diagnostic
-- RANGE_FADE toujours protégé par ses veto replay et hors P01.
-- quantités confirmées 3, 4, 5, 6 et 7 produites par des preuves au fill représentatives
-- score moteur 96 ne donnant pas automatiquement 7 ETH
-- ancien veto replay plafonnant à 5 ETH un contexte autrement dimensionné à 7 ETH
-- RANGE_FADE score 96 restant conservateur à 3 ETH et plafonné à 4 ETH
-- valeurs, seuils, bonus et plafonds du sizing exposés dans `confirmedSizing`.
+Les tests couvrent explicitement :
 
-## Incidents corrigés pendant la validation
+1. blocage d’un nouveau P01 LONG par un plan final actif ;
+2. blocage d’un nouveau P01 SHORT ;
+3. blocage d’un nouveau RANGE_FADE ;
+4. silence du candidat bloqué ;
+5. 27 observations identiques produisant un seul objet candidat ;
+6. conservation du premier `createdAt` ;
+7. refus P01 transitoire puis confirmation du même candidat ;
+8. une seule alerte sonore finale ;
+9. maintien `ACTIVE` après 15 minutes ;
+10. maintien `ACTIVE` après 45 minutes ;
+11. maintien `ACTIVE` lorsque flow/BTC/contexte deviennent défavorables ;
+12. `SCENARIO_INVALIDATED` non terminal dans le parcours live ;
+13. aucune action publique `SORTIR` ;
+14. aucune action publique d’expiration ;
+15. TP terminal et réalisé ;
+16. SL terminal et réalisé ;
+17. nouveau signal autorisé après TP ;
+18. nouveau signal autorisé après SL ;
+19. quantité identique plan/notification/écran/diagnostic ;
+20. `realTradingAllowed=false` et aucun ordre automatique.
 
-1. `gradle` absent du `PATH` : utilisation autonome de Gradle 8.10.2 dans le dossier temporaire.
-2. `Notification.Builder.setSilent` indisponible dans cette configuration : remplacement par un canal Android silencieux dédié aux mises à jour, avec le même ID de notification.
-3. Ordre de classification `OPEN_ACTIVE_RISK`/`LATE_RETURN_*` : la priorité a été corrigée et le test a été relancé avec succès.
-4. Pression mémoire Windows pendant la première relance d’audit : un daemon Gradle configuré à 2 Gio a échoué faute de mémoire native. Les daemons ont été arrêtés proprement, les tests unitaires limités à 128 Mio et les validations relancées en mono-worker avec une JVM Gradle à 384 Mio. Toutes les passes finales ont réussi.
+Les suites antérieures restent vertes pour C01–C08, P01 LONG/SHORT, premium 15 minutes, cooldown, RANGE_FADE hors P01, veto replay comparatif, confirmation immédiate marketable, sizing confirmé 3–7 ETH, plafond replay 5 ETH, plafond RANGE_FADE 4 ETH, immutabilité IA, fill et diagnostics.
 
-## APK
+Les anciens tests qui réalisaient un timeout ou une invalidation ont été adaptés : ces codes restent historiques, sans `exitAt`, `exitPrice`, frais ou résultat réalisé live. Seuls TP et SL résolvent un plan final.
+
+## APK locale
 
 - Chemin exact : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\debug\app-debug.apk`
-- Taille : `4 494 016` octets
-- SHA-256 : `D320212755A624C87D3255AD327ABAB8A66B7FD2FE717DEE86D345F6357D623D`
+- Taille : `4 495 440` octets
+- SHA-256 : `146C522E8CBA8D32F83A5B32ACF61DEBCB73600006AB18D4DE4839E0B27295E3`
+- Manifeste vérifié : `versionCode 23280`, `versionName 2.32.8`.
+
+Contrôle release local non signé :
+
+- Chemin : `app\build\outputs\apk\release\app-release-unsigned.apk`
+- Taille : `3 579 485` octets
+- SHA-256 : `99BB2570AC6EB574C0B1850D19A020A3F63949452091628A14C8D8E07DB70203`
+
+## GitHub Actions
+
+Le workflow candidat est configuré pour publier `ETH-Scalper-Cockpit-v2.32.8-debug-apk`. Le run, l’artefact et son SHA-256 seront ajoutés après le push du commit testé, sans transformer la PR en PR prête et sans créer de release.
+
+## Incidents environnementaux corrigés
+
+Le premier packaging local a échoué après compilation et dex parce qu’un renderer Chrome défaillant retenait environ 18,9 Gio de mémoire privée, épuisant le fichier d’échange Windows. Seul ce renderer a été arrêté ; la session Chrome principale est restée ouverte. La mémoire virtuelle libérée a permis de relancer exactement `assembleDebug --rerun-tasks` avec succès. La première tentative release a ensuite atteint une limite locale de metaspace au lint ; la commande a été relancée avec davantage de metaspace et a réussi.
 
 ## Replay historique
 
-Recherche effectuée dans le workspace, `C:\Users\Tenni\Downloads` et `C:\Users\Tenni\Documents`.
-
-- Archives trouvées : `0/11`
-- Replay historique : non exécuté
-- Résultats P01/candidate combinée : non revendiqués et non fabriqués.
-- Nouveau sizing 3–7 : aucun résultat historique ni résultat financier revendiqué avant un replay exact.
+Aucun replay historique exact n’a été exécuté pour le lifecycle v2.32.8. Aucun résultat historique P01, sizing ou financier n’est revendiqué ou fabriqué.

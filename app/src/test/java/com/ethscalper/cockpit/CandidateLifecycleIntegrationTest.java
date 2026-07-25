@@ -94,7 +94,7 @@ public class CandidateLifecycleIntegrationTest {
         assertEquals(1, alerted.size());
     }
 
-    @Test public void filledTimeoutIsTerminalRealizedAndNeverOpenRisk() {
+    @Test public void filledTimeoutIsDiagnosticOnlyAndRiskStaysActive() {
         SignalDecision published = CandidateLifecycle.processAtFill(
                 continuation(85), p01Snapshot(900_000), true, 900_000, 0).publishedSignal;
         assertNotNull(published);
@@ -102,18 +102,18 @@ public class CandidateLifecycleIntegrationTest {
                 CandidateLifecycle.resolveTerminal(
                         "TIMEOUT_15M", published, true, 1_800_000, 100.61);
 
-        assertTrue(resolution.terminalResolved);
-        assertEquals(1_800_000L, resolution.exitAt);
-        assertEquals(100.61, resolution.exitPrice, 0.0);
-        assertEquals("TIMEOUT_15M", resolution.exitReason);
-        assertNotEquals(0.0, resolution.result.realizedFees, 0.0);
-        assertEquals(0.0, resolution.result.latentGross, 0.0);
+        assertFalse(resolution.terminalResolved);
+        assertEquals(0L, resolution.exitAt);
+        assertTrue(Double.isNaN(resolution.exitPrice));
+        assertEquals("", resolution.exitReason);
+        assertEquals(0.0, resolution.result.realizedFees, 0.0);
+        assertNotEquals(0.0, resolution.result.latentGross, 0.0);
         assertEquals(0L, resolution.result.openRiskAgeMs);
-        assertEquals("TIMEOUT_15M", resolution.executionClassification);
+        assertEquals("OPEN_ACTIVE_RISK", resolution.executionClassification);
         assertFalse(SignalSafetyPolicies.isOpenActiveRisk("TIMEOUT_15M", true));
     }
 
-    @Test public void filledInvalidationIsTerminalRealizedAndNeverOpenRisk() {
+    @Test public void filledInvalidationIsDiagnosticOnlyAndRiskStaysActive() {
         SignalDecision published = CandidateLifecycle.processAtFill(
                 continuation(75), p01Snapshot(1_100_000), true, 1_100_000, 0).publishedSignal;
         assertNotNull(published);
@@ -121,13 +121,13 @@ public class CandidateLifecycleIntegrationTest {
                 CandidateLifecycle.resolveTerminal(
                         "SCENARIO_INVALIDATED", published, true, 1_400_000, 99.71);
 
-        assertTrue(resolution.terminalResolved);
-        assertEquals(1_400_000L, resolution.exitAt);
-        assertEquals(99.71, resolution.exitPrice, 0.0);
-        assertEquals("SCENARIO_INVALIDATED", resolution.exitReason);
-        assertNotEquals(0.0, resolution.result.realizedGross, 0.0);
-        assertEquals(0.0, resolution.result.latentNet, 0.0);
-        assertEquals("SCENARIO_INVALIDATED", resolution.executionClassification);
+        assertFalse(resolution.terminalResolved);
+        assertEquals(0L, resolution.exitAt);
+        assertTrue(Double.isNaN(resolution.exitPrice));
+        assertEquals("", resolution.exitReason);
+        assertEquals(0.0, resolution.result.realizedGross, 0.0);
+        assertNotEquals(0.0, resolution.result.latentNet, 0.0);
+        assertEquals("OPEN_ACTIVE_RISK", resolution.executionClassification);
         assertFalse(SignalSafetyPolicies.isOpenActiveRisk("SCENARIO_INVALIDATED", true));
     }
 
@@ -147,12 +147,13 @@ public class CandidateLifecycleIntegrationTest {
         assertTrue(payload.notificationBody(false).contains("· 4 ETH"));
     }
 
-    @Test public void allRequiredLifecycleStatusesAreTerminal() {
+    @Test public void onlyTpAndSlAreLiveTerminalStatuses() {
         assertTrue(SignalSafetyPolicies.isTerminalStatus("TP_TOUCHED"));
         assertTrue(SignalSafetyPolicies.isTerminalStatus("SL_TOUCHED"));
-        assertTrue(SignalSafetyPolicies.isTerminalStatus("SCENARIO_INVALIDATED"));
-        assertTrue(SignalSafetyPolicies.isTerminalStatus("TIMEOUT_15M"));
-        assertTrue(SignalSafetyPolicies.isTerminalStatus("TIMEOUT_45M"));
+        assertFalse(SignalSafetyPolicies.isTerminalStatus("SCENARIO_INVALIDATED"));
+        assertFalse(SignalSafetyPolicies.isTerminalStatus("TIMEOUT_15M"));
+        assertFalse(SignalSafetyPolicies.isTerminalStatus("TIMEOUT_45M"));
+        assertTrue(SignalSafetyPolicies.isHistoricalTerminalStatus("TIMEOUT_45M"));
         assertFalse(SignalSafetyPolicies.isTerminalStatus("ACTIVE"));
     }
 

@@ -14,7 +14,7 @@
         android:allowBackup="true"
         android:usesCleartextTraffic="false"
         android:theme="@style/AppTheme"
-        android:label="ETH Scalper"
+        android:label="ETH Scalper Cockpit v2.32.8 — TP/SL Only"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
 

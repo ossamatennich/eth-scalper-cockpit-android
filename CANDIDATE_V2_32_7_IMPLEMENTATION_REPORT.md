@@ -1,137 +1,92 @@
-# Candidate v2.32.7 — rapport d’implémentation
+# Candidate v2.32.8 — rapport d’implémentation
+
+> Le nom du fichier est conservé pour la continuité de la candidate, mais l’application produite est **ETH Scalper Cockpit v2.32.8 — TP/SL Only** (`versionCode 23280`, `versionName 2.32.8`).
 
 ## Référence Git
 
 - Dépôt : `ossamatennich/eth-scalper-cockpit-android`
 - Branche source verrouillée : `agent/v2.32.6-candidate`
-- HEAD source vérifié : `493820ef1d1a01a65160ffb56c91a8b04b255f62`
-- Branche candidate créée : `agent/v2.32.7-scalp-p01-candidate`
-- Cible Android : `versionCode 23270`, `versionName 2.32.7`
-- Aucun merge vers `main` et aucune release définitive.
+- HEAD source : `493820ef1d1a01a65160ffb56c91a8b04b255f62`
+- Branche candidate reprise : `agent/v2.32.7-scalp-p01-candidate`
+- HEAD au départ de ce correctif : `4483f4c443d23fe8397b60cc204a481a5970ab83`
+- Aucun merge vers `main`, aucune nouvelle branche et aucune release définitive.
 
-La première tentative de commit a été refusée car aucune identité Git locale n’était configurée dans ce clone neuf. L’identité déjà utilisée par l’historique du dépôt (`ossamatennich <ossamatennich@users.noreply.github.com>`) a été configurée uniquement dans ce dépôt, sans modifier la configuration Git globale.
+## Portée du correctif v2.32.8
 
-## Fichiers modifiés
+Fichiers modifiés pour ce correctif :
 
 - `app/build.gradle`
-- `app/src/main/java/com/ethscalper/cockpit/AiAdvisor.java`
-- `app/src/main/java/com/ethscalper/cockpit/CandidateLifecycle.java` (nouveau au correctif d’audit)
-- `app/src/main/java/com/ethscalper/cockpit/ConfirmedSizing.java` (nouveau au correctif de sizing)
-- `app/src/main/java/com/ethscalper/cockpit/ConfirmedSignalPayload.java` (nouveau au correctif d’audit)
-- `app/src/main/java/com/ethscalper/cockpit/ContinuationConfirmation.java` (nouveau)
+- `app/src/main/AndroidManifest.xml`
+- `app/src/main/java/com/ethscalper/cockpit/CandidateLifecycle.java`
 - `app/src/main/java/com/ethscalper/cockpit/MainActivity.java`
-- `app/src/main/java/com/ethscalper/cockpit/MarketSnapshot.java`
 - `app/src/main/java/com/ethscalper/cockpit/MarketWatchService.java`
-- `app/src/main/java/com/ethscalper/cockpit/SignalDecision.java`
-- `app/src/main/java/com/ethscalper/cockpit/SignalEngine.java`
-- `app/src/main/java/com/ethscalper/cockpit/SignalSafetyPolicies.java` (nouveau)
-- `app/src/test/java/com/ethscalper/cockpit/SignalEngineTest.java`
+- `app/src/main/java/com/ethscalper/cockpit/PendingCandidateIndex.java` (nouveau)
+- `app/src/main/java/com/ethscalper/cockpit/SignalSafetyPolicies.java`
+- `app/src/test/java/com/ethscalper/cockpit/CandidateLifecycleIntegrationTest.java`
 - `app/src/test/java/com/ethscalper/cockpit/SignalEngineRulesTest.java`
-- `app/src/test/java/com/ethscalper/cockpit/CandidateLifecycleIntegrationTest.java` (nouveau au correctif d’audit)
-- `app/src/test/java/com/ethscalper/cockpit/ConfirmedSizingTest.java` (nouveau au correctif de sizing)
+- `app/src/test/java/com/ethscalper/cockpit/TpSlOnlyLifecycleIntegrationTest.java` (nouveau)
 - `.github/workflows/build-apk.yml`
-- `.github/workflows/build-v2327-candidate.yml` (nouveau)
-- `.gitignore` (cache Gradle et produits de build)
-- les quatre rapports de cette candidate.
+- `.github/workflows/build-v2327-candidate.yml`
+- les rapports de candidate.
 
-## Corrections C01 à C08
+Les seuils C01–C08, P01, premium 15 minutes, entrée, TP, SL, sizing confirmé 3–7 ETH, plafond replay à 5 ETH, plafond RANGE_FADE à 4 ETH, IA informative et interdiction du trading automatique ne sont pas modifiés.
 
-- **C01 — feed stale** : le snapshot est construit et le lifecycle des candidats/risques est mis à jour avant le veto `V2326_ETH_FEED_STALE`. Le feed stale interdit une nouvelle entrée mais conserve TP, SL, invalidation et timeout. Texte public : « Nouvelles entrées bloquées — gestion des risques existants maintenue. »
-- **C02 — exécution** : les diagnostics exposent `FAST_DEPARTURE`, `DELAYED_DEPARTURE`, `POST_TIMEOUT_DEPARTURE`, `LATE_RETURN_PARTIAL`, `LATE_RETURN_NEAR_TARGET`, `ENTRY_REVALIDATION_REJECTED`, `OPEN_ACTIVE_RISK` et `MISSED_NO_FILL` uniquement quand un non-fill est démontré.
-- **C03** : le cahier des charges ne définit pas de nouvelle formule C03 autonome. Les veto de qualité, de mémoire de scénario et de revalidation présents sur la source verrouillée sont conservés ; aucun seuil non spécifié n’a été inventé.
-- **C04** : veto symétrique au fill si `move1Aligned < avgRange20 × 0,08` et `flow30Aligned <= 0`, code `CONTINUATION_FRAICHEUR_PERDUE_AU_FILL`.
-- **C05** : une RANGE_FADE remplie ne dépasse 15 minutes que si risque ≤ 0,45, progrès ≥ 0,35, `move3Aligned > 0` et `move8Aligned > -0,25 × avgRange20`. Code journalisé : `RANGE_FADE_TIMEOUT_RECOVERY_CONTEXT`. Le plafond de 45 minutes et les invalidations fortes restent prioritaires.
-- **C06** : après 120 secondes, un signal final encore valide passe à `GÉRER`, action `GÉRER LE PLAN ACTIF`, code `V2326_ACTIVE_RISK_MANAGEMENT`.
-- **C07** : veto symétrique au fill si les mouvements 1 min et 8 min sont opposés, code `CONTINUATION_CONFLIT_1M_8M_AU_FILL`.
-- **C08** : veto si au moins 40 % de cible a déjà été parcouru avant fill, latence ≥ 120 s, et mouvements 1 min/3 min opposés. Code `CONTINUATION_MOUVEMENT_CONSOMME_AVANT_FILL`.
+## TP/SL ONLY LIFECYCLE
 
-Les règles C04/C07/C08 ne changent jamais l’entrée, le TP, le SL ou la quantité.
+- Après publication finale, le statut live reste `ACTIVE` sans limite d’âge.
+- Il n’existe plus de sortie live à 15 minutes ou 45 minutes et aucune extension de timeout n’est nécessaire.
+- `SCENARIO_INVALIDATED`, un changement de flow, BTC, momentum ou une faiblesse de contexte ne ferment jamais un plan final.
+- Seuls `TP_TOUCHED` et `SL_TOUCHED` sont terminaux dans le parcours live et déclenchent le calcul du résultat réalisé.
+- Tant que ni TP ni SL n’est touché, le résultat reste latent, la décision publique est `GÉRER` et l’action est `GÉRER LE PLAN ACTIF`.
+- L’écran montre `PLAN ACTIF`, puis uniquement `TP ATTEINT — PLAN TERMINÉ` ou `SL ATTEINT — PLAN TERMINÉ`.
+- Les anciens statuts `SCENARIO_INVALIDATED`, `TIMEOUT_15M` et `TIMEOUT_45M` restent reconnus par `isHistoricalTerminalStatus()` pour la compatibilité des playbacks, mais ne sont plus produits par le parcours actif.
+- Le feed stale bloque toujours la création d’un nouveau signal, mais `updateObservedSignals()` continue avant ce veto et surveille TP/SL sans timeout.
 
-## Correctifs obligatoires de l’audit externe
+## Un seul plan final actif
 
-Le second commit de la même branche corrige les quatre blocages signalés, sans créer de branche supplémentaire :
+Avant toute confirmation, `MarketWatchService` recherche un autre objet ayant `status=ACTIVE`, une entrée déclenchée et un `finalConfirmedAt` valide. Dans ce cas :
 
-1. **Veto replay CONTINUATION non bloquant** : `evaluateSignal()` ne passe plus les candidats CONTINUATION par `applyAiGate()`/`applyReplayRiskArbiter()` avant observation. `CandidateLifecycle.admit()` conserve `V232_REPLAY_RISK_VETO` et son détail dans les diagnostics comparatifs, mais laisse le plan brut atteindre la revalidation puis P01. Les veto replay RANGE_FADE restent bloquants.
-2. **Confirmation immédiate** : `marketableAtCreation || entryTouched` déclenche immédiatement la reconstruction du snapshot et le parcours revalidation → C04/C07/C08 → P01. La constante historique de 15 secondes est conservée uniquement sous `legacyManualEntryDelayMs`, avec `legacyDelayApplied=false`.
-3. **Résultats terminaux** : `TP_TOUCHED`, `SL_TOUCHED`, `SCENARIO_INVALIDATED`, `TIMEOUT_15M` et `TIMEOUT_45M` sont terminaux. Les journaux exposent `exitAt`, `exitPrice`, `exitReason`, résultat brut/frais/net réalisés, et mettent les champs latents à zéro. Seul `ACTIVE` avec entrée déclenchée peut devenir `OPEN_ACTIVE_RISK`.
-4. **Tests du parcours** : `CandidateLifecycleIntegrationTest` utilise le même parcours de production que le service, depuis l’admission du plan brut et la revalidation jusqu’à P01, publication, politique sonore, quantité et résolution terminale.
+- aucun CONTINUATION P01, SHORT, LONG ou RANGE_FADE supplémentaire n’est publié ;
+- aucune deuxième notification sonore n’est possible ;
+- le candidat reste interne et silencieux ;
+- le diagnostic enregistre une seule fois `V2328_ACTIVE_SIGNAL_ALREADY_RUNNING` avec le sens « Nouveau candidat ignoré : un plan final est déjà actif jusqu’au TP ou au SL. » ;
+- après `TP_TOUCHED` ou `SL_TOUCHED`, le verrou est automatiquement levé.
 
-La mémoire de scénario opposé ne considère désormais comme protection indispensable qu’un risque réellement `ACTIVE` dont l’entrée a été déclenchée ; une simple LIMIT silencieuse en attente n’écarte plus un candidat.
+Le nettoyage du journal ne retire jamais l’objet du plan final actif, même si de nombreux candidats silencieux sont enregistrés.
 
-## P01 et contexte 15 minutes
+## Déduplication des candidats
 
-Une CONTINUATION brute est désormais un candidat interne silencieux. Au toucher du niveau, un snapshot courant est utilisé. Le signal n’est publié que si :
+`PendingCandidateIndex` indexe les candidats `LIMIT_PENDING` avec une signature SHA-256 déterministe comprenant exactement le side, la famille, l’entrée, le TP et le SL, sans bucket temporel.
 
-- `move1Aligned >= avgRange20 × 0,40`
-- `move3Aligned >= avgRange20 × 1,00`
-- `flow30Aligned >= 0`
-- feed ETH frais
-- C04, C07 et C08 validées.
+Pour une signature déjà en attente :
 
-Le code final est `CONTINUATION_CONFLUENCE_POSITIVE_AU_FILL`. Le cooldown de 18 minutes est mémorisé uniquement à la confirmation P01 finale ; un candidat ou rejet ne le démarre pas. RANGE_FADE conserve son moteur et ses veto et ne passe pas par P01.
+- aucun nouvel objet ni événement `CREATED` n’est produit ;
+- le premier objet, son `createdAt` et sa première observation sont conservés ;
+- le marché courant, les extrêmes et le compteur d’updates sont mis à jour ;
+- `V2328_EXISTING_CANDIDATE_UPDATED` est journalisé ;
+- le même candidat est immédiatement revalidé lorsqu’il est marketable ou touché ;
+- un refus P01 transitoire conserve le candidat `LIMIT_PENDING`, afin que C04/C07/C08/P01 puissent être réévalués sans recréer 27 objets ;
+- une seule confirmation et une seule notification finale sont possibles.
 
-`move15` est calculé à partir des bougies 1 minute déjà présentes. Un mouvement 15 minutes aligné ajoute `P01_PREMIUM_15M` et l’affichage « Qualité premium 15 min » sans bloquer un P01 normal et sans notification supplémentaire.
+Les diagnostics ajoutent `candidateSignature` et `activeSignalPublicationBlocked` sans casser les champs historiques.
 
-## Quantité finale 3–7 ETH
+## Notifications et affichage
 
-Le troisième commit corrige la saturation du score moteur historique. `ConfirmedSizing.computeConfirmedSizingQuantity(...)` utilise uniquement les preuves observées au fill ; `candidate.score` est conservé sous `engineScoreDiagnosticOnly` et ne participe jamais au calcul.
+- Un son signifie toujours et uniquement qu’un nouveau signal final est confirmé.
+- Candidat, doublon, blocage par plan actif, contexte affaibli, timeout historique, invalidation analytique, IA et mise à jour ne sonnent jamais.
+- TP ou SL met à jour silencieusement la notification existante avec le même ID.
+- Aucun message public de sortie, d’expiration ou d’invalidation analytique n’est affiché après publication.
+- La quantité reste issue de `ConfirmedSizing` et identique dans le plan, l’écran, la notification et le diagnostic.
+- `realTradingAllowed=false` reste inchangé : l’application n’envoie aucun ordre.
 
-Sizing CONTINUATION P01 :
+## IA et règles de signal
 
-- base conservatrice : 3 ETH
-- +1 si `move1Aligned >= avgRange20 × 0,70` (minimum P01 : × 0,40)
-- +1 si `move3Aligned >= avgRange20 × 1,50` (minimum P01 : × 1,00)
-- +1 si `P01_PREMIUM_15M`
-- +1 uniquement si le contexte complémentaire est particulièrement propre : `move8Aligned >= avgRange20 × 1,25`, `flow30Aligned >= 0,15`, `flow60Aligned >= 0,10`, ratio de volume ≥ 0,80 et `btcMove3Aligned >= -0,00010`
-- plafond absolu : 7 ETH.
+L’IA reste strictement asynchrone et informative après publication. Elle ne peut modifier ni fermer le plan, ni changer l’entrée, le TP, le SL ou la quantité, ni notifier.
 
-Un ancien veto replay CONTINUATION non bloquant impose un plafond à 5 ETH, même lorsque les quatre preuves positives seraient réunies. Il reste informatif et ne bloque pas P01.
+C01–C08 et P01 restent appliqués avant la publication finale. C05 est conservée dans le laboratoire et les anciens rapports, mais ne provoque plus de timeout ou sortie live. RANGE_FADE reste hors P01 et conserve ses veto et son sizing conservateur.
 
-RANGE_FADE ne bénéficie pas des bonus P01. Il reste à 3 ETH par défaut et ne peut atteindre 4 ETH que si le rebond au fill est particulièrement propre (`move1`, `move3`, `move8`, flow et volume alignés). Son plafond est 4 ETH tant qu’aucune calibration positive équivalente n’est disponible.
+## Limitations
 
-Le mapping score-only `SignalEngine.computeFinalConfirmedQuantity(int)` est conservé uniquement comme compatibilité de playback, marqué obsolète et n’est plus utilisé ni pour le candidat brut ni pour la publication finale. Un candidat brut porte 3 ETH en interne.
-
-`ConfirmedSignalPayload` projette la quantité finale immuable vers l’écran, le recorder et la notification. Les diagnostics `confirmedSizing` enregistrent la famille, la base, les quatre bonus, les seuils et valeurs alignées, les points de preuve, le plafond applicable, le veto replay comparatif et la quantité finale.
-
-## Notifications et expérience utilisateur
-
-- Aucun candidat, fill en attente, veto, rejet, timeout de candidat ou analyse IA ne sonne.
-- Même la fonction de test de notification est silencieuse afin de préserver la règle « un son = un signal final ».
-- Un signal final utilise un titre `🚨 SIGNAL ETH CONFIRMÉ — LONG/SHORT` et le corps `LIMIT · TP · SL · quantité`, avec `PREMIUM 15M` si nécessaire.
-- La signature SHA-256 logique contient side, famille, entrée, TP, SL et bucket temporel.
-- Une signature déjà alertée est persistée et ne sonne pas une deuxième fois.
-- Les changements de lifecycle réutilisent le même ID de notification sur un canal silencieux.
-- Une invalidation affiche `SIGNAL EXPIRÉ — NE PAS ENTRER` dans la notification et en rouge dans l’application.
-- Avant tout signal final, l’action principale est simplement « Analyse du marché en cours ».
-- Aucun ordre n’est envoyé. `realTradingAllowed=false`.
-
-## IA OpenAI
-
-L’IA est hors chemin critique :
-
-- aucun état `AI_PENDING`
-- aucun veto ou délai IA avant publication
-- aucune modification d’entrée, TP, SL ou quantité
-- aucune notification IA
-- aucun appel requis lorsque l’IA est désactivée.
-
-Si l’utilisateur l’active, un avis asynchrone peut être enregistré après publication. Il ne modifie jamais le plan publié.
-
-## Diagnostics et résultats
-
-Les champs de fill ajoutés sont :
-
-`marketableAtCreation`, `creationBid`, `creationAsk`, `creationLast`, `plannedEntry`, `firstEntryTouchAt`, `firstEntryTouchPrice`, `firstEntryTouchBid`, `firstEntryTouchAsk`, `simulatedFillAt`, `simulatedFillPrice`, `manualEntryConfirmed=false`, `manualEntryPrice`, `manualEntryAt`.
-
-Les diagnostics de l’audit ajoutent aussi `replayRiskReasonCode`, `replayRiskDetail`, `replayRiskVetoBlocking`, `legacyManualEntryDelayMs`, `legacyDelayApplied`, `exitAt`, `exitPrice`, `exitReason` et l’objet détaillé `confirmedSizing`.
-
-Les résultats distinguent `terminalResolved`, `realizedResult`, brut/frais/net réalisés, prix marqué, brut/net latent et âge du risque ouvert. Un risque encore actif n’est pas une perte réalisée ; une invalidation ou un timeout rempli est terminal, réalisé et jamais classé comme risque ouvert. Le coût de recherche/playback natif est unifié à `1,43 USDT/ETH` par aller-retour complet ; aucune configuration de frais réels utilisateur n’est modifiée.
-
-## Limitations restantes
-
-- Les 11 archives historiques demandées n’étaient présentes ni dans le workspace, ni dans `Téléchargements`, ni dans `Documents`. Aucun résultat de replay n’a été fabriqué.
-- Les résultats de référence P01/candidate combinée n’ont donc pas été reproduits localement.
-- Le replay exact n’a pas été exécuté avec le nouveau sizing fondé sur les preuves au fill. Aucun résultat historique P01 ou résultat financier n’est revendiqué pour cette politique de quantité.
-- Le recorder compatible JSONL a été préservé sans refonte risquée ; voir `RECORDER_OPTIMIZATION_REPORT.md`.
-- Les recherches historiques v2.33 et actifs anciens sont laissés intacts ; voir `REPO_CLEANUP_REPORT.md`.
-- Les tests unitaires couvrent les politiques pures et leurs raccordements compilables. Un test instrumenté Android réel des canaux sonores reste pertinent avant promotion en release définitive.
+- Aucun replay historique exact n’a été relancé pour ce changement de lifecycle ; aucun résultat financier historique n’est revendiqué.
+- Les formats historiques de timeout/invalidation restent lisibles en laboratoire, sans influencer le parcours live v2.32.8.
+- Les tests JVM valident les politiques et composants de production ; un essai instrumenté sur appareil réel reste recommandé avant toute promotion hors brouillon.
