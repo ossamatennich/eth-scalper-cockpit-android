@@ -169,6 +169,14 @@ public class ActivePlanPersistenceIntegrationTest {
         assertFalse(SignalSafetyPolicies.realTradingAllowed());
     }
 
+    @Test public void dynamicOneAndTwoEthPlansRemainPersistable() {
+        Map<String, String> values = activeState().toMap();
+        values.put("quantity", "1");
+        assertEquals(1, ActivePlanState.fromMap(values).quantity);
+        values.put("quantity", "2");
+        assertEquals(2, ActivePlanState.fromMap(values).quantity);
+    }
+
     private ActivePlanState restore() {
         return new ActivePlanPersistence(savedBackend()).restore().state;
     }

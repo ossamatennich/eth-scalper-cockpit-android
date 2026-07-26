@@ -92,7 +92,7 @@ public final class ActivePlanState {
     public boolean isValid() {
         if (formatVersion != FORMAT_VERSION || !"ACTIVE".equals(status)) return false;
         if (!"LONG".equals(side) && !"SHORT".equals(side)) return false;
-        if (family.isEmpty() || quantity < 3 || quantity > 7 || score < 0 || score > 100) return false;
+        if (family.isEmpty() || quantity < 1 || quantity > 7 || score < 0 || score > 100) return false;
         if (!positive(entry) || !positive(takeProfit) || !positive(stopLoss)
                 || !positive(targetMove) || !positive(stopDistance) || !positive(lastPrice)
                 || !positive(lastBid) || !positive(lastAsk) || !positive(avgRange20)) return false;

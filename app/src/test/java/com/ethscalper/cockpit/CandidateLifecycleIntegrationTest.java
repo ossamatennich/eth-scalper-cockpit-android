@@ -51,27 +51,28 @@ public class CandidateLifecycleIntegrationTest {
         CandidateLifecycle.FillResult fill = CandidateLifecycle.processAtFill(
                 admission.decision, p01Snapshot(createdAt), true, createdAt, 0.0, true);
         assertTrue(fill.confirmed);
-        assertEquals(ContinuationConfirmation.P01_CONFIRMED, fill.reasonCode);
+        assertEquals(DynamicTradePlan.CONFIRMED, fill.reasonCode);
         assertNotNull(fill.publishedSignal);
         assertEquals(4, fill.publishedSignal.quantity);
         assertTrue(fill.sizing.replayRiskCapApplied);
     }
 
-    @Test public void marketableCandidateConfirmsAtCreationWithoutLegacyDelay() {
+    @Test public void marketableCandidateWaitsForFreshConfirmationWindow() {
         long createdAt = 500_000;
         SignalDecision raw = continuation(90);
         assertTrue(SignalSafetyPolicies.marketableAtCreation(
                 raw.side, 99.99, 100.00, raw.entry));
-        assertTrue(CandidateLifecycle.readyForImmediateConfirmation(true, false));
+        assertFalse(CandidateLifecycle.readyForImmediateConfirmation(true, false));
 
         CandidateLifecycle.AdmissionResult admission =
                 CandidateLifecycle.admit(raw, true, false, "");
-        CandidateLifecycle.FillResult fill = CandidateLifecycle.processAtFill(
-                admission.decision, p01Snapshot(createdAt), true, createdAt, 0.0);
+        CandidateLifecycle.FillResult fill = CandidateLifecycle.processPendingCandidate(
+                admission.decision, p01Snapshot(createdAt), true, createdAt, createdAt,
+                0.0, 0.0, false);
 
-        assertTrue(fill.confirmed);
+        assertFalse(fill.confirmed);
+        assertEquals(CandidateLifecycle.SILENT_CONFIRMATION_WINDOW, fill.reasonCode);
         assertEquals(createdAt, p01Snapshot(createdAt).now);
-        assertEquals(4, fill.publishedSignal.quantity);
     }
 
     @Test public void candidateIsSilentAndFinalSignatureSoundsOnlyOnce() {
@@ -160,9 +161,9 @@ public class CandidateLifecycleIntegrationTest {
     @Test public void rangeFadeKeepsReplayVetoAndNeverUsesP01() {
         CandidateLifecycle.AdmissionResult vetoed = CandidateLifecycle.admit(
                 rangeFade(88), true, false, "RANGE_FADE_REJET_INSUFFISANT");
-        assertFalse(vetoed.observed);
+        assertTrue(vetoed.observed);
         assertEquals(CandidateLifecycle.REPLAY_RISK_DIAGNOSTIC,
-                vetoed.decision.reasonCode);
+                vetoed.replayRiskReasonCode);
 
         CandidateLifecycle.AdmissionResult accepted =
                 CandidateLifecycle.admit(rangeFade(88), true, false, "");
@@ -176,8 +177,8 @@ public class CandidateLifecycleIntegrationTest {
                         .flowWindows(0, 0, 0, 0)
                         .build(),
                 true, 1_500_000, 0);
-        assertTrue(fill.confirmed);
-        assertEquals("RANGE_FADE_CONFIRMED_AT_FILL", fill.reasonCode);
-        assertFalse(fill.publishedSignal.family.contains("P01"));
+        assertFalse(fill.confirmed);
+        assertEquals(CandidateLifecycle.RANGE_FADE_DIAGNOSTIC_ONLY, fill.reasonCode);
+        assertNull(fill.publishedSignal);
     }
 }

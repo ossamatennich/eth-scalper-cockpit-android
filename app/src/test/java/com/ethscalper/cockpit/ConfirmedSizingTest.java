@@ -60,7 +60,8 @@ public class ConfirmedSizingTest {
         CandidateLifecycle.FillResult fill = fill(96,
                 snapshot(3_000, .75, 1.55, .30, -.10, .05, .05, 0.0, 100), false);
         assertTrue(fill.confirmed);
-        assertEquals(5, fill.publishedSignal.quantity);
+        assertEquals(4, fill.publishedSignal.quantity);
+        assertEquals(5, fill.sizing.finalQuantity);
         assertTrue(fill.sizing.move1Bonus);
         assertTrue(fill.sizing.move3Bonus);
     }
@@ -69,7 +70,8 @@ public class ConfirmedSizingTest {
         CandidateLifecycle.FillResult fill = fill(96,
                 snapshot(4_000, .75, 1.55, .30, .20, .05, .05, 0.0, 100), false);
         assertTrue(fill.confirmed);
-        assertEquals(6, fill.publishedSignal.quantity);
+        assertEquals(4, fill.publishedSignal.quantity);
+        assertEquals(6, fill.sizing.finalQuantity);
         assertTrue(fill.sizing.premium15mBonus);
         assertFalse(fill.sizing.cleanContextBonus);
     }
@@ -78,7 +80,8 @@ public class ConfirmedSizingTest {
         CandidateLifecycle.FillResult fill = fill(96,
                 snapshot(5_000, .80, 1.60, 1.30, .20, .20, .15, .00010, 120), false);
         assertTrue(fill.confirmed);
-        assertEquals(7, fill.publishedSignal.quantity);
+        assertEquals(4, fill.publishedSignal.quantity);
+        assertEquals(7, fill.sizing.finalQuantity);
         assertEquals(4, fill.sizing.evidencePoints);
         assertTrue(fill.sizing.cleanContextBonus);
     }
@@ -95,7 +98,8 @@ public class ConfirmedSizingTest {
         CandidateLifecycle.FillResult fill = fill(96,
                 snapshot(7_000, .80, 1.60, 1.30, .20, .20, .15, .00010, 120), true);
         assertTrue(fill.confirmed);
-        assertEquals(5, fill.publishedSignal.quantity);
+        assertEquals(4, fill.publishedSignal.quantity);
+        assertEquals(5, fill.sizing.finalQuantity);
         assertTrue(fill.sizing.historicalReplayRiskVeto);
         assertTrue(fill.sizing.replayRiskCapApplied);
         assertEquals(5, fill.sizing.maxAllowedQuantity);
@@ -106,11 +110,9 @@ public class ConfirmedSizingTest {
                 snapshot(8_000, .20, .20, .10, .20, .05, .05, 0.0, 100);
         CandidateLifecycle.FillResult fill = CandidateLifecycle.processAtFill(
                 rangeFade(96), snapshot, true, snapshot.now, 0.0, false);
-        assertTrue(fill.confirmed);
-        assertEquals(3, fill.publishedSignal.quantity);
-        assertEquals(ConfirmedSizing.RANGE_FADE_MAX_QUANTITY,
-                fill.sizing.maxAllowedQuantity);
-        assertFalse(fill.publishedSignal.family.contains("P01"));
+        assertFalse(fill.confirmed);
+        assertEquals(CandidateLifecycle.RANGE_FADE_DIAGNOSTIC_ONLY, fill.reasonCode);
+        assertNull(fill.publishedSignal);
     }
 
     @Test public void exceptionallyCleanRangeFadeStillCannotExceedFourEth() {
@@ -118,8 +120,8 @@ public class ConfirmedSizingTest {
                 snapshot(9_000, .80, .60, .10, .20, .12, .10, 0.0, 120);
         CandidateLifecycle.FillResult fill = CandidateLifecycle.processAtFill(
                 rangeFade(96), snapshot, true, snapshot.now, 0.0, false);
-        assertTrue(fill.confirmed);
-        assertEquals(4, fill.publishedSignal.quantity);
-        assertEquals(4, fill.sizing.maxAllowedQuantity);
+        assertFalse(fill.confirmed);
+        assertEquals(CandidateLifecycle.RANGE_FADE_DIAGNOSTIC_ONLY, fill.reasonCode);
+        assertNull(fill.publishedSignal);
     }
 }

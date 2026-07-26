@@ -1,6 +1,6 @@
-# Candidate v2.32.8.1 — rapport de tests
+# Candidate v2.32.9 — rapport de tests
 
-> Le nom du fichier reste historique ; tous les résultats ci-dessous concernent **ETH Scalper Cockpit v2.32.8.1 — TP/SL Only**.
+> Le nom historique du fichier est conservé. Tous les résultats concernent **ETH Scalper Cockpit v2.32.9 — Confirmed P01 Dynamic Risk**.
 
 ## Environnement
 
@@ -8,12 +8,12 @@
 - Android SDK : `C:\Users\Tenni\AppData\Local\Android\Sdk`
 - JDK : Android Studio JBR 17
 - Gradle : 8.10.2 temporaire, le dépôt ne fournissant pas de wrapper fonctionnel
-- Package debug vérifié par `aapt` : `com.ethscalper.cockpit.debug`
-- `versionCode=23281`, `versionName=2.32.8.1`, `minSdk=26`, `targetSdk=35`
+- `versionCode=23290`, `versionName=2.32.9`, `minSdk=26`, `targetSdk=35`
 
 ## Commandes exécutées
 
 ```powershell
+gradle testDebugUnitTest --rerun-tasks
 gradle test --rerun-tasks
 gradle assembleDebug --rerun-tasks
 gradle assembleRelease --rerun-tasks
@@ -24,103 +24,69 @@ Les commandes ont été exécutées en mono-worker avec `JAVA_HOME` et `ANDROID_
 
 ## Résultats
 
-- 88 tests distincts.
-- 88/88 réussis en debug.
-- 88/88 réussis en release.
-- 176 exécutions réussies pendant la dernière passe globale forcée.
-- 0 échec, 0 erreur, 0 test ignoré.
-- `assembleDebug --rerun-tasks` : succès.
-- `assembleRelease --rerun-tasks` et lint vital release : succès.
-- `lintRelease --rerun-tasks` : succès après ajout de la garde API 29 dans l’export diagnostic.
+- 147 tests distincts ;
+- 147/147 réussis en debug ;
+- 147/147 réussis en release ;
+- 294 exécutions réussies pendant la passe globale forcée ;
+- 0 échec, 0 erreur, 0 test ignoré ;
+- `assembleDebug --rerun-tasks` : succès ;
+- `assembleRelease --rerun-tasks` et lint vital : succès ;
+- `lintRelease --rerun-tasks` : succès.
 
-## ACTIVE PLAN PERSISTENCE
+## FRESH EXECUTABLE ENTRY
 
-Les 18 nouveaux tests couvrent :
+Les tests vérifient : silence et absence de plan à 0 et 14 999 ms ; snapshot courant obligatoire à 15 000 ms ; `marketableAtCreation` non autorisant ; ask LONG et bid SHORT courants ; LIMIT distante silencieuse ; retour réel sur la LIMIT ; C04/C07/C08/P01/feed stale bloquants ; publication possible à 15 s, 63 s et exactement 120 s ; expiration après 120 s ; target-before-fill classé `MISSED_NO_FILL` sans faux TP ; tombstone anti-résurrection ; déduplication et conservation du premier `createdAt` ; une seule alerte finale.
 
-1. écriture du plan après confirmation ;
-2. restauration dans une nouvelle instance de persistance/service ;
-3. blocage d’un nouveau LONG par le plan restauré ;
-4. blocage d’un nouveau SHORT ;
-5. blocage d’un RANGE_FADE ;
-6. restauration silencieuse ;
-7. conservation du même identifiant de notification ;
-8. maintien actif après 15 minutes ;
-9. maintien actif après 45 minutes ;
-10. maintien malgré un contexte défavorable ;
-11. suppression de l’état persistant par TP ;
-12. suppression par SL ;
-13. nouveau signal autorisé après TP ;
-14. nouveau signal autorisé après SL ;
-15. reset diagnostic conservant le plan actif ;
-16. reset normal sans plan actif ;
-17. rejet sans crash d’un état corrompu ;
-18. `realTradingAllowed=false` et aucun ordre automatique.
+## DYNAMIC STRUCTURAL STOP
 
-La restauration vérifie aussi l’identité de la quantité et des preuves de sizing. Aucun seuil C01–C08/P01, TP, SL ou sizing n’a été modifié.
+- Cas A : A=1,3105, E60=1,815, R=2,76 donne SL=2,0771 et TP=3,96625, plan valide.
+- Cas D : A=3,367, E60=3,115 est refusé par `V2329_STRUCTURAL_STOP_TOO_WIDE`.
+- Cas E : A=2,9495, E60=6,365 est refusé par le même reason code.
+- Les tests couvrent les trois termes du SL, le SL maximal, l’absence de clamp artificiel, E60 bid/ask symétrique et l’arrondi conservateur LONG/SHORT.
 
-## TP/SL ONLY LIFECYCLE
+## DYNAMIC MARKET TARGET
 
-Les tests couvrent explicitement :
+- Cas B : A=0,455, E60=0,01, R=1,735 donne SL=0,55, TP=2,80 et riskQuantity=5.
+- Cas C : A=0,9225, E60=0,01, R=6,865 donne SL=0,64575, TP=4,0225 et riskQuantity=4.
+- Le plancher 2,80, le plafond 5,50, la contribution A/R, le coût central 1,43 et le rejet reward/risk <1,40 sont vérifiés.
 
-1. blocage d’un nouveau P01 LONG par un plan final actif ;
-2. blocage d’un nouveau P01 SHORT ;
-3. blocage d’un nouveau RANGE_FADE ;
-4. silence du candidat bloqué ;
-5. 27 observations identiques produisant un seul objet candidat ;
-6. conservation du premier `createdAt` ;
-7. refus P01 transitoire puis confirmation du même candidat ;
-8. une seule alerte sonore finale ;
-9. maintien `ACTIVE` après 15 minutes ;
-10. maintien `ACTIVE` après 45 minutes ;
-11. maintien `ACTIVE` lorsque flow/BTC/contexte deviennent défavorables ;
-12. `SCENARIO_INVALIDATED` non terminal dans le parcours live ;
-13. aucune action publique `SORTIR` ;
-14. aucune action publique d’expiration ;
-15. TP terminal et réalisé ;
-16. SL terminal et réalisé ;
-17. nouveau signal autorisé après TP ;
-18. nouveau signal autorisé après SL ;
-19. quantité identique plan/notification/écran/diagnostic ;
-20. `realTradingAllowed=false` et aucun ordre automatique.
+## RISK BUDGET SIZING
 
-Les suites antérieures restent vertes pour C01–C08, P01 LONG/SHORT, premium 15 minutes, cooldown, RANGE_FADE hors P01, veto replay comparatif, confirmation immédiate marketable, sizing confirmé 3–7 ETH, plafond replay 5 ETH, plafond RANGE_FADE 4 ETH, immutabilité IA, fill et diagnostics.
+Les tests couvrent le calcul du risque par ETH, la quantité par budget, le plafond qualité comme maximum uniquement, les quantités 1 et 2 ETH sans remontée à 3, le plafond absolu 7, le rejet budget <1 ETH et la perte théorique bornée. Ils vérifient aussi l’identité entrée/TP/SL/quantité entre plan, écran, notification, diagnostic et persistance.
 
-Les anciens tests qui réalisaient un timeout ou une invalidation ont été adaptés : ces codes restent historiques, sans `exitAt`, `exitPrice`, frais ou résultat réalisé live. Seuls TP et SL résolvent un plan final.
+## RANGE FADE DIAGNOSTIC ONLY
+
+RANGE_FADE LONG et SHORT restent admis dans le journal, y compris avec veto replay comparatif, mais `V2329_RANGE_FADE_DIAGNOSTIC_ONLY` empêche toute publication. Les tests confirment : aucun son, aucun plan actif, aucun blocage du P01 suivant et niveaux théoriques toujours exportables.
+
+## TP/SL ONLY ACTIVE LIFECYCLE
+
+Les suites de non-régression confirment : un seul plan actif ; aucun timeout ou invalidation automatique ; aucune action publique de sortie ; niveaux et quantité immuables ; fin uniquement TP/SL ; nouveau signal autorisé après TP/SL ; persistance/restauration silencieuse ; même ID de notification ; reset diagnostic conservant le plan actif ; état corrompu ignoré ; `realTradingAllowed=false`.
 
 ## APK locale
 
-- Chemin exact : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\debug\app-debug.apk`
-- Taille : `4 504 264` octets
-- SHA-256 : `123D9DB060B0175FE354D2CB8C47F323DAABE53C5C1F1F383FA258D719830FD1`
-- Manifeste vérifié par `aapt` : `versionCode 23281`, `versionName 2.32.8.1`, `minSdk 26`, `targetSdk 35`.
+Debug :
 
-Contrôle release local non signé :
+- chemin : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\debug\app-debug.apk` ;
+- taille : `4 509 716` octets ;
+- SHA-256 : `FA058276CE7EEF239AC7ACAE70EA1C656AC5F3A551D1CAC88B7576DE9CF97122` ;
+- manifeste vérifié par `aapt` : package `com.ethscalper.cockpit.debug`, versionCode 23290, versionName 2.32.9, minSdk 26, targetSdk 35.
 
-- Chemin : `app\build\outputs\apk\release\app-release-unsigned.apk`
-- Taille : `3 585 505` octets
-- SHA-256 : `970BE00D74B99169CB9CC2701D8EFFF95AE4373D153331030D04D0B34B13A70A`
+Release locale non signée :
+
+- chemin : `app\build\outputs\apk\release\app-release-unsigned.apk` ;
+- taille : `3 591 061` octets ;
+- SHA-256 : `33ED68CAD7D458D06734049376B9A76B7865CCE6E4F623C7B22FFBC7E76EDB0E`.
 
 ## GitHub Actions
 
-Run du commit applicatif `04d224fb2b8c58208de631345b8251e4f29823d5` :
+À compléter après le push du commit applicatif v2.32.9. La PR doit rester ouverte, en brouillon et non fusionnée ; aucun artefact de release définitive ne sera publié.
 
-- Run : `30175973884`
-- URL : `https://github.com/ossamatennich/eth-scalper-cockpit-android/actions/runs/30175973884`
-- Job `test-and-build` : succès (tests, build debug et upload).
-- Artefact : `ETH-Scalper-Cockpit-v2.32.8.1-debug-apk`
-- ID artefact : `8624218470`
-- Taille de l’archive GitHub : `4 044 257` octets
-- Digest de l’archive GitHub : `sha256:e5e749dc4ebb1787a20e29e51fe442886b491a5965880b77b069d9b0219d1e65`
-- Taille de l’APK extraite : `4 503 472` octets
-- SHA-256 de l’APK GitHub Actions : `69E398BFB9D00A0850409E835EBA4AF8A3D69D010C08908C5CA6B456C81D1D68`
-- Manifeste de l’APK CI vérifié par `aapt` : `versionCode 23281`, `versionName 2.32.8.1`, `minSdk 26`, `targetSdk 35`.
+## Résultats de recherche fournis
 
-La différence de hash avec l’APK locale provient des builds/signatures debug produits dans deux environnements distincts ; les deux manifestes portent la même version. La PR reste en brouillon et aucun artefact de release définitive n’a été publié.
+La calibration hors Codex sur 14 sessions et 39 695 frames uniques rapporte 15 opportunités P01 propres, dont 13 trades retenus, 11 TP, 2 SL, +22,2652 USDT/ETH net standardisé, profit factor 4,8414, drawdown maximal 3,4487 USDT/ETH et 9 sessions positives sur 10 tradées.
 
-## Incidents environnementaux corrigés
+Découverte : 7 trades, 5 TP, 2 SL, +10,1752 USDT/ETH. Holdout historique : 4 trades, 4 TP, +8,1275 USDT/ETH. Cas récents corrigés : 2 trades, 2 TP, +3,9625 USDT/ETH.
 
-Une première passe globale a rencontré un verrou Windows transitoire sur un `R.jar` release généré. `gradle clean` a libéré uniquement les intermédiaires régénérables, puis `test --rerun-tasks` a réussi. Le lint complet a ensuite signalé l’usage non gardé de `MediaStore.Downloads` (API 29) dans l’export diagnostic pour un `minSdk` 26 ; une branche compatible Android 26–28 a été ajoutée et le lint complet a réussi à la relance.
+Stress coût 2,00/slippage 0,15 : +12,9052 USDT/ETH. Stress coût 2,145/slippage 0,20 : +10,3702 USDT/ETH. Avec budget 10 USDT : quantités 2–5 ETH, moyenne environ 3,38, perte maximale modélisée environ 9,91 USDT et résultat théorique environ +75,40 USDT.
 
-## Replay historique
-
-Aucun replay historique exact n’a été exécuté pour la persistance v2.32.8.1. Aucun résultat historique P01, sizing ou financier n’est revendiqué ou fabriqué.
+Ces résultats de recherche sur diagnostics ne garantissent aucune performance ou rentabilité future. Aucun replay indépendant supplémentaire n’a été fabriqué ou revendiqué par Codex.

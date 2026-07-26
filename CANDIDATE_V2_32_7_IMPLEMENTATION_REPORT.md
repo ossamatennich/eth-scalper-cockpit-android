@@ -1,107 +1,121 @@
-# Candidate v2.32.8.1 — rapport d’implémentation
+# Candidate v2.32.9 — rapport d’implémentation
 
-> Le nom du fichier est conservé pour la continuité de la candidate, mais l’application produite est **ETH Scalper Cockpit v2.32.8.1 — TP/SL Only** (`versionCode 23281`, `versionName 2.32.8.1`).
+> Le nom historique du fichier est conservé. L’application produite est **ETH Scalper Cockpit v2.32.9 — Confirmed P01 Dynamic Risk** (`versionCode 23290`, `versionName 2.32.9`).
 
-## Référence Git
+## Référence Git et portée
 
 - Dépôt : `ossamatennich/eth-scalper-cockpit-android`
-- Branche source verrouillée : `agent/v2.32.6-candidate`
-- HEAD source : `493820ef1d1a01a65160ffb56c91a8b04b255f62`
-- Branche candidate reprise : `agent/v2.32.7-scalp-p01-candidate`
-- HEAD au départ de ce correctif : `ee29a0d08dfe9020c92b525c0bd226254b0e6628`
-- Aucun merge vers `main`, aucune nouvelle branche et aucune release définitive.
+- Branche : `agent/v2.32.7-scalp-p01-candidate`
+- HEAD au départ : `f4e7693389aa4caa81d36dabd7dd26cd95a2e6b0`
+- Branche de base de la PR : `agent/v2.32.6-candidate`
+- Aucun changement de branche, aucun merge vers `main` et aucune release définitive.
 
-## Portée du correctif v2.32.8.1
+Principaux fichiers de cette calibration :
 
-Fichiers modifiés pour ce correctif :
+- `DynamicTradePlan.java` et `DynamicTradePlanTest.java` (nouveaux) ;
+- `CandidateTombstones.java` (nouveau) ;
+- `CandidateLifecycle.java`, `MarketWatchService.java` et `SignalSafetyPolicies.java` ;
+- `ActivePlanState.java` pour autoriser la persistance des quantités 1–2 ETH ;
+- tests d’intégration `ConfirmedP01EntryLifecycleTest.java` et `RangeFadeDiagnosticOnlyTest.java` (nouveaux) ;
+- configuration Android, interface, workflows et rapports.
 
-- `app/build.gradle`
-- `app/src/main/AndroidManifest.xml`
-- `app/src/main/java/com/ethscalper/cockpit/CandidateLifecycle.java`
-- `app/src/main/java/com/ethscalper/cockpit/MainActivity.java`
-- `app/src/main/java/com/ethscalper/cockpit/MarketWatchService.java`
-- `app/src/main/java/com/ethscalper/cockpit/ActivePlanPersistence.java` (nouveau)
-- `app/src/main/java/com/ethscalper/cockpit/ActivePlanState.java` (nouveau)
-- `app/src/main/java/com/ethscalper/cockpit/SharedPreferencesActivePlanBackend.java` (nouveau)
-- `app/src/main/java/com/ethscalper/cockpit/SignalEngine.java`
-- `app/src/main/java/com/ethscalper/cockpit/SignalSafetyPolicies.java`
-- `app/src/test/java/com/ethscalper/cockpit/ActivePlanPersistenceIntegrationTest.java` (nouveau)
-- `.github/workflows/build-apk.yml`
-- `.github/workflows/build-v2327-candidate.yml`
-- les rapports de candidate.
+Les seuils C01–C08 et P01 restent inchangés. L’IA reste informative après publication et `realTradingAllowed=false`.
 
-Les seuils C01–C08, P01, premium 15 minutes, entrée, TP, SL, sizing confirmé 3–7 ETH, plafond replay à 5 ETH, plafond RANGE_FADE à 4 ETH, IA informative et interdiction du trading automatique ne sont pas modifiés.
+## FRESH EXECUTABLE ENTRY
 
-## ACTIVE PLAN PERSISTENCE
+- Un candidat CONTINUATION est créé ou mis à jour silencieusement ; son premier `createdAt` est conservé.
+- `marketableAtCreation` reste une donnée historique et ne peut plus autoriser une confirmation.
+- Avant 15 000 ms, `V2329_SILENT_P01_CONFIRMATION_WINDOW` interdit toute publication.
+- À partir de 15 000 ms, un snapshot reconstruit au timestamp courant est obligatoire.
+- La LIMIT est exécutable uniquement si `ask <= entry` pour LONG ou `bid >= entry` pour SHORT.
+- À 120 000 ms exactement, une confirmation reste déterministiquement possible ; après 120 000 ms, le candidat seul expire avec `V2329_PENDING_CANDIDATE_EXPIRED`.
+- Si le bid LONG atteint le TP candidat, ou si l’ask SHORT l’atteint, avant un fill confirmé, le candidat devient `MISSED_NO_FILL` avec `V2329_TARGET_REACHED_BEFORE_CONFIRMED_FILL`.
+- Une tombstone de signature empêche ce candidat manqué d’être recréé au retour du prix.
+- Après un fill réellement exécutable : feed frais, cohérence, prix, C04, C07, C08 et P01 sont revalidés avant tout calcul ou effet public.
 
-- La confirmation finale est validée dans un état dédié versionné avant toute publication et avant l’alerte sonore.
-- Le stockage repose sur des `SharedPreferences` internes dédiées et un `commit()` synchrone en une seule transaction ; le journal JSONL ne sert pas de source de restauration.
-- L’état contient le plan, les timestamps, le statut `ACTIVE`, le premium 15 minutes, le score, le sizing et ses preuves, les dernières données de marché, `lastP01ConfirmedAt`, la signature et l’identifiant de notification.
-- Au démarrage du service, la restauration précède la première évaluation : `lastSignal`, `lastSignalAt`, `lastP01ConfirmedAt` et l’`ObservedSignal` actif sont reconstruits.
-- Le reason code `V23281_ACTIVE_PLAN_PERSISTED` confirme l’écriture et `V23281_ACTIVE_PLAN_RESTORED` la reprise.
-- Une restauration remet silencieusement à jour le même identifiant de notification avec `PLAN ACTIF RESTAURÉ`; elle ne sonne pas, ne vibre pas et ne publie aucun nouveau signal.
-- Le verrou d’un seul plan reste actif après redémarrage et bloque LONG, SHORT, P01 et RANGE_FADE jusqu’au TP ou au SL.
-- Seuls `TP_TOUCHED` et `SL_TOUCHED` suppriment automatiquement l’état persistant. Le temps, le contexte, le feed stale, une déconnexion ou une invalidation analytique ne le suppriment pas.
-- `ACTION_RESET_DIAGNOSTICS` conserve le plan, ses timestamps, son objet actif, le cooldown P01 et son état persistant ; seuls les diagnostics et candidats non actifs sont effacés.
-- Un état incomplet ou corrompu est rejeté sans plan synthétique ni crash avec `V23281_ACTIVE_PLAN_RESTORE_INVALID`, puis l’analyse normale continue.
-- Le petit correctif Android 26–28 ajouté pendant le lint garde l’export diagnostic fonctionnel sans appeler l’API 29 `MediaStore.Downloads` sur ces versions ; il ne touche pas au moteur.
+## DYNAMIC STRUCTURAL STOP
 
-## TP/SL ONLY LIFECYCLE
+`DynamicTradePlan` est une classe pure et symétrique. Elle définit `A = max(0.35, avgRange20)` et reçoit `E60`, excursion défavorable bid/ask observée pendant les 60 premières secondes.
 
-- Après publication finale, le statut live reste `ACTIVE` sans limite d’âge.
-- Il n’existe plus de sortie live à 15 minutes ou 45 minutes et aucune extension de timeout n’est nécessaire.
-- `SCENARIO_INVALIDATED`, un changement de flow, BTC, momentum ou une faiblesse de contexte ne ferment jamais un plan final.
-- Seuls `TP_TOUCHED` et `SL_TOUCHED` sont terminaux dans le parcours live et déclenchent le calcul du résultat réalisé.
-- Tant que ni TP ni SL n’est touché, le résultat reste latent, la décision publique est `GÉRER` et l’action est `GÉRER LE PLAN ACTIF`.
-- L’écran montre `PLAN ACTIF`, puis uniquement `TP ATTEINT — PLAN TERMINÉ` ou `SL ATTEINT — PLAN TERMINÉ`.
-- Les anciens statuts `SCENARIO_INVALIDATED`, `TIMEOUT_15M` et `TIMEOUT_45M` restent reconnus par `isHistoricalTerminalStatus()` pour la compatibilité des playbacks, mais ne sont plus produits par le parcours actif.
-- Le feed stale bloque toujours la création d’un nouveau signal, mais `updateObservedSignals()` continue avant ce veto et surveille TP/SL sans timeout.
+- `SL_required = max(0.55, 0.70 × A, E60 + 0.20 × A)` ;
+- `SL_max = min(2.50, 2.00 × A)` ;
+- si le stop requis dépasse le maximum, le plan est refusé par `V2329_STRUCTURAL_STOP_TOO_WIDE` sans clamp artificiel ;
+- LONG place le SL sous l’entrée, SHORT au-dessus ; l’arrondi au tick est conservateur et ne rétrécit pas le stop requis.
 
-## Un seul plan final actif
+## DYNAMIC MARKET TARGET
 
-Avant toute confirmation, `MarketWatchService` recherche un autre objet ayant `status=ACTIVE`, une entrée déclenchée et un `finalConfirmedAt` valide. Dans ce cas :
+Le coût estimé de recherche est centralisé dans `DynamicTradePlan.ESTIMATED_ROUND_TRIP_COST_PER_ETH = 1.43`.
 
-- aucun CONTINUATION P01, SHORT, LONG ou RANGE_FADE supplémentaire n’est publié ;
-- aucune deuxième notification sonore n’est possible ;
-- le candidat reste interne et silencieux ;
-- le diagnostic enregistre une seule fois `V2328_ACTIVE_SIGNAL_ALREADY_RUNNING` avec le sens « Nouveau candidat ignoré : un plan final est déjà actif jusqu’au TP ou au SL. » ;
-- après `TP_TOUCHED` ou `SL_TOUCHED`, le verrou est automatiquement levé.
+- `R` est l’espace favorable entre l’entrée et `recentHigh` (LONG) ou `recentLow` (SHORT) ;
+- `TP_floor = max(2.80, 1.95 × 1.43)` ;
+- `TP_raw = 2.50 × A + 0.25 × R` ;
+- le TP est borné entre 2,80 et 5,50 USDT puis arrondi au tick dans le sens conservateur ;
+- `TP_distance / SL_required` doit être au moins 1,40, sinon `V2329_REWARD_RISK_INSUFFICIENT` refuse le plan.
 
-Le nettoyage du journal ne retire jamais l’objet du plan final actif, même si de nombreux candidats silencieux sont enregistrés.
+## RISK BUDGET SIZING
 
-## Déduplication des candidats
+Le sizing qualité existant calcule maintenant uniquement un plafond supérieur à partir des preuves P01, premium 15 minutes, contexte propre et plafond replay.
 
-`PendingCandidateIndex` indexe les candidats `LIMIT_PENDING` avec une signature SHA-256 déterministe comprenant exactement le side, la famille, l’entrée, le TP et le SL, sans bucket temporel.
+- budget par défaut : 10,00 USDT ;
+- risque par ETH : `SL_required + 1.43` ;
+- quantité risque : `floor(10 / riskPerEth)` ;
+- quantité finale : minimum de la quantité risque, du plafond qualité et de 7 ;
+- 1 et 2 ETH sont autorisés et ne sont jamais remontés à 3 ;
+- si la quantité risque est inférieure à 1, `V2329_RISK_BUDGET_TOO_SMALL` refuse le plan.
 
-Pour une signature déjà en attente :
+Budget, coût, stop, risque par ETH, quantité risque, plafond qualité, quantité finale et perte maximale théorique sont exportés. Le plan, l’écran, la notification, la persistance et le diagnostic utilisent le même objet final.
 
-- aucun nouvel objet ni événement `CREATED` n’est produit ;
-- le premier objet, son `createdAt` et sa première observation sont conservés ;
-- le marché courant, les extrêmes et le compteur d’updates sont mis à jour ;
-- `V2328_EXISTING_CANDIDATE_UPDATED` est journalisé ;
-- le même candidat est immédiatement revalidé lorsqu’il est marketable ou touché ;
-- un refus P01 transitoire conserve le candidat `LIMIT_PENDING`, afin que C04/C07/C08/P01 puissent être réévalués sans recréer 27 objets ;
-- une seule confirmation et une seule notification finale sont possibles.
+## RANGE FADE DIAGNOSTIC ONLY
 
-Les diagnostics ajoutent `candidateSignature` et `activeSignalPublicationBlocked` sans casser les champs historiques.
+- RANGE_FADE LONG/SHORT reste détecté, dédupliqué, suivi et exporté.
+- Son statut live est `DIAGNOSTIC_ONLY` avec `V2329_RANGE_FADE_DIAGNOSTIC_ONLY` et le texte « RANGE_FADE conservé pour calibration — aucune publication finale. »
+- Il ne crée ni plan actif, ni quantité publique, ni son, ni vibration et ne bloque pas un futur P01.
+- Le moteur RANGE_FADE et ses niveaux théoriques restent disponibles pour les recherches futures.
 
-## Notifications et affichage
+## TP/SL ONLY ACTIVE LIFECYCLE
 
-- Un son signifie toujours et uniquement qu’un nouveau signal final est confirmé.
-- Candidat, doublon, blocage par plan actif, contexte affaibli, timeout historique, invalidation analytique, IA et mise à jour ne sonnent jamais.
-- TP ou SL met à jour silencieusement la notification existante avec le même ID.
-- Aucun message public de sortie, d’expiration ou d’invalidation analytique n’est affiché après publication.
-- La quantité reste issue de `ConfirmedSizing` et identique dans le plan, l’écran, la notification et le diagnostic.
-- `realTradingAllowed=false` reste inchangé : l’application n’envoie aucun ordre.
+- Après publication et persistance atomique, un seul plan final reste `ACTIVE` sans timeout ni invalidation automatique.
+- Aucun changement de flow, BTC, momentum, IA, feed stale ou âge ne modifie l’entrée, le TP, le SL ou la quantité.
+- Le plan se termine uniquement par `TP_TOUCHED` ou `SL_TOUCHED`.
+- La restauration du service reste silencieuse, conserve le même ID de notification et rétablit le verrou mono-plan.
+- La réinitialisation des diagnostics conserve le plan actif ; seul TP ou SL efface automatiquement l’état persistant.
+- Une seule notification sonore indique la confirmation d’un nouveau P01 final. Les clôtures sont des mises à jour silencieuses.
 
-## IA et règles de signal
+## Diagnostics v2.32.9
 
-L’IA reste strictement asynchrone et informative après publication. Elle ne peut modifier ni fermer le plan, ni changer l’entrée, le TP, le SL ou la quantité, ni notifier.
+Les événements enregistrent `createdAt`, `confirmationAt`, âge, `marketableAtCreation`, exécutabilité finale, bid/ask finaux, A, E60, R, SL requis/maximal, TP brut/final, reward/risk, coût, budget, quantité risque, plafond qualité, quantité finale, perte théorique et reason code.
 
-C01–C08 et P01 restent appliqués avant la publication finale. C05 est conservée dans le laboratoire et les anciens rapports, mais ne provoque plus de timeout ou sortie live. RANGE_FADE reste hors P01 et conserve ses veto et son sizing conservateur.
+Reason codes principaux :
+
+- `V2329_SILENT_P01_CONFIRMATION_WINDOW` ;
+- `V2329_PENDING_CANDIDATE_EXPIRED` ;
+- `V2329_TARGET_REACHED_BEFORE_CONFIRMED_FILL` ;
+- `V2329_RANGE_FADE_DIAGNOSTIC_ONLY` ;
+- `V2329_STRUCTURAL_STOP_TOO_WIDE` ;
+- `V2329_REWARD_RISK_INSUFFICIENT` ;
+- `V2329_RISK_BUDGET_TOO_SMALL` ;
+- `V2329_DYNAMIC_PLAN_CONFIRMED`.
+
+## Résultats de calibration fournis
+
+La recherche hors Codex porte sur 14 sessions, 39 695 frames uniques et 15 opportunités P01 propres. Sur le corpus propre disponible :
+
+- 13 trades retenus, 11 TP et 2 SL ;
+- net standardisé : +22,2652 USDT par ETH ;
+- profit factor : 4,8414 ;
+- drawdown maximal : 3,4487 USDT par ETH ;
+- 9 sessions positives sur 10 sessions tradées.
+
+Découpage chronologique : découverte 7 trades, 5 TP, 2 SL, +10,1752 USDT/ETH ; holdout historique 4 trades, 4 TP, +8,1275 USDT/ETH ; cas récents corrigés 2 trades, 2 TP, +3,9625 USDT/ETH.
+
+Stress : coût 2,00 et slippage 0,15 donne +12,9052 USDT/ETH ; coût 2,145 et slippage 0,20 donne +10,3702 USDT/ETH.
+
+Sizing avec budget 10 USDT : quantités observées 2–5 ETH, moyenne environ 3,38 ETH, perte maximale modélisée environ 9,91 USDT et résultat théorique environ +75,40 USDT.
+
+Ces chiffres sont des résultats de recherche sur diagnostics, pas une garantie financière ni une promesse de rentabilité future. Aucun replay indépendant supplémentaire n’est revendiqué dans cette branche.
 
 ## Limitations
 
-- Aucun replay historique exact n’a été relancé pour ce changement de lifecycle ; aucun résultat financier historique n’est revendiqué.
-- Les formats historiques de timeout/invalidation restent lisibles en laboratoire, sans influencer le parcours live v2.32.8.1.
-- Les tests JVM valident les politiques et composants de production ; un essai instrumenté sur appareil réel reste recommandé avant toute promotion hors brouillon.
+- Les tests JVM couvrent les composants purs et les politiques utilisées par le service ; un essai instrumenté sur appareil reste recommandé avant toute promotion hors brouillon.
+- Les anciens formats de playback restent lisibles et n’influencent pas le lifecycle live v2.32.9.
+- Aucun ordre automatique, connecteur d’exécution ou secret d’exchange n’a été ajouté.

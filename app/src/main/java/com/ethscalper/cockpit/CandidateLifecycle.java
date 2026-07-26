@@ -4,12 +4,22 @@ package com.ethscalper.cockpit;
  * End-to-end, side-effect-free candidate path used by MarketWatchService and integration tests.
  *
  * CONTINUATION replay vetoes are retained as comparative diagnostics, but P01 is the final
- * authority at entry touch. RANGE_FADE keeps the legacy replay protections.
+ * authority at a fresh executable entry. RANGE_FADE remains diagnostic-only.
  */
 public final class CandidateLifecycle {
     public static final String REPLAY_RISK_DIAGNOSTIC = "V232_REPLAY_RISK_VETO";
     public static final String INVALID_DATA = "V2327_CANDIDATE_DATA_INVALID";
     public static final String OPPOSITE_ACTIVE = "V230_SCENARIO_MEMORY_VETO";
+    public static final String SILENT_CONFIRMATION_WINDOW = "V2329_SILENT_P01_CONFIRMATION_WINDOW";
+    public static final String PENDING_EXPIRED = "V2329_PENDING_CANDIDATE_EXPIRED";
+    public static final String TARGET_BEFORE_FILL = "V2329_TARGET_REACHED_BEFORE_CONFIRMED_FILL";
+    public static final String RANGE_FADE_DIAGNOSTIC_ONLY = "V2329_RANGE_FADE_DIAGNOSTIC_ONLY";
+    public static final String RANGE_FADE_DIAGNOSTIC_TEXT =
+            "RANGE_FADE conservé pour calibration — aucune publication finale.";
+    public static final String LIMIT_NOT_EXECUTABLE = "V2329_LIMIT_NOT_EXECUTABLE_NOW";
+    public static final String FRESH_SNAPSHOT_REQUIRED = "V2329_FRESH_SNAPSHOT_REQUIRED";
+    public static final long MIN_CONFIRMATION_AGE_MS = 15_000L;
+    public static final long MAX_PENDING_AGE_MS = 120_000L;
 
     private CandidateLifecycle() {}
 
@@ -34,91 +44,164 @@ public final class CandidateLifecycle {
 
         String replayDetail = replayRiskVetoDetail == null ? "" : replayRiskVetoDetail;
         boolean hasReplayVeto = !replayDetail.isEmpty();
-        boolean continuation = ContinuationConfirmation.requiresP01(rawCandidate.family);
-        if (!continuation && hasReplayVeto) {
-            return rejected(rawCandidate, REPLAY_RISK_DIAGNOSTIC,
-                    "Veto replay v2.32 : " + replayDetail);
-        }
-
         return new AdmissionResult(rawCandidate, true,
                 hasReplayVeto ? REPLAY_RISK_DIAGNOSTIC : "", replayDetail);
     }
 
     public static boolean readyForImmediateConfirmation(boolean marketableAtCreation,
                                                         boolean entryTouched) {
-        return marketableAtCreation || entryTouched;
+        // Historical creation state can never authorize v2.32.9 publication.
+        return false;
+    }
+
+    public static boolean currentlyExecutable(SignalDecision candidate, MarketSnapshot snapshot) {
+        if (candidate == null || snapshot == null) return false;
+        if ("LONG".equals(candidate.side)) {
+            return finitePositive(snapshot.ethAsk) && snapshot.ethAsk <= candidate.entry;
+        }
+        if ("SHORT".equals(candidate.side)) {
+            return finitePositive(snapshot.ethBid) && snapshot.ethBid >= candidate.entry;
+        }
+        return false;
+    }
+
+    public static boolean targetReachedBeforeConfirmedFill(SignalDecision candidate,
+                                                            MarketSnapshot snapshot) {
+        if (candidate == null || snapshot == null) return false;
+        if ("LONG".equals(candidate.side)) {
+            return finitePositive(snapshot.ethBid) && snapshot.ethBid >= candidate.takeProfit;
+        }
+        if ("SHORT".equals(candidate.side)) {
+            return finitePositive(snapshot.ethAsk) && snapshot.ethAsk <= candidate.takeProfit;
+        }
+        return false;
+    }
+
+    public static FillResult processPendingCandidate(
+            SignalDecision candidate, MarketSnapshot currentSnapshot, boolean feedFresh,
+            long candidateCreatedAt, long confirmationAt, double targetProgressBeforeFill,
+            double adverseExcursion60, boolean historicalReplayRiskVeto) {
+        if (candidate == null || !candidate.isSignal() || !validPlan(candidate)) {
+            return FillResult.rejected(INVALID_DATA, null);
+        }
+        if (!ContinuationConfirmation.requiresP01(candidate.family)) {
+            return FillResult.rejected(RANGE_FADE_DIAGNOSTIC_ONLY, null);
+        }
+        if (feedFresh && targetReachedBeforeConfirmedFill(candidate, currentSnapshot)) {
+            return FillResult.rejected(TARGET_BEFORE_FILL, null);
+        }
+
+        long age = Math.max(0L, confirmationAt - candidateCreatedAt);
+        if (age > MAX_PENDING_AGE_MS) {
+            return FillResult.rejected(PENDING_EXPIRED, null);
+        }
+        if (age < MIN_CONFIRMATION_AGE_MS) {
+            return FillResult.rejected(SILENT_CONFIRMATION_WINDOW, null);
+        }
+        if (currentSnapshot == null || currentSnapshot.now != confirmationAt) {
+            return FillResult.rejected(FRESH_SNAPSHOT_REQUIRED, null);
+        }
+        if (!feedFresh) {
+            return FillResult.rejected(ContinuationConfirmation.P01_STALE_REJECT, null);
+        }
+        if (!currentlyExecutable(candidate, currentSnapshot)) {
+            return FillResult.rejected(LIMIT_NOT_EXECUTABLE, null);
+        }
+        return processAtFill(candidate, currentSnapshot, true, candidateCreatedAt,
+                targetProgressBeforeFill, historicalReplayRiskVeto, adverseExcursion60);
     }
 
     public static FillResult confirmAtFill(SignalDecision candidate, MarketSnapshot snapshot,
                                            boolean feedFresh, long candidateCreatedAt,
                                            double targetProgressBeforeFill) {
         return confirmAtFill(candidate, snapshot, feedFresh, candidateCreatedAt,
-                targetProgressBeforeFill, false);
+                targetProgressBeforeFill, false, 0.0);
     }
 
     public static FillResult confirmAtFill(SignalDecision candidate, MarketSnapshot snapshot,
                                            boolean feedFresh, long candidateCreatedAt,
                                            double targetProgressBeforeFill,
                                            boolean historicalReplayRiskVeto) {
+        return confirmAtFill(candidate, snapshot, feedFresh, candidateCreatedAt,
+                targetProgressBeforeFill, historicalReplayRiskVeto, 0.0);
+    }
+
+    public static FillResult confirmAtFill(SignalDecision candidate, MarketSnapshot snapshot,
+                                           boolean feedFresh, long candidateCreatedAt,
+                                           double targetProgressBeforeFill,
+                                           boolean historicalReplayRiskVeto,
+                                           double adverseExcursion60) {
         if (candidate == null || !candidate.isSignal() || !validPlan(candidate)) {
             return FillResult.rejected(INVALID_DATA, null);
         }
 
         boolean continuation = ContinuationConfirmation.requiresP01(candidate.family);
-        ContinuationConfirmation.Result confirmation = null;
-        if (continuation) {
-            confirmation = ContinuationConfirmation.evaluate(candidate.side, snapshot, feedFresh,
-                    candidateCreatedAt, targetProgressBeforeFill);
-            if (!confirmation.confirmed) {
-                return FillResult.rejected(confirmation.reasonCode, confirmation);
-            }
+        if (!continuation) {
+            return FillResult.rejected(RANGE_FADE_DIAGNOSTIC_ONLY, null);
+        }
+        ContinuationConfirmation.Result confirmation = ContinuationConfirmation.evaluate(
+                candidate.side, snapshot, feedFresh, candidateCreatedAt, targetProgressBeforeFill);
+        if (!confirmation.confirmed) {
+            return FillResult.rejected(confirmation.reasonCode, confirmation);
         }
 
-        boolean premium15m = confirmation != null && confirmation.premium15m;
-        String finalFamily = candidate.family;
-        String finalCode;
-        String finalText;
-        if (continuation) {
-            finalFamily += " · P01" + (premium15m ? " · P01_PREMIUM_15M" : "");
-            finalCode = ContinuationConfirmation.P01_CONFIRMED;
-            finalText = premium15m
-                    ? "CONTINUATION confirmée — Qualité premium 15 min"
-                    : "CONTINUATION confirmée";
-        } else {
-            finalCode = "RANGE_FADE_CONFIRMED_AT_FILL";
-            finalText = "RANGE_FADE confirmé au niveau d'entrée";
-        }
+        boolean premium15m = confirmation.premium15m;
+        String finalFamily = candidate.family + " · P01"
+                + (premium15m ? " · P01_PREMIUM_15M" : "");
+        String finalText = premium15m
+                ? "CONTINUATION confirmée — Qualité premium 15 min"
+                : "CONTINUATION confirmée";
 
         ConfirmedSizing.Result sizing = ConfirmedSizing.computeConfirmedSizingQuantity(
                 candidate, snapshot, confirmation, premium15m, historicalReplayRiskVeto);
-        int quantity = sizing.finalQuantity;
+        DynamicTradePlan.Result dynamicPlan = DynamicTradePlan.calculate(
+                candidate.side, candidate.entry, snapshot.avgRange20, adverseExcursion60,
+                snapshot.recentHigh, snapshot.recentLow, sizing.finalQuantity);
+        if (!dynamicPlan.valid) {
+            return FillResult.rejected(dynamicPlan.reasonCode, confirmation, sizing, dynamicPlan);
+        }
         SignalDecision published = SignalDecision.confirmed(candidate.side, finalFamily,
-                finalCode, finalText, candidate.score, quantity,
-                candidate.entry, candidate.takeProfit, candidate.stopLoss,
-                candidate.targetMove, candidate.stopDistance, candidate.impulse,
+                DynamicTradePlan.CONFIRMED, finalText, candidate.score,
+                dynamicPlan.finalQuantity, candidate.entry,
+                dynamicPlan.takeProfit, dynamicPlan.stopLoss,
+                dynamicPlan.targetDistance, dynamicPlan.stopRequired, candidate.impulse,
                 candidate.resetConfirmed, candidate.movementOrigin,
                 candidate.movementExtreme, candidate.movementDistance);
-        return new FillResult(true, finalCode, published, premium15m, confirmation, sizing);
+        return new FillResult(true, DynamicTradePlan.CONFIRMED, published, premium15m,
+                confirmation, sizing, dynamicPlan);
     }
 
     public static FillResult processAtFill(SignalDecision candidate, MarketSnapshot snapshot,
                                            boolean feedFresh, long candidateCreatedAt,
                                            double targetProgressBeforeFill) {
         return processAtFill(candidate, snapshot, feedFresh, candidateCreatedAt,
-                targetProgressBeforeFill, false);
+                targetProgressBeforeFill, false, 0.0);
     }
 
     public static FillResult processAtFill(SignalDecision candidate, MarketSnapshot snapshot,
                                            boolean feedFresh, long candidateCreatedAt,
                                            double targetProgressBeforeFill,
                                            boolean historicalReplayRiskVeto) {
+        return processAtFill(candidate, snapshot, feedFresh, candidateCreatedAt,
+                targetProgressBeforeFill, historicalReplayRiskVeto, 0.0);
+    }
+
+    public static FillResult processAtFill(SignalDecision candidate, MarketSnapshot snapshot,
+                                           boolean feedFresh, long candidateCreatedAt,
+                                           double targetProgressBeforeFill,
+                                           boolean historicalReplayRiskVeto,
+                                           double adverseExcursion60) {
+        if (!currentlyExecutable(candidate, snapshot)) {
+            return FillResult.rejected(LIMIT_NOT_EXECUTABLE, null);
+        }
         String revalidation = entryRevalidationCode(candidate, snapshot,
                 snapshot == null ? Double.NaN : snapshot.ethLast);
         if (!revalidation.isEmpty()) {
             return FillResult.rejected(revalidation, null);
         }
         return confirmAtFill(candidate, snapshot, feedFresh,
-                candidateCreatedAt, targetProgressBeforeFill, historicalReplayRiskVeto);
+                candidateCreatedAt, targetProgressBeforeFill, historicalReplayRiskVeto,
+                adverseExcursion60);
     }
 
     public static String entryRevalidationCode(SignalDecision candidate, MarketSnapshot snapshot,
@@ -270,22 +353,33 @@ public final class CandidateLifecycle {
         public final boolean premium15m;
         public final ContinuationConfirmation.Result continuationConfirmation;
         public final ConfirmedSizing.Result sizing;
+        public final DynamicTradePlan.Result dynamicPlan;
 
         private FillResult(boolean confirmed, String reasonCode, SignalDecision publishedSignal,
                            boolean premium15m,
                            ContinuationConfirmation.Result continuationConfirmation,
-                           ConfirmedSizing.Result sizing) {
+                           ConfirmedSizing.Result sizing,
+                           DynamicTradePlan.Result dynamicPlan) {
             this.confirmed = confirmed;
             this.reasonCode = reasonCode;
             this.publishedSignal = publishedSignal;
             this.premium15m = premium15m;
             this.continuationConfirmation = continuationConfirmation;
             this.sizing = sizing;
+            this.dynamicPlan = dynamicPlan;
         }
 
         private static FillResult rejected(String reasonCode,
                                            ContinuationConfirmation.Result confirmation) {
-            return new FillResult(false, reasonCode, null, false, confirmation, null);
+            return new FillResult(false, reasonCode, null, false, confirmation, null, null);
+        }
+
+        private static FillResult rejected(String reasonCode,
+                                           ContinuationConfirmation.Result confirmation,
+                                           ConfirmedSizing.Result sizing,
+                                           DynamicTradePlan.Result dynamicPlan) {
+            return new FillResult(false, reasonCode, null, false, confirmation, sizing,
+                    dynamicPlan);
         }
     }
 

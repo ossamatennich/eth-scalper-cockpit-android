@@ -201,9 +201,9 @@ public final class AiAdvisor {
             x.put("volumeRatio", round(s.volumeRatio));
             x.put("feeRoundTrip", SignalSafetyPolicies.RESEARCH_ROUND_TRIP_COST_PER_ETH);
             x.put("slippageResearch", 0.10);
-            x.put("netScalp28AfterCost", round(2.80 - 1.43));
-            x.put("netScalp35AfterCost", round(3.50 - 1.43));
-            x.put("netPremium55AfterCost", round(5.50 - 1.43));
+            x.put("netScalp28AfterCost", round(2.80 - DynamicTradePlan.ESTIMATED_ROUND_TRIP_COST_PER_ETH));
+            x.put("netScalp35AfterCost", round(3.50 - DynamicTradePlan.ESTIMATED_ROUND_TRIP_COST_PER_ETH));
+            x.put("netPremium55AfterCost", round(5.50 - DynamicTradePlan.ESTIMATED_ROUND_TRIP_COST_PER_ETH));
 
             try {
                 JSONArray micro = new JSONArray(microContextJson == null || microContextJson.trim().isEmpty() ? "[]" : microContextJson);

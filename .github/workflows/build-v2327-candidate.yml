@@ -1,4 +1,4 @@
-name: Version candidate de l'APK v2.32.8.1 active-plan persistence
+name: Version candidate de l'APK v2.32.9 confirmed P01 dynamic risk
 
 on:
   push:
@@ -31,5 +31,5 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ETH-Scalper-Cockpit-v2.32.8.1-debug-apk
+          name: ETH-Scalper-Cockpit-v2.32.9-debug-apk
           path: app/build/outputs/apk/debug/*.apk

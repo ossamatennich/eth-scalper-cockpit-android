@@ -6,7 +6,8 @@ import java.util.Locale;
 
 /** Pure safety and lifecycle policies shared by the service and deterministic unit tests. */
 public final class SignalSafetyPolicies {
-    public static final double RESEARCH_ROUND_TRIP_COST_PER_ETH = 1.43;
+    public static final double RESEARCH_ROUND_TRIP_COST_PER_ETH =
+            DynamicTradePlan.ESTIMATED_ROUND_TRIP_COST_PER_ETH;
 
     private SignalSafetyPolicies() {}
 
@@ -46,6 +47,11 @@ public final class SignalSafetyPolicies {
         if (firstEntryTouchAt > 0 && departureAt > 0 && firstEntryTouchAt > departureAt) {
             return maxProgressBeforeFill >= 0.80 ? "LATE_RETURN_NEAR_TARGET" : "LATE_RETURN_PARTIAL";
         }
+        if ("MISSED_NO_FILL".equals(lifecycleStatus)) return "MISSED_NO_FILL";
+        if ("PENDING_CANDIDATE_EXPIRED".equals(lifecycleStatus)) {
+            return "PENDING_CANDIDATE_EXPIRED";
+        }
+        if ("DIAGNOSTIC_ONLY".equals(lifecycleStatus)) return "DIAGNOSTIC_ONLY";
         if (isTerminalStatus(lifecycleStatus)) return lifecycleStatus;
         if (simulatedFilled && "ACTIVE".equals(lifecycleStatus)) return "OPEN_ACTIVE_RISK";
         if (marketableAtCreation) return "MARKETABLE_AT_CREATION";
@@ -157,7 +163,7 @@ public final class SignalSafetyPolicies {
         return 30_000 + Math.floorMod(signature == null ? 0 : signature.hashCode(), 60_000);
     }
 
-    /** Historical playback comparison only; the live v2.32.8 lifecycle never calls this. */
+    /** Historical playback comparison only; the live v2.32.9 lifecycle never calls this. */
     public static boolean historicalAbsoluteTimeoutReached(long activeSince, long now) {
         return activeSince > 0 && now - activeSince >= 45 * 60_000L;
     }
