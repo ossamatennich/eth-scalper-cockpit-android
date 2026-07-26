@@ -259,7 +259,7 @@ public class MarketWatchService extends Service {
         if (frameNewest > newest) newest = frameNewest;
 
         o.put("mode", "PERSISTENT_OVERNIGHT_RECORDER");
-        o.put("version", "2.33.0");
+        o.put("version", "2.33.1");
         o.put("description", "Journal persistant: conserve les signaux et les frames même si l'écran/app est fermé, jusqu'à réinitialisation diagnostic.");
         o.put("observationEvents", obsStats.optInt("count", 0));
         o.put("marketFrames", frameStats.optInt("count", 0));
@@ -307,6 +307,7 @@ public class MarketWatchService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        p02SetupTracker.reset();
         ensureChannels(this);
         activePlanPersistence = new ActivePlanPersistence(
                 new SharedPreferencesActivePlanBackend(this));
@@ -342,6 +343,7 @@ public class MarketWatchService extends Service {
             broadcastStatus("test_vibration", "Vibration longue testée");
         } else if (ACTION_RESET_DIAGNOSTICS.equals(action)) {
             ObservedSignal activePlan = activeFinalSignal();
+            p02SetupTracker.reset();
             signalEngine.clearDiagnostics();
             observedSignals.clear();
             pendingCandidateIndex.clear();
@@ -529,7 +531,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH confirmés — v2.33.0",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH confirmés — v2.33.1",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Un son signifie exclusivement qu'un signal final manuel est confirmé.");
         signals.enableVibration(true);
@@ -920,12 +922,18 @@ public class MarketWatchService extends Service {
     private synchronized void evaluateSignal(long now) {
         MarketSnapshot snapshot = buildSnapshot(now);
         boolean feedFresh = ethExecutionFeedFresh(now);
-        String currentSetup = setupCandidateFor(snapshot);
-        boolean p02Appearance = p02SetupTracker.observe(currentSetup);
 
         // C01: an old feed blocks only creation; existing candidates and risks still advance.
         updateObservedSignals(snapshot, now, feedFresh);
         snapshot = buildSnapshot(now);
+        feedFresh = ethExecutionFeedFresh(now);
+        String currentSetup = setupCandidateFor(snapshot);
+        boolean activeFinalPlan = activeFinalSignal() != null;
+        boolean terminalRearmComplete = TerminalRearmPersistence.allowsNewCandidate(
+                now, lastTerminalAt);
+        boolean p02Appearance = P02SleeveFilter.canObserveSetup(
+                feedFresh, activeFinalPlan, terminalRearmComplete)
+                && p02SetupTracker.observe(currentSetup);
 
         if (!feedFresh) {
             SignalDecision staleFeed = SignalDecision.waiting(
@@ -2131,6 +2139,7 @@ public class MarketWatchService extends Service {
             }
             if (SignalSafetyPolicies.isTerminalStatus(status)) {
                 closeObservedSignal(item, status, snapshot, now);
+                p02SetupTracker.reset();
                 lastTerminalAt = now;
                 if (!terminalRearmPersistence.save(lastTerminalAt)) {
                     signalEngine.recordExternalDiagnostic(now,
@@ -2298,11 +2307,12 @@ public class MarketWatchService extends Service {
 
     private TrendRegime60.Result trendRegime60(ObservedSignal item,
                                                MarketSnapshot snapshot, long now) {
-        List<TrendRegime60.Point> points = new ArrayList<>();
-        for (MarketFrame frame : marketFrames) {
-            points.add(new TrendRegime60.Point(frame.at, frame.ethLast));
+        List<TrendRegime60.MinuteClose> minuteCloses = new ArrayList<>();
+        for (Candle candle : ethCandles) {
+            minuteCloses.add(new TrendRegime60.MinuteClose(candle.openTime, candle.close));
         }
-        points.add(new TrendRegime60.Point(now, snapshot.ethLast));
+        List<TrendRegime60.Point> points = TrendRegime60.pointsFromMinuteCloses(
+                minuteCloses, now, snapshot.ethLast);
         NormalizedSignalMetrics.Result metrics = NormalizedSignalMetrics.calculate(
                 item.signal.side, item.signal, snapshot, item.adverseExcursion60);
         return TrendRegime60.evaluate(item.signal.side, Math.max(0.35, snapshot.avgRange20),
@@ -3418,7 +3428,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "TEST NOTIFICATION ETH", "Test silencieux v2.33.0 · aucun ordre n’est envoyé", false));
+                "TEST NOTIFICATION ETH", "Test silencieux v2.33.1 · aucun ordre n’est envoyé", false));
     }
 
     private Notification buildSignalNotification(String title, String body, boolean audible) {
@@ -3498,7 +3508,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.33.0-android-dual-sleeve-dynamic-risk");
+            state.put("version", "2.33.1-android-dual-sleeve-diagnostic-fix");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -3677,7 +3687,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper Cockpit v2.33.0 — Dual Sleeve Dynamic Risk");
+        m.put("rulesProfile", "ETH Scalper Cockpit v2.33.1 — Dual Sleeve Diagnostic Fix");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 

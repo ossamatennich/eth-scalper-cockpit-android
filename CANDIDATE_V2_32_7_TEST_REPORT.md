@@ -1,6 +1,6 @@
-# Candidate v2.33.0 — rapport de tests
+# Candidate v2.33.1 — rapport de tests
 
-> Le nom historique du fichier est conservé. Tous les résultats concernent **ETH Scalper Cockpit v2.33.0 — Dual Sleeve Dynamic Risk**.
+> Le nom historique du fichier est conservé. Tous les résultats concernent **ETH Scalper Cockpit v2.33.1 — Dual Sleeve Diagnostic Fix**.
 
 ## Environnement
 
@@ -8,7 +8,7 @@
 - Android SDK : `C:\Users\Tenni\AppData\Local\Android\Sdk`
 - JDK : Android Studio JBR 17
 - Gradle : 8.10.2, distribution officielle temporaire, le dépôt ne fournissant pas de wrapper fonctionnel
-- `versionCode=23300`, `versionName=2.33.0`, `minSdk=26`, `targetSdk=35`
+- `versionCode=23310`, `versionName=2.33.1`, `minSdk=26`, `targetSdk=35`
 
 ## Commandes exécutées
 
@@ -22,13 +22,13 @@ Les cinq tâches obligatoires `testDebugUnitTest`, `test`, `assembleDebug`, `ass
 
 ## Résultats unitaires
 
-- 175 tests distincts ;
-- debug : 175/175 réussis ;
-- release : 175/175 réussis ;
-- passe globale : 350 exécutions réussies ;
+- 184 tests distincts : 175 tests existants inchangés et 9 nouveaux tests ciblés ;
+- debug : 184/184 réussis ;
+- release : 184/184 réussis ;
+- passe globale : 368 exécutions réussies ;
 - 0 échec, 0 erreur, 0 test ignoré.
 
-La couverture comprend notamment : toutes les frontières P01/P02 à ±epsilon ; phases P01 précoce/différée et expiration ; apparition C1/C2 sans duplication ; silence et bornes P02 20/45 s ; OLS60 croissant/décroissant/plat/incomplet et symétrie LONG/SHORT ; modes TREND/REVERSAL ; quotes zéro/NaN/infini ; formules SL/TP exactes ; rejets stop/RR ; sizing 1/2/3 ETH avec réserve 2,35 ; perte modélisée ≤ 10 USDT ; réarmement terminal persistant ; lifecycle TP/SL only ; RANGE_FADE diagnostic ; IA non décisionnelle et `realTradingAllowed=false`.
+La couverture ajoutée vérifie : setup non consommé pendant feed périmé, plan actif ou réarmement ; apparition unique au retour du feed frais et exactement à 180 000 ms ; `reset()` vers `NONE` ; OLS60 immédiat avec 60 bougies préchargées ; rejet si une minute manque ; exclusion des bougies futures et des closes zéro/NaN/infini ; symétrie LONG/SHORT. Les 175 assertions existantes restent intactes, notamment pour P01/P02, SL/TP, sizing, lifecycle TP/SL only, RANGE_FADE diagnostic et `realTradingAllowed=false`.
 
 ## Build et lint
 
@@ -36,24 +36,26 @@ La couverture comprend notamment : toutes les frontières P01/P02 à ±epsilon ;
 - `assembleRelease` : succès ;
 - `lintRelease` : succès ;
 - rapport lint : `app/build/reports/lint-results-release.html` ;
-- manifeste debug vérifié avec `aapt` : package `com.ethscalper.cockpit.debug`, versionCode 23300, versionName 2.33.0, minSdk 26, targetSdk 35.
+- manifeste debug vérifié avec `aapt` : package `com.ethscalper.cockpit.debug`, versionCode 23310, versionName 2.33.1, minSdk 26, targetSdk 35.
+- lint release : 0 erreur ; les 54 avertissements existants ne bloquent pas la candidate.
+- la première fenêtre d’exécution de la commande combinée a expiré côté outil ; la relance complète a continué jusqu’à la production des deux APK et des rapports lint valides, sans erreur de build.
 
 ## APK locale debug
 
 - chemin exact : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\debug\app-debug.apk` ;
-- taille : `4 519 540 octets` ;
-- SHA-256 : `7c4bb76a4c212d4ee1854b79a9cb22c3a96b643a7191686d46256fe8e410f764`.
+- taille : `4 520 108 octets` ;
+- SHA-256 : `bcc8646fb338201a0878975dc8c4bbab7d5d4dfdf42ca795b9f8c3ab4188c8cc`.
 
 ## APK locale release
 
 - chemin exact : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\release\app-release-unsigned.apk` ;
-- taille : `3 599 861 octets` ;
-- SHA-256 : `808932cfba0b97f9aeafe38c3e45539c594c9e1a57e3be22562e396fc9235fd9`.
+- taille : `3 600 621 octets` ;
+- SHA-256 : `63295bfb2fab38ededdd72801205ecc5c7677c3d82e217c947ee0ec759e90bfc`.
 
 ## GitHub Actions
 
-Le workflow CI sera lancé sur l’unique commit applicatif final. L’ID du run, l’ID de l’artefact APK, sa taille et son SHA-256 seront reportés dans la description de la PR nº 2 et dans le compte rendu final, afin de ne pas créer un second commit documentaire.
+Les métadonnées finales CI ne sont pas anticipées dans ce commit. Le HEAD, l’ID du run, l’ID et le nom de l’artefact APK, sa taille et son SHA-256 sont placés dans la description de la PR nº 2 après le run, afin d’éviter un commit documentaire supplémentaire.
 
 ## Corpus et avertissement
 
-Le corpus d’analyse indiqué par le propriétaire couvre **14 sessions, 39 695 frames uniques et environ 77,14 heures**. Aucun replay/calibrage additionnel n’a été effectué par Codex. Les résultats d’analyse ne garantissent aucune rentabilité future.
+Le corpus d’analyse indiqué par le propriétaire couvre **14 sessions, 39 695 frames uniques et environ 77,14 heures**. Aucun replay, calibrage, changement de formule ou changement de seuil n’a été effectué. Les résultats d’analyse ne garantissent aucune rentabilité future.

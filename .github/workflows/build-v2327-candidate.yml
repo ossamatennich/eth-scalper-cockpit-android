@@ -1,4 +1,4 @@
-name: Version candidate de l'APK v2.33.0 dual sleeve dynamic risk
+name: Version candidate de l'APK v2.33.1 dual sleeve diagnostic fix
 
 on:
   push:
@@ -37,5 +37,5 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ETH-Scalper-Cockpit-v2.33.0-debug-apk
+          name: ETH-Scalper-Cockpit-v2.33.1-debug-apk
           path: app/build/outputs/apk/debug/*.apk

@@ -1,32 +1,42 @@
-# Candidate v2.33.0 — rapport d’implémentation
+# Candidate v2.33.1 — rapport d’implémentation
 
-> Le nom historique du fichier est conservé. L’application produite est **ETH Scalper Cockpit v2.33.0 — Dual Sleeve Dynamic Risk** (`versionCode 23300`, `versionName 2.33.0`).
+> Le nom historique du fichier est conservé. L’application produite est **ETH Scalper Cockpit v2.33.1 — Dual Sleeve Diagnostic Fix** (`versionCode 23310`, `versionName 2.33.1`).
 
 ## Référence et périmètre
 
 - Dépôt : `ossamatennich/eth-scalper-cockpit-android`.
 - Branche modifiée : `agent/v2.32.7-scalp-p01-candidate`.
-- HEAD de départ vérifié localement, sur `origin` et dans la PR : `189afe30613d3c95143b417c399f2cd3e6e7d1ae`.
+- HEAD de départ vérifié localement, sur `origin` et dans la PR : `28b3bc6b89dcf3f353a3436836d8b17c24dfecd6`.
 - PR nº 2 : ouverte, en brouillon, non fusionnée, base `agent/v2.32.6-candidate`.
 - `main` n’a pas été modifiée.
 - Mode : `RESEARCH_ONLY`, `realTradingAllowed=false`, aucun ordre automatique, aucune clé exchange et IA strictement informative après publication.
 
-## Architecture ajoutée
+## Correctif technique v2.33.1
+
+- `MarketWatchService.evaluateSignal()` exécute d’abord le lifecycle observé, reconstruit le snapshot, puis recalcule le feed et le setup.
+- `SetupTracker.observe()` n’est appelé que si le feed est frais, aucun plan final n’est actif et le réarmement terminal est terminé. Le court-circuit Java empêche tout appel lorsque la création est interdite.
+- `SetupTracker.reset()` remet explicitement l’état à `NONE` au démarrage, lors du reset diagnostic et immédiatement après `TP_TOUCHED` ou `SL_TOUCHED`.
+- Un setup apparu pendant un feed périmé, un plan actif ou le réarmement n’est donc pas consommé. Il peut devenir la première apparition dès que la création redevient autorisée, notamment exactement à 180 000 ms.
+- `trendRegime60()` utilise désormais en priorité les closes de `ethCandles`, alimentés par le préchargement REST 180 bougies, le WebSocket 1m et le fallback REST.
+- Seules les bougies `openTime <= confirmationAt` et les closes finis strictement positifs sont retenus. Le `snapshot.ethLast` valide remplace la minute courante ; 60 minutes consécutives restent obligatoires.
+- `marketFrames` reste inchangé pour les diagnostics et le playback, mais ne conditionne plus le fonctionnement P02 après démarrage ou reset.
+
+## Architecture v2.33.0 conservée
 
 - `NormalizedSignalMetrics.java` : calcul directionnel pur et symétrique de `A`, `E`, `e`, `R`, `room`, `m1`, `m3`, `m8`, `f30`, `f60`, `volumeRatio` et `directionalEdge`.
 - `P01SleeveFilter.java` : filtre P01 précoce/différé exact, avec reason code par veto.
 - `P02SleeveFilter.java` : calcul causal C1/C2, détection d’apparition exacte, préfiltre et confirmation P02.
 - `TrendRegime60.java` : OLS causal sur exactement 60 closes minute et classification `TREND`/`REVERSAL`.
 - `TerminalRearmPersistence.java` et `SharedPreferencesTerminalRearmBackend.java` : réarmement terminal de trois minutes, persistant et atomique.
-- `DynamicTradePlan.java` : plan structurel et sizing financier purs v2.33.0.
+- `DynamicTradePlan.java` : plan structurel et sizing financier purs, inchangés dans v2.33.1.
 - `CandidateLifecycle.java` et `MarketWatchService.java` : intégration sans effet public avant confirmation complète.
-- `.github/workflows/build-v2327-candidate.yml` : validation CI complète et artefact debug nommé v2.33.0.
+- `.github/workflows/build-v2327-candidate.yml` : validation CI complète et artefact debug nommé v2.33.1.
 
 Une tolérance numérique minimale de `1e-12` est appliquée uniquement aux comparaisons de frontières calculées en virgule flottante. Elle évite qu’une valeur mathématiquement égale à `1,60`, par exemple, soit rejetée parce que le double calculé vaut `1,59999999999999`. Aucun seuil métier n’est déplacé ; les tests à ±`1e-9` distinguent toujours les deux côtés de chaque frontière.
 
 ## Sleeve P01
 
-Les candidats CONTINUATION existants restent la source P01. La publication exige toujours, dans l’ordre : feed ETH frais, données cohérentes, LIMIT actuellement exécutable, revalidation du prix, C04, C07, C08 et P01 inchangés, puis le filtre v2.33.0.
+Les candidats CONTINUATION existants restent la source P01. La publication exige toujours, dans l’ordre : feed ETH frais, données cohérentes, LIMIT actuellement exécutable, revalidation du prix, C04, C07, C08 et P01 inchangés, puis le filtre défini en v2.33.0.
 
 - Phase précoce : âge ≤ 25 000 ms, `room >= 1.60`, `m1 <= 1.80`, `f30 <= 0.60`, confluence `flowBacked OR priceLed`, puis rejet consommé `m8 > 2.50 AND f30 < 0.15`.
 - Phase différée : `25 000 < âge <= 90 000 ms`, `room >= 1.30`, `e <= 0.80`, `f30 <= 0.60`, `f60 <= 1.00` et support flow/excursion défini.
@@ -45,7 +55,7 @@ La confirmation exige `20 000 < âge <= 45 000 ms`, la LIMIT réellement exécut
 
 ## Régime OLS60 causal
 
-Le service fournit à `TrendRegime60` les frames dont le timestamp est inférieur ou égal à la confirmation. La classe conserve le dernier `ethLast` fini et positif de chacune des 60 minutes attendues, dans l’ordre chronologique. Une minute absente entraîne un rejet silencieux.
+Le service fournit à `TrendRegime60` les closes minute préchargés de `ethCandles` dont `openTime <= confirmationAt`. La classe conserve la dernière valeur finie et strictement positive de chaque minute, puis ajoute ou remplace la minute courante par `snapshot.ethLast` seulement si cette valeur est valide. Une minute absente parmi les 60 minutes consécutives attendues entraîne `V2330_P02_OLS60_INSUFFICIENT`.
 
 - `TREND` : `2.00 <= T60 <= 8.00`.
 - `REVERSAL` : `-12.00 <= T60 <= -2.00`, `m8 >= 1.00`, `f60 >= 0.50`, `e <= 0.10`.
@@ -112,4 +122,4 @@ Les exports historiques sont conservés. S’y ajoutent : sleeve, mode P02, âge
 
 ## Corpus de recherche et limites
 
-Le corpus d’analyse fourni couvre **14 sessions, 39 695 frames uniques et environ 77,14 heures**. Cette branche applique la solution définie hors Codex ; aucun recalibrage ni replay de recherche supplémentaire n’a été réalisé ici. Les résultats de recherche historiques ne constituent ni une promesse ni une garantie de performance financière future.
+Le corpus d’analyse fourni couvre **14 sessions, 39 695 frames uniques et environ 77,14 heures**. Cette branche applique uniquement le correctif de raccordement demandé ; aucune formule, aucun seuil, aucun coût, aucun sizing et aucune calibration n’ont été modifiés. Aucun recalibrage ni replay de recherche supplémentaire n’a été réalisé ici. Les résultats historiques ne constituent ni une promesse ni une garantie de performance financière future.

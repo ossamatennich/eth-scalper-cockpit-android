@@ -31,6 +31,11 @@ public final class P02SleeveFilter {
                 : setup != null && setup.endsWith("_SHORT") ? "SHORT" : "";
     }
 
+    public static boolean canObserveSetup(boolean feedFresh, boolean activeFinalPlan,
+                                          boolean terminalRearmComplete) {
+        return feedFresh && !activeFinalPlan && terminalRearmComplete;
+    }
+
     public static Result prefilter(NormalizedSignalMetrics.Result m) {
         if (m == null || !m.valid) return Result.reject(INVALID);
         if (below(m.m1, -0.25)) return Result.reject("V2330_P02_PREFILTER_M1_LOW");
@@ -69,6 +74,8 @@ public final class P02SleeveFilter {
             previous = normalized;
             return appeared;
         }
+
+        public void reset() { previous = NONE; }
 
         public String previous() { return previous; }
     }

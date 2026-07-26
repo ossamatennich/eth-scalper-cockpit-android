@@ -1,6 +1,7 @@
 package com.ethscalper.cockpit;
 
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -16,6 +17,35 @@ public final class TrendRegime60 {
     private static final double EPS = 1e-12;
 
     private TrendRegime60() {}
+
+    public static List<Point> pointsFromMinuteCloses(List<MinuteClose> candles,
+                                                     long confirmationAt,
+                                                     double currentEthLast) {
+        Map<Long, Point> lastByMinute = new HashMap<>();
+        if (candles != null) {
+            for (MinuteClose candle : candles) {
+                if (candle == null || candle.openTime > confirmationAt
+                        || !positive(candle.close)) continue;
+                long minute = Math.floorDiv(candle.openTime, MINUTE_MS);
+                Point current = lastByMinute.get(minute);
+                if (current == null || candle.openTime >= current.at) {
+                    lastByMinute.put(minute, new Point(candle.openTime, candle.close));
+                }
+            }
+        }
+        if (confirmationAt >= 0L && positive(currentEthLast)) {
+            long currentMinute = Math.floorDiv(confirmationAt, MINUTE_MS);
+            lastByMinute.put(currentMinute, new Point(confirmationAt, currentEthLast));
+        }
+
+        long endMinute = Math.floorDiv(confirmationAt, MINUTE_MS);
+        List<Point> points = new ArrayList<>(60);
+        for (long minute = endMinute - 59L; minute <= endMinute; minute++) {
+            Point point = lastByMinute.get(minute);
+            if (point != null) points.add(point);
+        }
+        return points;
+    }
 
     public static Result evaluate(String side, double a,
                                   NormalizedSignalMetrics.Result metrics,
@@ -86,6 +116,15 @@ public final class TrendRegime60 {
         public final long at;
         public final double price;
         public Point(long at, double price) { this.at = at; this.price = price; }
+    }
+
+    public static final class MinuteClose {
+        public final long openTime;
+        public final double close;
+        public MinuteClose(long openTime, double close) {
+            this.openTime = openTime;
+            this.close = close;
+        }
     }
 
     public static final class Result {
