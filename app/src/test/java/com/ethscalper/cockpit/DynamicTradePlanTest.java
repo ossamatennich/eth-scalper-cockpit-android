@@ -17,7 +17,7 @@ public class DynamicTradePlanTest {
         DynamicTradePlan.Result p = plan("LONG", 1.3105, 1.815, 2.76, 7);
         assertTrue(p.valid);
         assertEquals(2.0771, p.stopRequired, 1e-9);
-        assertEquals(3.96625, p.targetDistance, 1e-9);
+        assertEquals(4.09035, p.targetDistance, 1e-9);
     }
 
     @Test public void referenceCaseB() {
@@ -25,15 +25,15 @@ public class DynamicTradePlanTest {
         assertTrue(p.valid);
         assertEquals(.55, p.stopRequired, 1e-9);
         assertEquals(2.80, p.targetDistance, 1e-9);
-        assertEquals(5, p.riskQuantity);
+        assertEquals(3, p.riskQuantity);
     }
 
     @Test public void referenceCaseC() {
         DynamicTradePlan.Result p = plan("LONG", .9225, .01, 6.865, 7);
         assertTrue(p.valid);
-        assertEquals(.64575, p.stopRequired, 1e-9);
-        assertEquals(4.0225, p.targetDistance, 1e-9);
-        assertEquals(4, p.riskQuantity);
+        assertEquals(.9225, p.stopRequired, 1e-9);
+        assertEquals(3.86375, p.targetDistance, 1e-9);
+        assertEquals(3, p.riskQuantity);
     }
 
     @Test public void referenceCaseDRejectsWideStop() {
@@ -68,9 +68,41 @@ public class DynamicTradePlanTest {
                 "LONG", 100, 101, 101.01, 0), 0.0);
     }
 
+    @Test public void invalidLongQuotesNeverChangeExcursionOrProgress() {
+        double current = .25;
+        assertEquals(current, DynamicTradePlan.updateAdverseExcursion60(
+                "LONG", 100, 0, 101, current), 0.0);
+        assertEquals(current, DynamicTradePlan.updateAdverseExcursion60(
+                "LONG", 100, Double.NaN, 101, current), 0.0);
+        assertEquals(current, DynamicTradePlan.updateAdverseExcursion60(
+                "LONG", 100, Double.POSITIVE_INFINITY, 101, current), 0.0);
+        assertEquals(1.0, DynamicTradePlan.updateAdverseExcursion60(
+                "LONG", 100, 99, 101, current), 0.0);
+        assertEquals(current, DynamicTradePlan.updateFavorableExcursionBeforeFill(
+                "LONG", 100, 0, 101, current), 0.0);
+        assertEquals(1.0, DynamicTradePlan.updateFavorableExcursionBeforeFill(
+                "LONG", 100, 101, 999, current), 0.0);
+    }
+
+    @Test public void invalidShortQuotesNeverChangeExcursionOrProgress() {
+        double current = .25;
+        assertEquals(current, DynamicTradePlan.updateAdverseExcursion60(
+                "SHORT", 100, 99, 0, current), 0.0);
+        assertEquals(current, DynamicTradePlan.updateAdverseExcursion60(
+                "SHORT", 100, 99, Double.NaN, current), 0.0);
+        assertEquals(current, DynamicTradePlan.updateAdverseExcursion60(
+                "SHORT", 100, 99, Double.NEGATIVE_INFINITY, current), 0.0);
+        assertEquals(1.0, DynamicTradePlan.updateAdverseExcursion60(
+                "SHORT", 100, 99, 101, current), 0.0);
+        assertEquals(current, DynamicTradePlan.updateFavorableExcursionBeforeFill(
+                "SHORT", 100, 99, 0, current), 0.0);
+        assertEquals(1.0, DynamicTradePlan.updateFavorableExcursionBeforeFill(
+                "SHORT", 100, 0, 99, current), 0.0);
+    }
+
     @Test public void stopRequiredUsesAllThreeTerms() {
         assertEquals(.55, plan("LONG", .35, 0, 1, 7).stopRequired, 0.0);
-        assertEquals(.70, plan("LONG", 1.0, 0, 1, 7).stopRequired, 1e-9);
+        assertEquals(1.00, plan("LONG", 1.0, 0, 1, 7).stopRequired, 1e-9);
         assertEquals(1.20, plan("LONG", 1.0, 1.0, 1, 7).stopRequired, 1e-9);
     }
 
@@ -88,6 +120,7 @@ public class DynamicTradePlanTest {
     @Test public void economicTargetFloorUsesCentralCost() {
         DynamicTradePlan.Result p = plan("LONG", .35, 0, 0, 7);
         assertEquals(1.43, DynamicTradePlan.ESTIMATED_ROUND_TRIP_COST_PER_ETH, 0.0);
+        assertEquals(2.35, DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH, 0.0);
         assertEquals(2.80, p.targetFloor, 0.0);
     }
 
@@ -128,13 +161,13 @@ public class DynamicTradePlanTest {
 
     @Test public void riskQuantityUsesBudgetAndStop() {
         DynamicTradePlan.Result p = plan("LONG", .455, .01, 1.735, 7);
-        assertEquals(1.98, p.riskPerEth, 1e-9);
-        assertEquals(5, p.riskQuantity);
+        assertEquals(2.90, p.riskPerEth, 1e-9);
+        assertEquals(3, p.riskQuantity);
     }
 
     @Test public void qualityCapIsOnlyAnUpperBound() {
         DynamicTradePlan.Result p = plan("LONG", .455, .01, 1.735, 3);
-        assertEquals(5, p.riskQuantity);
+        assertEquals(3, p.riskQuantity);
         assertEquals(3, p.qualityCap);
         assertEquals(3, p.finalQuantity);
     }
@@ -144,11 +177,11 @@ public class DynamicTradePlanTest {
     }
 
     @Test public void twoEthIsAllowed() {
-        assertEquals(2, plan("LONG", 1.2, 2.0, 4.0, 7).finalQuantity);
+        assertEquals(2, plan("LONG", 1.0, 0.0, 4.0, 7).finalQuantity);
     }
 
     @Test public void oldThreeEthMinimumIsNotForced() {
-        DynamicTradePlan.Result p = plan("LONG", 1.2, 2.0, 4.0, 7);
+        DynamicTradePlan.Result p = plan("LONG", 1.0, 0.0, 4.0, 7);
         assertTrue(p.valid);
         assertEquals(2, p.finalQuantity);
     }

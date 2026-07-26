@@ -113,8 +113,8 @@ public class ConfirmedP01EntryLifecycleTest {
         long now = CREATED + 120_000;
         MarketSnapshot s = snapshot("LONG", now, true, -.10, -.10, .20, .20);
         assertEquals(ContinuationConfirmation.C08_REJECT,
-                CandidateLifecycle.processPendingCandidate(candidate("LONG"), s, true,
-                        CREATED, now, .40, 0, false).reasonCode);
+                CandidateLifecycle.confirmAtFill(candidate("LONG"), s, true,
+                        CREATED, .40, false, 0).reasonCode);
     }
 
     @Test public void p01FailureBlocksPublication() {
@@ -136,21 +136,21 @@ public class ConfirmedP01EntryLifecycleTest {
     @Test public void validCandidateCanPublishAtFifteenSeconds() {
         CandidateLifecycle.FillResult r = evaluate("LONG", 15_000, true, true);
         assertTrue(r.confirmed);
-        assertEquals(DynamicTradePlan.CONFIRMED, r.reasonCode);
+        assertEquals("V2330_P01_DYNAMIC_PLAN_CONFIRMED", r.reasonCode);
     }
 
     @Test public void validCandidateCanPublishAtSixtyThreeSeconds() {
         assertTrue(evaluate("SHORT", 63_000, true, true).confirmed);
     }
 
-    @Test public void exactlyOneHundredTwentySecondsIsDeterministicallyEligible() {
-        assertTrue(evaluate("LONG", 120_000, true, true).confirmed);
+    @Test public void exactlyNinetySecondsIsDeterministicallyEligible() {
+        assertTrue(evaluate("LONG", 90_000, true, true).confirmed);
     }
 
-    @Test public void afterOneHundredTwentySecondsCandidateExpiresSilently() {
-        CandidateLifecycle.FillResult r = evaluate("LONG", 120_001, true, true);
+    @Test public void afterNinetySecondsP01CandidateExpiresSilently() {
+        CandidateLifecycle.FillResult r = evaluate("LONG", 90_001, true, true);
         assertFalse(r.confirmed);
-        assertEquals(CandidateLifecycle.PENDING_EXPIRED, r.reasonCode);
+        assertEquals(P01SleeveFilter.AGE_EXPIRED, r.reasonCode);
         assertFalse(SignalSafetyPolicies.lifecycleUpdateIsAudible());
     }
 

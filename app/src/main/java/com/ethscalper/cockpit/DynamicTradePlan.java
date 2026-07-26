@@ -1,14 +1,18 @@
 package com.ethscalper.cockpit;
 
-/** Pure v2.32.9 structural SL, market TP and risk-budget sizing calculation. */
+/** Pure v2.33.0 structural SL, market TP and risk-budget sizing calculation. */
 public final class DynamicTradePlan {
-    public static final String CONFIRMED = "V2329_DYNAMIC_PLAN_CONFIRMED";
-    public static final String INVALID_DATA = "V2329_DYNAMIC_PLAN_INVALID";
-    public static final String STOP_TOO_WIDE = "V2329_STRUCTURAL_STOP_TOO_WIDE";
-    public static final String REWARD_RISK_INSUFFICIENT = "V2329_REWARD_RISK_INSUFFICIENT";
-    public static final String RISK_BUDGET_TOO_SMALL = "V2329_RISK_BUDGET_TOO_SMALL";
+    public static final String CONFIRMED = "V2330_DYNAMIC_PLAN_CONFIRMED";
+    public static final String INVALID_DATA = "V2330_DYNAMIC_PLAN_INVALID";
+    public static final String STOP_TOO_WIDE = "V2330_STRUCTURAL_STOP_TOO_WIDE";
+    public static final String REWARD_RISK_INSUFFICIENT = "V2330_REWARD_RISK_INSUFFICIENT";
+    public static final String RISK_BUDGET_TOO_SMALL = "V2330_RISK_BUDGET_TOO_SMALL";
 
-    public static final double ESTIMATED_ROUND_TRIP_COST_PER_ETH = 1.43;
+    public static final double RESULT_ROUND_TRIP_COST_PER_ETH = 1.43;
+    public static final double RISK_EXECUTION_ALLOWANCE_PER_ETH = 2.35;
+    /** Compatibility alias; result accounting uses 1.43, never the risk allowance. */
+    public static final double ESTIMATED_ROUND_TRIP_COST_PER_ETH =
+            RESULT_ROUND_TRIP_COST_PER_ETH;
     public static final double DEFAULT_RISK_BUDGET_USDT = 10.00;
     public static final double DEFAULT_PRICE_TICK = 0.01;
     public static final int MAX_QUANTITY = 7;
@@ -18,28 +22,67 @@ public final class DynamicTradePlan {
     public static double updateAdverseExcursion60(String side, double entry,
                                                    double observedBid, double observedAsk,
                                                    double currentMaximum) {
-        double observed = "LONG".equals(side) ? entry - observedBid
-                : "SHORT".equals(side) ? observedAsk - entry : 0.0;
-        if (!finite(observed)) return Math.max(0.0, currentMaximum);
+        double baseline = finite(currentMaximum) ? Math.max(0.0, currentMaximum) : 0.0;
+        if (!positive(entry)) return baseline;
+        double observed;
+        if ("LONG".equals(side)) {
+            if (!positive(observedBid)) return baseline;
+            observed = entry - observedBid;
+        } else if ("SHORT".equals(side)) {
+            if (!positive(observedAsk)) return baseline;
+            observed = observedAsk - entry;
+        } else {
+            return baseline;
+        }
         return Math.max(Math.max(0.0, currentMaximum), Math.max(0.0, observed));
+    }
+
+    public static double updateFavorableExcursionBeforeFill(
+            String side, double entry, double observedBid, double observedAsk,
+            double currentMaximum) {
+        double baseline = finite(currentMaximum) ? Math.max(0.0, currentMaximum) : 0.0;
+        if (!positive(entry)) return baseline;
+        double observed;
+        if ("LONG".equals(side)) {
+            if (!positive(observedBid)) return baseline;
+            observed = observedBid - entry;
+        } else if ("SHORT".equals(side)) {
+            if (!positive(observedAsk)) return baseline;
+            observed = entry - observedAsk;
+        } else {
+            return baseline;
+        }
+        return Math.max(baseline, Math.max(0.0, observed));
     }
 
     public static Result calculate(String side, double entry, double avgRange20,
                                    double e60, double recentHigh, double recentLow,
                                    int qualityCap) {
         return calculate(side, entry, avgRange20, e60, recentHigh, recentLow,
-                qualityCap, ESTIMATED_ROUND_TRIP_COST_PER_ETH,
-                DEFAULT_RISK_BUDGET_USDT, DEFAULT_PRICE_TICK);
+                qualityCap, RESULT_ROUND_TRIP_COST_PER_ETH,
+                RISK_EXECUTION_ALLOWANCE_PER_ETH, DEFAULT_RISK_BUDGET_USDT,
+                DEFAULT_PRICE_TICK);
     }
 
     public static Result calculate(String side, double entry, double avgRange20,
                                    double e60, double recentHigh, double recentLow,
                                    int qualityCap, double estimatedCostPerEth,
                                    double riskBudgetUsdt, double priceTick) {
+        return calculate(side, entry, avgRange20, e60, recentHigh, recentLow,
+                qualityCap, estimatedCostPerEth, RISK_EXECUTION_ALLOWANCE_PER_ETH,
+                riskBudgetUsdt, priceTick);
+    }
+
+    public static Result calculate(String side, double entry, double avgRange20,
+                                   double e60, double recentHigh, double recentLow,
+                                   int qualityCap, double resultCostPerEth,
+                                   double riskExecutionAllowancePerEth,
+                                   double riskBudgetUsdt, double priceTick) {
         int direction = "LONG".equals(side) ? 1 : "SHORT".equals(side) ? -1 : 0;
         if (direction == 0 || !positive(entry) || !finite(avgRange20) || !finite(e60)
                 || !positive(recentHigh) || !positive(recentLow)
-                || qualityCap < 1 || !positive(estimatedCostPerEth)
+                || qualityCap < 1 || !positive(resultCostPerEth)
+                || !positive(riskExecutionAllowancePerEth)
                 || !positive(riskBudgetUsdt) || !positive(priceTick)) {
             return Result.rejected(INVALID_DATA);
         }
@@ -51,16 +94,12 @@ public final class DynamicTradePlan {
                 : Math.max(0.0, entry - recentLow);
 
         double stopRequired = Math.max(0.55,
-                Math.max(0.70 * a, adverseExcursion60 + 0.20 * a));
+                Math.max(1.00 * a, adverseExcursion60 + 0.20 * a));
         double stopMaximum = Math.min(2.50, 2.00 * a);
-        double targetFloor = Math.max(2.80, 1.95 * estimatedCostPerEth);
-        double targetRaw = 2.50 * a + 0.25 * structuralRoom;
+        double targetFloor = Math.max(2.80, 1.95 * resultCostPerEth);
+        double targetRaw = 2.70 * a + 0.20 * structuralRoom;
         double targetDistance = clamp(targetRaw, targetFloor, 5.50);
         double rewardRisk = targetDistance / stopRequired;
-        double riskPerEth = stopRequired + estimatedCostPerEth;
-        int riskQuantity = (int) Math.floor(riskBudgetUsdt / riskPerEth);
-        int boundedQualityCap = Math.min(MAX_QUANTITY, qualityCap);
-        int finalQuantity = Math.min(Math.min(riskQuantity, boundedQualityCap), MAX_QUANTITY);
 
         double unroundedStop = direction > 0 ? entry - stopRequired : entry + stopRequired;
         double unroundedTarget = direction > 0 ? entry + targetDistance : entry - targetDistance;
@@ -70,13 +109,19 @@ public final class DynamicTradePlan {
                 ? floorToTick(unroundedTarget, priceTick) : ceilToTick(unroundedTarget, priceTick);
         double roundedStopDistance = direction > 0 ? entry - stopLoss : stopLoss - entry;
         double roundedTargetDistance = direction > 0 ? takeProfit - entry : entry - takeProfit;
+        double riskPerEth = roundedStopDistance + riskExecutionAllowancePerEth;
+        int riskQuantity = (int) Math.floor((riskBudgetUsdt + 1e-12) / riskPerEth);
+        int boundedQualityCap = Math.min(MAX_QUANTITY, qualityCap);
+        int finalQuantity = Math.min(Math.min(riskQuantity, boundedQualityCap), MAX_QUANTITY);
+        double theoreticalMaximumLoss = finalQuantity * riskPerEth;
 
         Result calculated = new Result(false, CONFIRMED, a, adverseExcursion60,
                 structuralRoom, stopRequired, stopMaximum, targetFloor, targetRaw,
                 targetDistance, stopLoss, takeProfit, roundedStopDistance,
-                roundedTargetDistance, rewardRisk, estimatedCostPerEth, riskBudgetUsdt,
+                roundedTargetDistance, rewardRisk, resultCostPerEth,
+                riskExecutionAllowancePerEth, riskBudgetUsdt,
                 riskPerEth, riskQuantity, boundedQualityCap, finalQuantity,
-                finalQuantity * riskPerEth, priceTick);
+                theoreticalMaximumLoss, priceTick);
 
         if (stopRequired - stopMaximum > 1e-9) return calculated.withRejection(STOP_TOO_WIDE);
         if (!positive(stopLoss) || !positive(takeProfit)
@@ -90,6 +135,9 @@ public final class DynamicTradePlan {
         }
         if (riskQuantity < 1 || finalQuantity < 1) {
             return calculated.withRejection(RISK_BUDGET_TOO_SMALL);
+        }
+        if (theoreticalMaximumLoss > riskBudgetUsdt + 1e-9) {
+            return calculated.withRejection(INVALID_DATA);
         }
         return calculated.withValidity();
     }
@@ -131,6 +179,7 @@ public final class DynamicTradePlan {
         public final double roundedTargetDistance;
         public final double grossRewardRisk;
         public final double estimatedRoundTripCostPerEth;
+        public final double riskExecutionAllowancePerEth;
         public final double riskBudgetUsdt;
         public final double riskPerEth;
         public final int riskQuantity;
@@ -145,7 +194,8 @@ public final class DynamicTradePlan {
                        double targetRaw, double targetDistance, double stopLoss,
                        double takeProfit, double roundedStopDistance,
                        double roundedTargetDistance, double grossRewardRisk,
-                       double estimatedRoundTripCostPerEth, double riskBudgetUsdt,
+                       double estimatedRoundTripCostPerEth,
+                       double riskExecutionAllowancePerEth, double riskBudgetUsdt,
                        double riskPerEth, int riskQuantity, int qualityCap,
                        int finalQuantity, double theoreticalMaximumLoss,
                        double priceTick) {
@@ -165,6 +215,7 @@ public final class DynamicTradePlan {
             this.roundedTargetDistance = roundedTargetDistance;
             this.grossRewardRisk = grossRewardRisk;
             this.estimatedRoundTripCostPerEth = estimatedRoundTripCostPerEth;
+            this.riskExecutionAllowancePerEth = riskExecutionAllowancePerEth;
             this.riskBudgetUsdt = riskBudgetUsdt;
             this.riskPerEth = riskPerEth;
             this.riskQuantity = riskQuantity;
@@ -178,7 +229,7 @@ public final class DynamicTradePlan {
             return new Result(false, code, Double.NaN, Double.NaN, Double.NaN,
                     Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
                     Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
-                    Double.NaN, Double.NaN, Double.NaN, 0, 0, 0, Double.NaN,
+                    Double.NaN, Double.NaN, Double.NaN, Double.NaN, 0, 0, 0, Double.NaN,
                     Double.NaN);
         }
 
@@ -194,7 +245,8 @@ public final class DynamicTradePlan {
             return new Result(newValid, code, a, adverseExcursion60, structuralRoom,
                     stopRequired, stopMaximum, targetFloor, targetRaw, targetDistance,
                     stopLoss, takeProfit, roundedStopDistance, roundedTargetDistance,
-                    grossRewardRisk, estimatedRoundTripCostPerEth, riskBudgetUsdt,
+                    grossRewardRisk, estimatedRoundTripCostPerEth,
+                    riskExecutionAllowancePerEth, riskBudgetUsdt,
                     riskPerEth, riskQuantity, qualityCap, finalQuantity,
                     theoreticalMaximumLoss, priceTick);
         }

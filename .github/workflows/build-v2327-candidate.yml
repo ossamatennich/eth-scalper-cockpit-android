@@ -1,4 +1,4 @@
-name: Version candidate de l'APK v2.32.9 confirmed P01 dynamic risk
+name: Version candidate de l'APK v2.33.0 dual sleeve dynamic risk
 
 on:
   push:
@@ -24,12 +24,18 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.10.2
-      - name: Unit tests
+      - name: Debug unit tests
+        run: gradle testDebugUnitTest
+      - name: All unit tests
         run: gradle test
       - name: Build debug APK
         run: gradle assembleDebug
+      - name: Build release APK
+        run: gradle assembleRelease
+      - name: Release lint
+        run: gradle lintRelease
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ETH-Scalper-Cockpit-v2.32.9-debug-apk
+          name: ETH-Scalper-Cockpit-v2.33.0-debug-apk
           path: app/build/outputs/apk/debug/*.apk

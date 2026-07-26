@@ -163,7 +163,7 @@ public final class SignalSafetyPolicies {
         return 30_000 + Math.floorMod(signature == null ? 0 : signature.hashCode(), 60_000);
     }
 
-    /** Historical playback comparison only; the live v2.32.9 lifecycle never calls this. */
+    /** Historical playback comparison only; the live v2.33.0 lifecycle never calls this. */
     public static boolean historicalAbsoluteTimeoutReached(long activeSince, long now) {
         return activeSince > 0 && now - activeSince >= 45 * 60_000L;
     }

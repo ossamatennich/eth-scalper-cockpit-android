@@ -7,7 +7,8 @@ import java.util.List;
 import java.util.Locale;
 
 public final class SignalEngine {
-    public static final long COOLDOWN_MS = 18 * 60 * 1000L;
+    /** v2.33.0 uses terminal rearm, never time since the previous confirmation. */
+    public static final long COOLDOWN_MS = 0L;
     private static final int MAX_DIAGNOSTICS = 320;
 
     private static final double FEE_ROUND_TRIP =
@@ -60,14 +61,6 @@ public final class SignalEngine {
                     scoreToInt(bestScore),
                     movement
             );
-        }
-
-        if (plan.family.contains("CONTINUATION")
-                && s.lastSignalAt > 0
-                && s.now - s.lastSignalAt < COOLDOWN_MS) {
-            return reject(s, "V2327_P01_COOLDOWN_18M",
-                    "Cooldown P01 18 minutes depuis la dernière confirmation finale",
-                    scoreToInt(plan.strength), movement);
         }
 
         double entry = plan.side > 0 ? (positive(s.ethAsk) ? s.ethAsk : s.ethLast)

@@ -126,7 +126,7 @@ public class SignalEngineTest {
         assertFalse(tracker.coolingDown(120_000));
         tracker.finalConfirmed(130_000);
         assertEquals(130_000, tracker.lastConfirmedAt());
-        assertTrue(tracker.coolingDown(130_001));
+        assertFalse(tracker.coolingDown(130_001));
         assertFalse(tracker.coolingDown(130_000 + SignalEngine.COOLDOWN_MS));
     }
 

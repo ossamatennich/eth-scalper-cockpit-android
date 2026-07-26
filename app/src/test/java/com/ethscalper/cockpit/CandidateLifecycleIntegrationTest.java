@@ -31,8 +31,8 @@ public class CandidateLifecycleIntegrationTest {
                 .averages(1.0, 100.0)
                 .movement(.50, 1.20, .30, 103.0, 97.0)
                 .move15(.20)
-                .flow(.10, 120.0)
-                .flowWindows(.10, .10, .10, .10)
+                .flow(.20, 120.0)
+                .flowWindows(.20, .20, .10, .10)
                 .build();
     }
 
@@ -51,9 +51,9 @@ public class CandidateLifecycleIntegrationTest {
         CandidateLifecycle.FillResult fill = CandidateLifecycle.processAtFill(
                 admission.decision, p01Snapshot(createdAt), true, createdAt, 0.0, true);
         assertTrue(fill.confirmed);
-        assertEquals(DynamicTradePlan.CONFIRMED, fill.reasonCode);
+        assertEquals("V2330_P01_DYNAMIC_PLAN_CONFIRMED", fill.reasonCode);
         assertNotNull(fill.publishedSignal);
-        assertEquals(4, fill.publishedSignal.quantity);
+        assertEquals(2, fill.publishedSignal.quantity);
         assertTrue(fill.sizing.replayRiskCapApplied);
     }
 
@@ -141,11 +141,11 @@ public class CandidateLifecycleIntegrationTest {
         int notificationQuantity = payload.quantityForNotification();
         int screenQuantity = payload.quantityForScreen();
         int diagnosticQuantity = payload.quantityForDiagnostic();
-        assertEquals(4, planQuantity);
+        assertEquals(2, planQuantity);
         assertEquals(planQuantity, notificationQuantity);
         assertEquals(planQuantity, screenQuantity);
         assertEquals(planQuantity, diagnosticQuantity);
-        assertTrue(payload.notificationBody(false).contains("· 4 ETH"));
+        assertTrue(payload.notificationBody(false).contains("· 2 ETH"));
     }
 
     @Test public void onlyTpAndSlAreLiveTerminalStatuses() {

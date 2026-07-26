@@ -30,8 +30,8 @@ public class TpSlOnlyLifecycleIntegrationTest {
                 .averages(1.0, 100.0)
                 .movement(.50, 1.20, .30, 103, 97)
                 .move15(.20)
-                .flow(.10, 120)
-                .flowWindows(.10, .10, .10, .10)
+                .flow(.20, 120)
+                .flowWindows(.20, .20, .10, .10)
                 .build();
     }
 
