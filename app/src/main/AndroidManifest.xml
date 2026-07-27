@@ -14,7 +14,7 @@
         android:allowBackup="true"
         android:usesCleartextTraffic="false"
         android:theme="@style/AppTheme"
-        android:label="ETH Scalper Cockpit v2.33.1 — Dual Sleeve Diagnostic Fix"
+        android:label="ETH Scalper Cockpit v2.33.2 — Timely P01 + Quantity Uplift"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
 

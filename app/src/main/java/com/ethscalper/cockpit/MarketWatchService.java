@@ -259,7 +259,7 @@ public class MarketWatchService extends Service {
         if (frameNewest > newest) newest = frameNewest;
 
         o.put("mode", "PERSISTENT_OVERNIGHT_RECORDER");
-        o.put("version", "2.33.1");
+        o.put("version", "2.33.2");
         o.put("description", "Journal persistant: conserve les signaux et les frames même si l'écran/app est fermé, jusqu'à réinitialisation diagnostic.");
         o.put("observationEvents", obsStats.optInt("count", 0));
         o.put("marketFrames", frameStats.optInt("count", 0));
@@ -531,7 +531,7 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH confirmés — v2.33.1",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH confirmés — v2.33.2",
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Un son signifie exclusivement qu'un signal final manuel est confirmé.");
         signals.enableVibration(true);
@@ -2071,6 +2071,7 @@ public class MarketWatchService extends Service {
                 item.normalizedMetrics = NormalizedSignalMetrics.calculate(
                         item.signal.side, item.signal, snapshot, item.adverseExcursion60);
                 if (feedFresh && CandidateLifecycle.targetReachedBeforeConfirmedFill(item.signal, snapshot)) {
+                    resetEarlyP01Stability(item, CandidateLifecycle.TARGET_BEFORE_FILL);
                     if (item.departureAt <= 0) item.departureAt = now;
                     item.lastConfirmationCode = CandidateLifecycle.TARGET_BEFORE_FILL;
                     closeObservedSignal(item, "MISSED_NO_FILL", snapshot, now);
@@ -2086,6 +2087,7 @@ public class MarketWatchService extends Service {
                         ? CandidateLifecycle.P02_MAX_PENDING_AGE_MS
                         : CandidateLifecycle.MAX_PENDING_AGE_MS;
                 if (candidateAge > maximumAge) {
+                    resetEarlyP01Stability(item, P01EarlyConfirmation.REJECTED);
                     item.lastConfirmationCode = CandidateLifecycle.SLEEVE_P02.equals(item.sleeve)
                             ? P02SleeveFilter.EXPIRED : P01SleeveFilter.AGE_EXPIRED;
                     closeObservedSignal(item, "PENDING_CANDIDATE_EXPIRED", snapshot, now);
@@ -2093,31 +2095,40 @@ public class MarketWatchService extends Service {
                     persistObservedSignalEvent(item, item.lastConfirmationCode, snapshot, now);
                     continue;
                 }
-                boolean silentWindow = CandidateLifecycle.SLEEVE_P02.equals(item.sleeve)
+                if (CandidateLifecycle.SLEEVE_P01.equals(item.sleeve)
+                        && candidateAge < CandidateLifecycle.MIN_CONFIRMATION_AGE_MS) {
+                    if (!processEarlyP01Candidate(item, now)) continue;
+                } else {
+                    boolean silentWindow = CandidateLifecycle.SLEEVE_P02.equals(item.sleeve)
                         ? candidateAge <= CandidateLifecycle.P02_MIN_CONFIRMATION_AGE_MS
                         : candidateAge < CandidateLifecycle.MIN_CONFIRMATION_AGE_MS;
-                if (silentWindow) {
-                    item.lastConfirmationCode = CandidateLifecycle.SLEEVE_P02.equals(item.sleeve)
-                            ? P02SleeveFilter.SILENT_WINDOW
-                            : CandidateLifecycle.SILENT_CONFIRMATION_WINDOW;
-                    continue;
-                }
-                if (!feedFresh || !CandidateLifecycle.currentlyExecutable(item.signal, snapshot)) {
-                    item.lastConfirmationCode = feedFresh
-                            ? CandidateLifecycle.LIMIT_NOT_EXECUTABLE
-                            : ContinuationConfirmation.P01_STALE_REJECT;
-                    continue;
-                }
+                    if (silentWindow) {
+                        item.lastConfirmationCode = CandidateLifecycle.SLEEVE_P02.equals(item.sleeve)
+                                ? P02SleeveFilter.SILENT_WINDOW
+                                : CandidateLifecycle.SILENT_CONFIRMATION_WINDOW;
+                        continue;
+                    }
+                    if (CandidateLifecycle.SLEEVE_P01.equals(item.sleeve)) {
+                        resetEarlyP01Stability(item,
+                                CandidateLifecycle.SILENT_CONFIRMATION_WINDOW);
+                    }
+                    if (!feedFresh || !CandidateLifecycle.currentlyExecutable(item.signal, snapshot)) {
+                        item.lastConfirmationCode = feedFresh
+                                ? CandidateLifecycle.LIMIT_NOT_EXECUTABLE
+                                : ContinuationConfirmation.P01_STALE_REJECT;
+                        continue;
+                    }
 
-                // Rebuild the full snapshot only after the silent window and a current LIMIT touch.
-                MarketSnapshot fillSnapshot = buildSnapshot(now);
-                if (CandidateLifecycle.currentlyExecutable(item.signal, fillSnapshot)) {
-                    markFirstEntryTouch(item, fillSnapshot, now);
-                    if (!attemptCandidateFill(item, fillSnapshot, now,
-                            ethExecutionFeedFresh(now))) continue;
-                } else {
-                    item.lastConfirmationCode = CandidateLifecycle.LIMIT_NOT_EXECUTABLE;
-                    continue;
+                    // Rebuild after the normal window and a current LIMIT touch.
+                    MarketSnapshot fillSnapshot = buildSnapshot(now);
+                    if (CandidateLifecycle.currentlyExecutable(item.signal, fillSnapshot)) {
+                        markFirstEntryTouch(item, fillSnapshot, now);
+                        if (!attemptCandidateFill(item, fillSnapshot, now,
+                                ethExecutionFeedFresh(now))) continue;
+                    } else {
+                        item.lastConfirmationCode = CandidateLifecycle.LIMIT_NOT_EXECUTABLE;
+                        continue;
+                    }
                 }
             }
 
@@ -2196,6 +2207,88 @@ public class MarketWatchService extends Service {
                 candidate, snapshot, feedFresh, item.createdAt, now,
                 pendingProgressBeforeFill(item), item.adverseExcursion60,
                 !item.replayRiskReasonCode.isEmpty(), item.sleeve, trendRegime);
+        return applyCandidateFillResult(item, candidate, snapshot, now, fill);
+    }
+
+    private boolean processEarlyP01Candidate(ObservedSignal item, long now) {
+        MarketSnapshot current = buildSnapshot(now);
+        boolean feedFresh = ethExecutionFeedFresh(now);
+        boolean noActivePlan = !hasActiveFinalSignal(item);
+        boolean rearmComplete = TerminalRearmPersistence.allowsNewCandidate(now, lastTerminalAt);
+        boolean executable = CandidateLifecycle.currentlyExecutable(item.signal, current);
+        if (!feedFresh || !noActivePlan || !rearmComplete || !executable
+                || current.now != now) {
+            resetEarlyP01Stability(item, P01EarlyConfirmation.REJECTED);
+        }
+        if (executable) markFirstEntryTouch(item, current, now);
+
+        CandidateLifecycle.FillResult quality = CandidateLifecycle.processEarlyP01Candidate(
+                item.signal, current, feedFresh, item.createdAt, now,
+                pendingProgressBeforeFill(item), item.adverseExcursion60,
+                !item.replayRiskReasonCode.isEmpty(), noActivePlan, rearmComplete,
+                item.plannedEntry, false);
+        updateEarlyP01Diagnostics(item, current, now, quality);
+        P01EarlyConfirmation.StabilityResult stability = P01EarlyConfirmation.advance(
+                now, item.p01EarlyQualitySince, item.p01EarlyQualityMode, quality.earlyP01);
+        item.p01EarlyQualitySince = stability.qualitySince;
+        item.p01EarlyQualityMode = stability.mode;
+        item.p01EarlyStabilityMs = stability.stabilityMs;
+        item.p01EarlyLastReasonCode = stability.reasonCode;
+        item.p01EarlyEligible = quality.earlyP01 != null && quality.earlyP01.accepted;
+        if (!stability.confirmed) {
+            item.lastConfirmationCode = stability.reasonCode;
+            return false;
+        }
+
+        CandidateLifecycle.FillResult confirmed = CandidateLifecycle.processEarlyP01Candidate(
+                item.signal, current, feedFresh, item.createdAt, now,
+                pendingProgressBeforeFill(item), item.adverseExcursion60,
+                !item.replayRiskReasonCode.isEmpty(), noActivePlan, rearmComplete,
+                item.plannedEntry, true);
+        updateEarlyP01Diagnostics(item, current, now, confirmed);
+        if (!confirmed.confirmed) {
+            resetEarlyP01Stability(item, confirmed.reasonCode);
+            item.lastConfirmationCode = confirmed.reasonCode;
+            return false;
+        }
+        item.p01EarlyAgeAtConfirmationMs = now - item.createdAt;
+        item.p01EarlyLastReasonCode = P01EarlyConfirmation.CONFIRMED;
+        return applyCandidateFillResult(item, item.signal, current, now, confirmed);
+    }
+
+    private static void updateEarlyP01Diagnostics(ObservedSignal item, MarketSnapshot snapshot,
+                                                  long now,
+                                                  CandidateLifecycle.FillResult fill) {
+        if (fill.normalizedMetrics != null) item.normalizedMetrics = fill.normalizedMetrics;
+        item.p01SleeveFilter = fill.p01SleeveFilter;
+        item.confirmedSizing = fill.sizing;
+        item.dynamicTradePlan = fill.dynamicPlan;
+        item.p01EarlyTriggerBid = snapshot.ethBid;
+        item.p01EarlyTriggerAsk = snapshot.ethAsk;
+        item.p01EarlyQuoteDistance = "LONG".equals(item.signal.side)
+                ? snapshot.ethAsk - item.plannedEntry : item.plannedEntry - snapshot.ethBid;
+        item.p01EarlySecondsSaved = Math.max(0.0,
+                (item.createdAt + CandidateLifecycle.MIN_CONFIRMATION_AGE_MS - now) / 1000.0);
+        if (fill.earlyP01 != null) {
+            item.p01EarlyEligible = fill.earlyP01.accepted;
+            item.p01EarlyLastReasonCode = fill.earlyP01.reasonCode;
+        }
+    }
+
+    private static void resetEarlyP01Stability(ObservedSignal item, String reasonCode) {
+        if (item == null) return;
+        item.p01EarlyQualitySince = 0L;
+        item.p01EarlyQualityMode = "";
+        item.p01EarlyStabilityMs = 0L;
+        item.p01EarlyEligible = false;
+        item.p01EarlyLastReasonCode = reasonCode == null
+                ? P01EarlyConfirmation.REJECTED : reasonCode;
+    }
+
+    private boolean applyCandidateFillResult(ObservedSignal item, SignalDecision candidate,
+                                             MarketSnapshot snapshot, long now,
+                                             CandidateLifecycle.FillResult fill) {
+        boolean continuation = ContinuationConfirmation.requiresP01(candidate.family);
         ContinuationConfirmation.Result confirmation = fill.continuationConfirmation;
         String previousConfirmationCode = item.lastConfirmationCode;
         item.lastConfirmationCode = fill.reasonCode;
@@ -2266,6 +2359,7 @@ public class MarketWatchService extends Service {
             item.lastConfirmationCode = ActivePlanPersistence.PERSIST_FAILED;
             item.confirmedSizing = null;
             item.dynamicTradePlan = null;
+            resetEarlyP01Stability(item, ActivePlanPersistence.PERSIST_FAILED);
             persistObservedSignalEvent(item, ActivePlanPersistence.PERSIST_FAILED, snapshot, now);
             signalEngine.recordExternalDiagnostic(now, ActivePlanPersistence.PERSIST_FAILED,
                     "Signal final non publié : persistance atomique du plan actif impossible.");
@@ -2763,7 +2857,7 @@ public class MarketWatchService extends Service {
     private static Object dynamicTradePlanJson(DynamicTradePlan.Result plan) throws Exception {
         if (plan == null) return JSONObject.NULL;
         JSONObject o = new JSONObject();
-        o.put("policy", "DUAL_SLEEVE_DYNAMIC_RISK_V2330");
+        o.put("policy", "TIMELY_P01_QUANTITY_UPLIFT_V2332");
         o.put("valid", plan.valid);
         o.put("reasonCode", plan.reasonCode);
         putMetric(o, "A", plan.a);
@@ -2791,6 +2885,17 @@ public class MarketWatchService extends Service {
         o.put("qualityCap", plan.qualityCap);
         o.put("finalQuantity", plan.finalQuantity);
         putMetric(o, "theoreticalMaximumLoss", plan.theoreticalMaximumLoss);
+        putMetric(o, "legacyRiskBudgetUsdt", plan.legacyRiskBudgetUsdt);
+        o.put("legacyRiskQuantity", plan.legacyRiskQuantity);
+        o.put("baselineFinalQuantity", plan.baselineFinalQuantity);
+        o.put("quantityUpliftApplied", plan.quantityUpliftApplied);
+        o.put("upliftedQuantity", plan.upliftedQuantity);
+        putMetric(o, "upliftedRiskBudgetUsdt", plan.upliftedRiskBudgetUsdt);
+        o.put("upliftedRiskQuantity", plan.upliftedRiskQuantity);
+        putMetric(o, "theoreticalMaximumLossBeforeUplift",
+                plan.theoreticalMaximumLossBeforeUplift);
+        putMetric(o, "theoreticalMaximumLossAfterUplift",
+                plan.theoreticalMaximumLossAfterUplift);
         putMetric(o, "priceTick", plan.priceTick);
         return o;
     }
@@ -2816,6 +2921,19 @@ public class MarketWatchService extends Service {
         JSONObject o = new JSONObject();
         o.put("sleeve", item.sleeve);
         o.put("p02Mode", item.p02Mode);
+        o.put("earlyP01Eligible", item.p01EarlyEligible);
+        o.put("earlyP01Mode", item.p01EarlyQualityMode);
+        o.put("earlyP01QualitySince", item.p01EarlyQualitySince > 0
+                ? item.p01EarlyQualitySince : JSONObject.NULL);
+        o.put("earlyP01StabilityMs", item.p01EarlyStabilityMs);
+        o.put("earlyP01ReasonCode", item.p01EarlyLastReasonCode);
+        o.put("ageAtEarlyConfirmationMs", item.p01EarlyAgeAtConfirmationMs >= 0
+                ? item.p01EarlyAgeAtConfirmationMs : JSONObject.NULL);
+        putMetric(o, "earlyP01TriggerBid", item.p01EarlyTriggerBid);
+        putMetric(o, "earlyP01TriggerAsk", item.p01EarlyTriggerAsk);
+        putMetric(o, "candidateEntry", item.plannedEntry);
+        putMetric(o, "quoteDistanceToLimit", item.p01EarlyQuoteDistance);
+        putMetric(o, "secondsSavedVsNormalConfirmation", item.p01EarlySecondsSaved);
         NormalizedSignalMetrics.Result m = item.normalizedMetrics;
         if (m != null) {
             putMetric(o, "A", m.a);
@@ -3428,7 +3546,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "TEST NOTIFICATION ETH", "Test silencieux v2.33.1 · aucun ordre n’est envoyé", false));
+                "TEST NOTIFICATION ETH", "Test silencieux v2.33.2 · aucun ordre n’est envoyé", false));
     }
 
     private Notification buildSignalNotification(String title, String body, boolean audible) {
@@ -3508,7 +3626,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.33.1-android-dual-sleeve-diagnostic-fix");
+            state.put("version", "2.33.2-android-timely-p01-quantity-uplift");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -3687,7 +3805,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH Scalper Cockpit v2.33.1 — Dual Sleeve Diagnostic Fix");
+        m.put("rulesProfile", "ETH Scalper Cockpit v2.33.2 — Timely P01 + Quantity Uplift");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 
@@ -4267,6 +4385,16 @@ public class MarketWatchService extends Service {
         double p01Move8Aligned = Double.NaN;
         double p01Move15Aligned = Double.NaN;
         double p01Flow30Aligned = Double.NaN;
+        boolean p01EarlyEligible;
+        long p01EarlyQualitySince;
+        String p01EarlyQualityMode = "";
+        long p01EarlyStabilityMs;
+        String p01EarlyLastReasonCode = "";
+        long p01EarlyAgeAtConfirmationMs = -1L;
+        double p01EarlyTriggerBid = Double.NaN;
+        double p01EarlyTriggerAsk = Double.NaN;
+        double p01EarlyQuoteDistance = Double.NaN;
+        double p01EarlySecondsSaved = Double.NaN;
 
         final double signalEthLast;
         final double signalBid;

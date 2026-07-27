@@ -43,7 +43,7 @@ public class ConfirmedSizingTest {
         CandidateLifecycle.FillResult fill = fill(96,
                 snapshot(1_000, .40, 1.00, .20, -.10, .20, 0.0, 0.0, 100), false);
         assertTrue(fill.confirmed);
-        assertEquals(2, fill.publishedSignal.quantity);
+        assertEquals(3, fill.publishedSignal.quantity);
         assertEquals(0, fill.sizing.evidencePoints);
     }
 
@@ -51,7 +51,7 @@ public class ConfirmedSizingTest {
         CandidateLifecycle.FillResult fill = fill(96,
                 snapshot(2_000, .75, 1.00, .20, -.10, .20, .05, 0.0, 100), false);
         assertTrue(fill.confirmed);
-        assertEquals(2, fill.publishedSignal.quantity);
+        assertEquals(3, fill.publishedSignal.quantity);
         assertTrue(fill.sizing.move1Bonus);
         assertFalse(fill.sizing.move3Bonus);
     }
@@ -60,7 +60,7 @@ public class ConfirmedSizingTest {
         CandidateLifecycle.FillResult fill = fill(96,
                 snapshot(3_000, .75, 1.55, .30, -.10, .20, .05, 0.0, 100), false);
         assertTrue(fill.confirmed);
-        assertEquals(2, fill.publishedSignal.quantity);
+        assertEquals(3, fill.publishedSignal.quantity);
         assertEquals(5, fill.sizing.finalQuantity);
         assertTrue(fill.sizing.move1Bonus);
         assertTrue(fill.sizing.move3Bonus);
@@ -70,7 +70,7 @@ public class ConfirmedSizingTest {
         CandidateLifecycle.FillResult fill = fill(96,
                 snapshot(4_000, .75, 1.55, .30, .20, .20, .05, 0.0, 100), false);
         assertTrue(fill.confirmed);
-        assertEquals(2, fill.publishedSignal.quantity);
+        assertEquals(3, fill.publishedSignal.quantity);
         assertEquals(6, fill.sizing.finalQuantity);
         assertTrue(fill.sizing.premium15mBonus);
         assertFalse(fill.sizing.cleanContextBonus);
@@ -80,7 +80,7 @@ public class ConfirmedSizingTest {
         CandidateLifecycle.FillResult fill = fill(96,
                 snapshot(5_000, .80, 1.60, 1.30, .20, .20, .15, .00010, 120), false);
         assertTrue(fill.confirmed);
-        assertEquals(2, fill.publishedSignal.quantity);
+        assertEquals(3, fill.publishedSignal.quantity);
         assertEquals(7, fill.sizing.finalQuantity);
         assertEquals(4, fill.sizing.evidencePoints);
         assertTrue(fill.sizing.cleanContextBonus);
@@ -91,14 +91,14 @@ public class ConfirmedSizingTest {
                 snapshot(6_000, .40, 1.00, .20, -.10, .20, 0.0, 0.0, 100), false);
         assertTrue(fill.confirmed);
         assertEquals(96, fill.sizing.engineScoreDiagnosticOnly);
-        assertEquals(2, fill.publishedSignal.quantity);
+        assertEquals(3, fill.publishedSignal.quantity);
     }
 
     @Test public void historicalReplayVetoCapsOtherwiseSevenEthAtFive() {
         CandidateLifecycle.FillResult fill = fill(96,
                 snapshot(7_000, .80, 1.60, 1.30, .20, .20, .15, .00010, 120), true);
         assertTrue(fill.confirmed);
-        assertEquals(2, fill.publishedSignal.quantity);
+        assertEquals(3, fill.publishedSignal.quantity);
         assertEquals(5, fill.sizing.finalQuantity);
         assertTrue(fill.sizing.historicalReplayRiskVeto);
         assertTrue(fill.sizing.replayRiskCapApplied);

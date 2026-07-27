@@ -1,19 +1,23 @@
 package com.ethscalper.cockpit;
 
-/** Pure v2.33.0 structural SL, market TP and risk-budget sizing calculation. */
+/** Pure v2.33.2 structural SL, market TP and deterministic one-step quantity uplift. */
 public final class DynamicTradePlan {
     public static final String CONFIRMED = "V2330_DYNAMIC_PLAN_CONFIRMED";
     public static final String INVALID_DATA = "V2330_DYNAMIC_PLAN_INVALID";
     public static final String STOP_TOO_WIDE = "V2330_STRUCTURAL_STOP_TOO_WIDE";
     public static final String REWARD_RISK_INSUFFICIENT = "V2330_REWARD_RISK_INSUFFICIENT";
     public static final String RISK_BUDGET_TOO_SMALL = "V2330_RISK_BUDGET_TOO_SMALL";
+    public static final String QUANTITY_UPLIFT_APPLIED = "V2332_QUANTITY_UPLIFT_APPLIED";
+    public static final String QUANTITY_UPLIFT_RISK_REJECTED =
+            "V2332_QUANTITY_UPLIFT_RISK_REJECTED";
 
     public static final double RESULT_ROUND_TRIP_COST_PER_ETH = 1.43;
     public static final double RISK_EXECUTION_ALLOWANCE_PER_ETH = 2.35;
     /** Compatibility alias; result accounting uses 1.43, never the risk allowance. */
     public static final double ESTIMATED_ROUND_TRIP_COST_PER_ETH =
             RESULT_ROUND_TRIP_COST_PER_ETH;
-    public static final double DEFAULT_RISK_BUDGET_USDT = 10.00;
+    public static final double LEGACY_RISK_BUDGET_USDT = 10.00;
+    public static final double DEFAULT_RISK_BUDGET_USDT = 14.55;
     public static final double DEFAULT_PRICE_TICK = 0.01;
     public static final int MAX_QUANTITY = 7;
 
@@ -60,8 +64,18 @@ public final class DynamicTradePlan {
                                    int qualityCap) {
         return calculate(side, entry, avgRange20, e60, recentHigh, recentLow,
                 qualityCap, RESULT_ROUND_TRIP_COST_PER_ETH,
-                RISK_EXECUTION_ALLOWANCE_PER_ETH, DEFAULT_RISK_BUDGET_USDT,
-                DEFAULT_PRICE_TICK);
+                RISK_EXECUTION_ALLOWANCE_PER_ETH, LEGACY_RISK_BUDGET_USDT,
+                DEFAULT_RISK_BUDGET_USDT, DEFAULT_PRICE_TICK, true);
+    }
+
+    /** Preserves the exact v2.33.1 sizing path for the unchanged P02 sleeve. */
+    public static Result calculateLegacy(String side, double entry, double avgRange20,
+                                         double e60, double recentHigh, double recentLow,
+                                         int qualityCap) {
+        return calculate(side, entry, avgRange20, e60, recentHigh, recentLow,
+                qualityCap, RESULT_ROUND_TRIP_COST_PER_ETH,
+                RISK_EXECUTION_ALLOWANCE_PER_ETH, LEGACY_RISK_BUDGET_USDT,
+                LEGACY_RISK_BUDGET_USDT, DEFAULT_PRICE_TICK, false);
     }
 
     public static Result calculate(String side, double entry, double avgRange20,
@@ -70,7 +84,7 @@ public final class DynamicTradePlan {
                                    double riskBudgetUsdt, double priceTick) {
         return calculate(side, entry, avgRange20, e60, recentHigh, recentLow,
                 qualityCap, estimatedCostPerEth, RISK_EXECUTION_ALLOWANCE_PER_ETH,
-                riskBudgetUsdt, priceTick);
+                riskBudgetUsdt, riskBudgetUsdt, priceTick, true);
     }
 
     public static Result calculate(String side, double entry, double avgRange20,
@@ -78,12 +92,25 @@ public final class DynamicTradePlan {
                                    int qualityCap, double resultCostPerEth,
                                    double riskExecutionAllowancePerEth,
                                    double riskBudgetUsdt, double priceTick) {
+        return calculate(side, entry, avgRange20, e60, recentHigh, recentLow,
+                qualityCap, resultCostPerEth, riskExecutionAllowancePerEth,
+                riskBudgetUsdt, riskBudgetUsdt, priceTick, true);
+    }
+
+    private static Result calculate(String side, double entry, double avgRange20,
+                                    double e60, double recentHigh, double recentLow,
+                                    int qualityCap, double resultCostPerEth,
+                                    double riskExecutionAllowancePerEth,
+                                    double legacyRiskBudgetUsdt,
+                                    double upliftedRiskBudgetUsdt, double priceTick,
+                                    boolean applyUplift) {
         int direction = "LONG".equals(side) ? 1 : "SHORT".equals(side) ? -1 : 0;
         if (direction == 0 || !positive(entry) || !finite(avgRange20) || !finite(e60)
                 || !positive(recentHigh) || !positive(recentLow)
                 || qualityCap < 1 || !positive(resultCostPerEth)
                 || !positive(riskExecutionAllowancePerEth)
-                || !positive(riskBudgetUsdt) || !positive(priceTick)) {
+                || !positive(legacyRiskBudgetUsdt) || !positive(upliftedRiskBudgetUsdt)
+                || !positive(priceTick)) {
             return Result.rejected(INVALID_DATA);
         }
 
@@ -110,18 +137,31 @@ public final class DynamicTradePlan {
         double roundedStopDistance = direction > 0 ? entry - stopLoss : stopLoss - entry;
         double roundedTargetDistance = direction > 0 ? takeProfit - entry : entry - takeProfit;
         double riskPerEth = roundedStopDistance + riskExecutionAllowancePerEth;
-        int riskQuantity = (int) Math.floor((riskBudgetUsdt + 1e-12) / riskPerEth);
+        int legacyRiskQuantity = (int) Math.floor(
+                (legacyRiskBudgetUsdt + 1e-12) / riskPerEth);
         int boundedQualityCap = Math.min(MAX_QUANTITY, qualityCap);
-        int finalQuantity = Math.min(Math.min(riskQuantity, boundedQualityCap), MAX_QUANTITY);
-        double theoreticalMaximumLoss = finalQuantity * riskPerEth;
+        int baselineFinalQuantity = Math.min(
+                Math.min(legacyRiskQuantity, boundedQualityCap), MAX_QUANTITY);
+        int upliftedQuantity = applyUplift
+                ? upliftQuantity(baselineFinalQuantity)
+                : baselineFinalQuantity;
+        int upliftedRiskQuantity = (int) Math.floor(
+                (upliftedRiskBudgetUsdt + 1e-12) / riskPerEth);
+        double theoreticalMaximumLossBeforeUplift = baselineFinalQuantity * riskPerEth;
+        double theoreticalMaximumLossAfterUplift = upliftedQuantity * riskPerEth;
 
         Result calculated = new Result(false, CONFIRMED, a, adverseExcursion60,
                 structuralRoom, stopRequired, stopMaximum, targetFloor, targetRaw,
                 targetDistance, stopLoss, takeProfit, roundedStopDistance,
                 roundedTargetDistance, rewardRisk, resultCostPerEth,
-                riskExecutionAllowancePerEth, riskBudgetUsdt,
-                riskPerEth, riskQuantity, boundedQualityCap, finalQuantity,
-                theoreticalMaximumLoss, priceTick);
+                riskExecutionAllowancePerEth, upliftedRiskBudgetUsdt,
+                riskPerEth, legacyRiskQuantity, boundedQualityCap, upliftedQuantity,
+                theoreticalMaximumLossAfterUplift, priceTick,
+                legacyRiskBudgetUsdt, legacyRiskQuantity, baselineFinalQuantity,
+                applyUplift && upliftedQuantity != baselineFinalQuantity,
+                upliftedQuantity, upliftedRiskBudgetUsdt, upliftedRiskQuantity,
+                theoreticalMaximumLossBeforeUplift,
+                theoreticalMaximumLossAfterUplift);
 
         if (stopRequired - stopMaximum > 1e-9) return calculated.withRejection(STOP_TOO_WIDE);
         if (!positive(stopLoss) || !positive(takeProfit)
@@ -133,17 +173,24 @@ public final class DynamicTradePlan {
         if (!finite(rewardRisk) || rewardRisk < 1.40) {
             return calculated.withRejection(REWARD_RISK_INSUFFICIENT);
         }
-        if (riskQuantity < 1 || finalQuantity < 1) {
+        if (legacyRiskQuantity < 1 || baselineFinalQuantity < 1) {
             return calculated.withRejection(RISK_BUDGET_TOO_SMALL);
         }
-        if (theoreticalMaximumLoss > riskBudgetUsdt + 1e-9) {
-            return calculated.withRejection(INVALID_DATA);
+        if (upliftedQuantity > upliftedRiskQuantity
+                || theoreticalMaximumLossAfterUplift > upliftedRiskBudgetUsdt + 1e-9) {
+            return calculated.withRejection(applyUplift
+                    ? QUANTITY_UPLIFT_RISK_REJECTED : INVALID_DATA);
         }
-        return calculated.withValidity();
+        return calculated.withValidity(applyUplift ? QUANTITY_UPLIFT_APPLIED : CONFIRMED);
     }
 
     private static double floorToTick(double value, double tick) {
         return Math.floor((value + 1e-9) / tick) * tick;
+    }
+
+    /** Exact v2.33.2 mapping applied after the untouched v2.33.1 baseline calculation. */
+    public static int upliftQuantity(int baselineFinalQuantity) {
+        return Math.min(MAX_QUANTITY, Math.max(3, baselineFinalQuantity + 1));
     }
 
     private static double ceilToTick(double value, double tick) {
@@ -187,6 +234,15 @@ public final class DynamicTradePlan {
         public final int finalQuantity;
         public final double theoreticalMaximumLoss;
         public final double priceTick;
+        public final double legacyRiskBudgetUsdt;
+        public final int legacyRiskQuantity;
+        public final int baselineFinalQuantity;
+        public final boolean quantityUpliftApplied;
+        public final int upliftedQuantity;
+        public final double upliftedRiskBudgetUsdt;
+        public final int upliftedRiskQuantity;
+        public final double theoreticalMaximumLossBeforeUplift;
+        public final double theoreticalMaximumLossAfterUplift;
 
         private Result(boolean valid, String reasonCode, double a,
                        double adverseExcursion60, double structuralRoom,
@@ -198,7 +254,12 @@ public final class DynamicTradePlan {
                        double riskExecutionAllowancePerEth, double riskBudgetUsdt,
                        double riskPerEth, int riskQuantity, int qualityCap,
                        int finalQuantity, double theoreticalMaximumLoss,
-                       double priceTick) {
+                       double priceTick, double legacyRiskBudgetUsdt,
+                       int legacyRiskQuantity, int baselineFinalQuantity,
+                       boolean quantityUpliftApplied, int upliftedQuantity,
+                       double upliftedRiskBudgetUsdt, int upliftedRiskQuantity,
+                       double theoreticalMaximumLossBeforeUplift,
+                       double theoreticalMaximumLossAfterUplift) {
             this.valid = valid;
             this.reasonCode = reasonCode;
             this.a = a;
@@ -223,6 +284,15 @@ public final class DynamicTradePlan {
             this.finalQuantity = finalQuantity;
             this.theoreticalMaximumLoss = theoreticalMaximumLoss;
             this.priceTick = priceTick;
+            this.legacyRiskBudgetUsdt = legacyRiskBudgetUsdt;
+            this.legacyRiskQuantity = legacyRiskQuantity;
+            this.baselineFinalQuantity = baselineFinalQuantity;
+            this.quantityUpliftApplied = quantityUpliftApplied;
+            this.upliftedQuantity = upliftedQuantity;
+            this.upliftedRiskBudgetUsdt = upliftedRiskBudgetUsdt;
+            this.upliftedRiskQuantity = upliftedRiskQuantity;
+            this.theoreticalMaximumLossBeforeUplift = theoreticalMaximumLossBeforeUplift;
+            this.theoreticalMaximumLossAfterUplift = theoreticalMaximumLossAfterUplift;
         }
 
         private static Result rejected(String code) {
@@ -230,15 +300,16 @@ public final class DynamicTradePlan {
                     Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
                     Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
                     Double.NaN, Double.NaN, Double.NaN, Double.NaN, 0, 0, 0, Double.NaN,
-                    Double.NaN);
+                    Double.NaN, Double.NaN, 0, 0, false, 0, Double.NaN, 0,
+                    Double.NaN, Double.NaN);
         }
 
         private Result withRejection(String code) {
             return copy(false, code);
         }
 
-        private Result withValidity() {
-            return copy(true, CONFIRMED);
+        private Result withValidity(String code) {
+            return copy(true, code);
         }
 
         private Result copy(boolean newValid, String code) {
@@ -248,7 +319,11 @@ public final class DynamicTradePlan {
                     grossRewardRisk, estimatedRoundTripCostPerEth,
                     riskExecutionAllowancePerEth, riskBudgetUsdt,
                     riskPerEth, riskQuantity, qualityCap, finalQuantity,
-                    theoreticalMaximumLoss, priceTick);
+                    theoreticalMaximumLoss, priceTick, legacyRiskBudgetUsdt,
+                    legacyRiskQuantity, baselineFinalQuantity, quantityUpliftApplied,
+                    upliftedQuantity, upliftedRiskBudgetUsdt, upliftedRiskQuantity,
+                    theoreticalMaximumLossBeforeUplift,
+                    theoreticalMaximumLossAfterUplift);
         }
     }
 }

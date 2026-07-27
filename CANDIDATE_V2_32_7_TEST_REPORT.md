@@ -1,61 +1,60 @@
-# Candidate v2.33.1 — rapport de tests
+# Candidate v2.33.2 — rapport de tests
 
-> Le nom historique du fichier est conservé. Tous les résultats concernent **ETH Scalper Cockpit v2.33.1 — Dual Sleeve Diagnostic Fix**.
+> Le nom historique du fichier est conservé. Tous les résultats concernent **ETH Scalper Cockpit v2.33.2 — Timely P01 + Quantity Uplift**.
 
 ## Environnement
 
-- Windows / PowerShell
-- Android SDK : `C:\Users\Tenni\AppData\Local\Android\Sdk`
-- JDK : Android Studio JBR 17
-- Gradle : 8.10.2, distribution officielle temporaire, le dépôt ne fournissant pas de wrapper fonctionnel
-- `versionCode=23310`, `versionName=2.33.1`, `minSdk=26`, `targetSdk=35`
+- Windows / PowerShell ; Android SDK `C:\Users\Tenni\AppData\Local\Android\Sdk`.
+- Android Studio JBR 17 ; Gradle 8.10.2.
+- `versionCode=23320`, `versionName=2.33.2`, `minSdk=26`, `targetSdk=35`.
 
-## Commandes exécutées
+## Commandes obligatoires exécutées
 
 ```powershell
 gradle testDebugUnitTest --rerun-tasks
 gradle test --rerun-tasks
-gradle assembleDebug assembleRelease lintRelease --rerun-tasks
+gradle assembleDebug
+gradle assembleRelease
+gradle lintRelease
 ```
 
-Les cinq tâches obligatoires `testDebugUnitTest`, `test`, `assembleDebug`, `assembleRelease` et `lintRelease` ont donc toutes été exécutées. Les processus utilisaient un seul worker avec `JAVA_HOME` et `ANDROID_HOME` limités à la session.
+Toutes les commandes sont réussies.
 
 ## Résultats unitaires
 
-- 184 tests distincts : 175 tests existants inchangés et 9 nouveaux tests ciblés ;
-- debug : 184/184 réussis ;
-- release : 184/184 réussis ;
-- passe globale : 368 exécutions réussies ;
+- 204 tests distincts : les 184 tests v2.33.1 sont conservés, avec 20 tests supplémentaires ou nouvelles assertions ciblées v2.33.2.
+- passe debug forcée : 204/204 réussis ;
+- passe globale : debug 204/204 et release 204/204 réussis ;
+- 408 exécutions dans la matrice debug/release, et 612 exécutions locales au total en comptant la passe debug forcée séparée ;
 - 0 échec, 0 erreur, 0 test ignoré.
 
-La couverture ajoutée vérifie : setup non consommé pendant feed périmé, plan actif ou réarmement ; apparition unique au retour du feed frais et exactement à 180 000 ms ; `reset()` vers `NONE` ; OLS60 immédiat avec 60 bougies préchargées ; rejet si une minute manque ; exclusion des bougies futures et des closes zéro/NaN/infini ; symétrie LONG/SHORT. Les 175 assertions existantes restent intactes, notamment pour P01/P02, SL/TP, sizing, lifecycle TP/SL only, RANGE_FADE diagnostic et `realTradingAllowed=false`.
+La couverture vérifie les deux voies P01, les frontières à ±`1e-9`, les cas connus `m8`, les resets de stabilité, 999/1 000 ms, l’âge 15 000 ms, feed/LIMIT/snapshot/plan/réarmement, symétrie LONG/SHORT, publication du même plan, mapping complet de quantité, budgets 10.00/14.55, perte maximale, rejet sans réduction, invariance entrée/TP/SL, P02 inchangé, lifecycle TP/SL only, RANGE_FADE diagnostic-only et `realTradingAllowed=false`.
 
-## Build et lint
+Les six sessions nommées et le cas structurel complémentaire sont représentés par des fixtures déterministes issues des valeurs fournies. Les archives de replay exactes étant absentes localement, aucun résultat historique supplémentaire n’est revendiqué.
+
+## Builds et lint
 
 - `assembleDebug` : succès ;
 - `assembleRelease` : succès ;
-- `lintRelease` : succès ;
-- rapport lint : `app/build/reports/lint-results-release.html` ;
-- manifeste debug vérifié avec `aapt` : package `com.ethscalper.cockpit.debug`, versionCode 23310, versionName 2.33.1, minSdk 26, targetSdk 35.
-- lint release : 0 erreur ; les 54 avertissements existants ne bloquent pas la candidate.
-- la première fenêtre d’exécution de la commande combinée a expiré côté outil ; la relance complète a continué jusqu’à la production des deux APK et des rapports lint valides, sans erreur de build.
+- `lintRelease` : succès, 0 erreur et 54 avertissements non bloquants existants ;
+- rapport : `app/build/reports/lint-results-release.html`.
 
 ## APK locale debug
 
-- chemin exact : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\debug\app-debug.apk` ;
-- taille : `4 520 108 octets` ;
-- SHA-256 : `bcc8646fb338201a0878975dc8c4bbab7d5d4dfdf42ca795b9f8c3ab4188c8cc`.
+- chemin : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\debug\app-debug.apk` ;
+- taille : `4 524 624 octets` ;
+- SHA-256 : `4da62af85d824647e2b8f5ba204ef8aafd4031ec4747e63deba104427b105ccb`.
 
 ## APK locale release
 
-- chemin exact : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\release\app-release-unsigned.apk` ;
-- taille : `3 600 621 octets` ;
-- SHA-256 : `63295bfb2fab38ededdd72801205ecc5c7677c3d82e217c947ee0ec759e90bfc`.
+- chemin : `C:\Users\Tenni\Documents\Codex\2026-07-25\tu-dois-r-aliser-maintenant-la-2\app\build\outputs\apk\release\app-release-unsigned.apk` ;
+- taille : `3 604 577 octets` ;
+- SHA-256 : `0ecdeb3dba389c52492fc00f81dfae7a50d81378de917a4dd2641a143dcf99e7`.
 
 ## GitHub Actions
 
-Les métadonnées finales CI ne sont pas anticipées dans ce commit. Le HEAD, l’ID du run, l’ID et le nom de l’artefact APK, sa taille et son SHA-256 sont placés dans la description de la PR nº 2 après le run, afin d’éviter un commit documentaire supplémentaire.
+Les métadonnées finales du run et de l’artefact CI sont inscrites dans la description de la PR nº 2 après vérification du workflow, afin que le commit applicatif et documentaire reste unique.
 
-## Corpus et avertissement
+## Avertissement
 
-Le corpus d’analyse indiqué par le propriétaire couvre **14 sessions, 39 695 frames uniques et environ 77,14 heures**. Aucun replay, calibrage, changement de formule ou changement de seuil n’a été effectué. Les résultats d’analyse ne garantissent aucune rentabilité future.
+Les montants de replay et résultats contrefactuels fournis servent uniquement de contrôles de recherche. Ils ne constituent aucune promesse ni garantie de performance financière future.

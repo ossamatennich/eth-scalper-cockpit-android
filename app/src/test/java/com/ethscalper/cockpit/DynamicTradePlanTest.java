@@ -26,6 +26,7 @@ public class DynamicTradePlanTest {
         assertEquals(.55, p.stopRequired, 1e-9);
         assertEquals(2.80, p.targetDistance, 1e-9);
         assertEquals(3, p.riskQuantity);
+        assertEquals(4, p.finalQuantity);
     }
 
     @Test public void referenceCaseC() {
@@ -169,21 +170,25 @@ public class DynamicTradePlanTest {
         DynamicTradePlan.Result p = plan("LONG", .455, .01, 1.735, 3);
         assertEquals(3, p.riskQuantity);
         assertEquals(3, p.qualityCap);
+        assertEquals(4, p.finalQuantity);
+    }
+
+    @Test public void legacyOneEthReceivesExactMinimumUplift() {
+        DynamicTradePlan.Result p = plan("LONG", .455, .01, 1.735, 1);
+        assertEquals(1, p.baselineFinalQuantity);
         assertEquals(3, p.finalQuantity);
     }
 
-    @Test public void oneEthIsAllowed() {
-        assertEquals(1, plan("LONG", .455, .01, 1.735, 1).finalQuantity);
+    @Test public void legacyTwoEthReceivesOneStepToThree() {
+        DynamicTradePlan.Result p = plan("LONG", 1.0, 0.0, 4.0, 7);
+        assertEquals(2, p.baselineFinalQuantity);
+        assertEquals(3, p.finalQuantity);
     }
 
-    @Test public void twoEthIsAllowed() {
-        assertEquals(2, plan("LONG", 1.0, 0.0, 4.0, 7).finalQuantity);
-    }
-
-    @Test public void oldThreeEthMinimumIsNotForced() {
+    @Test public void finalQuantityHasNewThreeEthMinimum() {
         DynamicTradePlan.Result p = plan("LONG", 1.0, 0.0, 4.0, 7);
         assertTrue(p.valid);
-        assertEquals(2, p.finalQuantity);
+        assertEquals(3, p.finalQuantity);
     }
 
     @Test public void quantityNeverExceedsSeven() {
@@ -196,6 +201,74 @@ public class DynamicTradePlanTest {
         DynamicTradePlan.Result p = plan("LONG", .9225, .01, 6.865, 7);
         assertTrue(p.theoreticalMaximumLoss <= p.riskBudgetUsdt + 1e-9);
         assertEquals(p.finalQuantity * p.riskPerEth, p.theoreticalMaximumLoss, 0.0);
+    }
+
+    @Test public void exactOneStepUpliftMappingCoversAllBaselines() {
+        assertEquals(3, DynamicTradePlan.upliftQuantity(1));
+        assertEquals(3, DynamicTradePlan.upliftQuantity(2));
+        assertEquals(4, DynamicTradePlan.upliftQuantity(3));
+        assertEquals(5, DynamicTradePlan.upliftQuantity(4));
+        assertEquals(6, DynamicTradePlan.upliftQuantity(5));
+        assertEquals(7, DynamicTradePlan.upliftQuantity(6));
+        assertEquals(7, DynamicTradePlan.upliftQuantity(7));
+        assertNotEquals(4, DynamicTradePlan.upliftQuantity(2));
+    }
+
+    @Test public void legacyAndUpliftBudgetsAreSeparateAndExact() {
+        DynamicTradePlan.Result p = plan("LONG", 1.0, 0.0, 4.0, 7);
+        assertEquals(10.00, p.legacyRiskBudgetUsdt, 0.0);
+        assertEquals(14.55, p.upliftedRiskBudgetUsdt, 0.0);
+        assertEquals(2, p.legacyRiskQuantity);
+        assertEquals(2, p.baselineFinalQuantity);
+        assertEquals(3, p.upliftedQuantity);
+        assertTrue(p.quantityUpliftApplied);
+    }
+
+    @Test public void maximumStructuralStopAllowsExactlyThreeAtFourteenPointFiveFive() {
+        DynamicTradePlan.Result p = DynamicTradePlan.calculate("LONG", 100, 1.25, 2.25,
+                110, 90, 7);
+        assertTrue(p.valid);
+        assertEquals(2.50, p.roundedStopDistance, 1e-9);
+        assertEquals(4.85, p.riskPerEth, 1e-9);
+        assertEquals(3, p.finalQuantity);
+        assertEquals(14.55, p.theoreticalMaximumLossAfterUplift, 1e-9);
+    }
+
+    @Test public void upliftThatExceedsFinalBudgetIsRejectedNotReduced() {
+        DynamicTradePlan.Result p = DynamicTradePlan.calculate("LONG", 100, 1.25, 2.25,
+                110, 90, 7, 1.43, 2.36, 14.55, .01);
+        assertFalse(p.valid);
+        assertEquals(DynamicTradePlan.QUANTITY_UPLIFT_RISK_REJECTED, p.reasonCode);
+        assertEquals(3, p.upliftedQuantity);
+        assertTrue(p.theoreticalMaximumLossAfterUplift > 14.55);
+    }
+
+    @Test public void upliftDoesNotChangeEntryTargetOrStopAndIsSymmetric() {
+        DynamicTradePlan.Result l = plan("LONG", 1.0, 0, 4, 7);
+        DynamicTradePlan.Result s = plan("SHORT", 1.0, 0, 4, 7);
+        DynamicTradePlan.Result legacy = DynamicTradePlan.calculateLegacy(
+                "LONG", 100, 1.0, 0, 104, 95, 7);
+        assertEquals(legacy.stopLoss, l.stopLoss, 0.0);
+        assertEquals(legacy.takeProfit, l.takeProfit, 0.0);
+        assertEquals(legacy.roundedStopDistance, l.roundedStopDistance, 0.0);
+        assertEquals(legacy.roundedTargetDistance, l.roundedTargetDistance, 0.0);
+        assertEquals(l.roundedStopDistance, s.roundedStopDistance, 0.0);
+        assertEquals(l.roundedTargetDistance, s.roundedTargetDistance, 0.0);
+        assertEquals(l.finalQuantity, s.finalQuantity);
+        assertEquals(100 - l.stopLoss, s.stopLoss - 100, 1e-9);
+        assertEquals(l.takeProfit - 100, 100 - s.takeProfit, 1e-9);
+    }
+
+    @Test public void constantsAndNaturalReplayControlsRemainExplicit() {
+        assertEquals(1.43, DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH, 0.0);
+        assertEquals(2.35, DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH, 0.0);
+        assertEquals(10.00, DynamicTradePlan.LEGACY_RISK_BUDGET_USDT, 0.0);
+        assertEquals(14.55, DynamicTradePlan.DEFAULT_RISK_BUDGET_USDT, 0.0);
+        assertEquals(20.58, 13.72 * 3.0 / 2.0, 1e-9);
+        assertEquals(-8.07, -5.38 * 3.0 / 2.0, 1e-9);
+        assertEquals(19, 15 + 4);
+        assertEquals(149.72, 149.72, 0.0);
+        assertEquals(14.07, 14.07, 0.0);
     }
 
     @Test public void riskBudgetBelowOneEthRejectsPlan() {

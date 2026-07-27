@@ -211,9 +211,13 @@ public final class CandidateLifecycle {
 
         ConfirmedSizing.Result sizing = ConfirmedSizing.computeConfirmedSizingQuantity(
                 candidate, snapshot, confirmation, premium15m, historicalReplayRiskVeto);
-        DynamicTradePlan.Result dynamicPlan = DynamicTradePlan.calculate(
-                candidate.side, candidate.entry, snapshot.avgRange20, adverseExcursion60,
-                snapshot.recentHigh, snapshot.recentLow, sizing.finalQuantity);
+        DynamicTradePlan.Result dynamicPlan = p02
+                ? DynamicTradePlan.calculateLegacy(candidate.side, candidate.entry,
+                        snapshot.avgRange20, adverseExcursion60,
+                        snapshot.recentHigh, snapshot.recentLow, sizing.finalQuantity)
+                : DynamicTradePlan.calculate(candidate.side, candidate.entry,
+                        snapshot.avgRange20, adverseExcursion60,
+                        snapshot.recentHigh, snapshot.recentLow, sizing.finalQuantity);
         if (!dynamicPlan.valid) {
             return FillResult.rejected(dynamicPlan.reasonCode, confirmation, sizing, dynamicPlan,
                     metrics, p01Filter, p02Filter, trendRegime, sleeve);
@@ -231,7 +235,78 @@ public final class CandidateLifecycle {
                 candidate.movementExtreme, candidate.movementDistance);
         return new FillResult(true, confirmedReason, published, premium15m,
                 confirmation, sizing, dynamicPlan, metrics, p01Filter, p02Filter,
-                trendRegime, sleeve);
+                trendRegime, sleeve, null);
+    }
+
+    /** Selective P01-only path used before the unchanged 15-second normal lifecycle gate. */
+    public static FillResult processEarlyP01Candidate(
+            SignalDecision candidate, MarketSnapshot snapshot, boolean feedFresh,
+            long candidateCreatedAt, long confirmationAt, double targetProgressBeforeFill,
+            double adverseExcursion60, boolean historicalReplayRiskVeto,
+            boolean noActivePlan, boolean rearmComplete, double originalEntry,
+            boolean stabilitySatisfied) {
+        if (candidate == null || snapshot == null || !candidate.isSignal() || !validPlan(candidate)
+                || !ContinuationConfirmation.requiresP01(candidate.family)) {
+            return FillResult.rejected(INVALID_DATA, null);
+        }
+        if (!currentlyExecutable(candidate, snapshot)) {
+            return FillResult.earlyRejected(LIMIT_NOT_EXECUTABLE, null, null, null,
+                    null, null, null);
+        }
+        String revalidation = entryRevalidationCode(candidate, snapshot, snapshot.ethLast);
+        if (!revalidation.isEmpty()) {
+            return FillResult.earlyRejected(revalidation, null, null, null,
+                    null, null, null);
+        }
+
+        ContinuationConfirmation.Result confirmation = ContinuationConfirmation.evaluate(
+                candidate.side, snapshot, feedFresh, candidateCreatedAt,
+                targetProgressBeforeFill);
+        long ageMs = confirmationAt - candidateCreatedAt;
+        NormalizedSignalMetrics.Result metrics = NormalizedSignalMetrics.calculate(
+                candidate.side, candidate, snapshot, adverseExcursion60);
+        P01SleeveFilter.Result p01Filter = P01SleeveFilter.evaluate(metrics, ageMs);
+        boolean premium15m = confirmation.premium15m;
+        ConfirmedSizing.Result sizing = confirmation.confirmed
+                ? ConfirmedSizing.computeConfirmedSizingQuantity(candidate, snapshot,
+                        confirmation, premium15m, historicalReplayRiskVeto)
+                : null;
+        DynamicTradePlan.Result dynamicPlan = sizing == null ? null
+                : DynamicTradePlan.calculate(candidate.side, candidate.entry,
+                        snapshot.avgRange20, adverseExcursion60,
+                        snapshot.recentHigh, snapshot.recentLow, sizing.finalQuantity);
+        P01EarlyConfirmation.Result early = P01EarlyConfirmation.evaluate(
+                candidate, SLEEVE_P01, ageMs, feedFresh,
+                snapshot.now == confirmationAt, noActivePlan, rearmComplete,
+                currentlyExecutable(candidate, snapshot), originalEntry,
+                confirmation, metrics, p01Filter, dynamicPlan);
+        if (!early.accepted) {
+            String reason = confirmation.confirmed
+                    ? P01EarlyConfirmation.REJECTED : confirmation.reasonCode;
+            if (dynamicPlan != null && !dynamicPlan.valid) reason = dynamicPlan.reasonCode;
+            return FillResult.earlyRejected(reason, confirmation, sizing, dynamicPlan,
+                    metrics, p01Filter, early);
+        }
+        if (!stabilitySatisfied) {
+            return FillResult.earlyRejected(P01EarlyConfirmation.STABILITY_PENDING,
+                    confirmation, sizing, dynamicPlan, metrics, p01Filter, early);
+        }
+
+        String family = candidate.family + " · P01"
+                + (premium15m ? " · P01_PREMIUM_15M" : "");
+        String text = premium15m
+                ? "CONTINUATION confirmée — Qualité premium 15 min"
+                : "CONTINUATION confirmée";
+        SignalDecision published = SignalDecision.confirmed(candidate.side, family,
+                P01EarlyConfirmation.CONFIRMED, text, candidate.score,
+                dynamicPlan.finalQuantity, candidate.entry,
+                dynamicPlan.takeProfit, dynamicPlan.stopLoss,
+                dynamicPlan.roundedTargetDistance, dynamicPlan.roundedStopDistance,
+                candidate.impulse, candidate.resetConfirmed, candidate.movementOrigin,
+                candidate.movementExtreme, candidate.movementDistance);
+        return new FillResult(true, P01EarlyConfirmation.CONFIRMED, published, premium15m,
+                confirmation, sizing, dynamicPlan, metrics, p01Filter, null,
+                null, SLEEVE_P01, early);
     }
 
     public static FillResult processAtFill(SignalDecision candidate, MarketSnapshot snapshot,
@@ -433,6 +508,7 @@ public final class CandidateLifecycle {
         public final P02SleeveFilter.Result p02SleeveFilter;
         public final TrendRegime60.Result trendRegime60;
         public final String sleeve;
+        public final P01EarlyConfirmation.Result earlyP01;
 
         private FillResult(boolean confirmed, String reasonCode, SignalDecision publishedSignal,
                            boolean premium15m,
@@ -442,7 +518,8 @@ public final class CandidateLifecycle {
                            NormalizedSignalMetrics.Result normalizedMetrics,
                            P01SleeveFilter.Result p01SleeveFilter,
                            P02SleeveFilter.Result p02SleeveFilter,
-                           TrendRegime60.Result trendRegime60, String sleeve) {
+                           TrendRegime60.Result trendRegime60, String sleeve,
+                           P01EarlyConfirmation.Result earlyP01) {
             this.confirmed = confirmed;
             this.reasonCode = reasonCode;
             this.publishedSignal = publishedSignal;
@@ -455,12 +532,13 @@ public final class CandidateLifecycle {
             this.p02SleeveFilter = p02SleeveFilter;
             this.trendRegime60 = trendRegime60;
             this.sleeve = sleeve == null ? SLEEVE_P01 : sleeve;
+            this.earlyP01 = earlyP01;
         }
 
         private static FillResult rejected(String reasonCode,
                                            ContinuationConfirmation.Result confirmation) {
             return new FillResult(false, reasonCode, null, false, confirmation, null, null,
-                    null, null, null, null, SLEEVE_P01);
+                    null, null, null, null, SLEEVE_P01, null);
         }
 
         private static FillResult rejected(String reasonCode,
@@ -468,7 +546,7 @@ public final class CandidateLifecycle {
                                            ConfirmedSizing.Result sizing,
                                            DynamicTradePlan.Result dynamicPlan) {
             return new FillResult(false, reasonCode, null, false, confirmation, sizing,
-                    dynamicPlan, null, null, null, null, SLEEVE_P01);
+                    dynamicPlan, null, null, null, null, SLEEVE_P01, null);
         }
 
         private static FillResult rejected(String reasonCode,
@@ -481,7 +559,18 @@ public final class CandidateLifecycle {
                                            TrendRegime60.Result trendRegime,
                                            String sleeve) {
             return new FillResult(false, reasonCode, null, false, confirmation, sizing,
-                    dynamicPlan, metrics, p01Filter, p02Filter, trendRegime, sleeve);
+                    dynamicPlan, metrics, p01Filter, p02Filter, trendRegime, sleeve, null);
+        }
+
+        private static FillResult earlyRejected(String reasonCode,
+                                                ContinuationConfirmation.Result confirmation,
+                                                ConfirmedSizing.Result sizing,
+                                                DynamicTradePlan.Result dynamicPlan,
+                                                NormalizedSignalMetrics.Result metrics,
+                                                P01SleeveFilter.Result p01Filter,
+                                                P01EarlyConfirmation.Result earlyP01) {
+            return new FillResult(false, reasonCode, null, false, confirmation, sizing,
+                    dynamicPlan, metrics, p01Filter, null, null, SLEEVE_P01, earlyP01);
         }
     }
 

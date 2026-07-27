@@ -53,7 +53,7 @@ public class CandidateLifecycleIntegrationTest {
         assertTrue(fill.confirmed);
         assertEquals("V2330_P01_DYNAMIC_PLAN_CONFIRMED", fill.reasonCode);
         assertNotNull(fill.publishedSignal);
-        assertEquals(2, fill.publishedSignal.quantity);
+        assertEquals(3, fill.publishedSignal.quantity);
         assertTrue(fill.sizing.replayRiskCapApplied);
     }
 
@@ -141,11 +141,11 @@ public class CandidateLifecycleIntegrationTest {
         int notificationQuantity = payload.quantityForNotification();
         int screenQuantity = payload.quantityForScreen();
         int diagnosticQuantity = payload.quantityForDiagnostic();
-        assertEquals(2, planQuantity);
+        assertEquals(3, planQuantity);
         assertEquals(planQuantity, notificationQuantity);
         assertEquals(planQuantity, screenQuantity);
         assertEquals(planQuantity, diagnosticQuantity);
-        assertTrue(payload.notificationBody(false).contains("· 2 ETH"));
+        assertTrue(payload.notificationBody(false).contains("· 3 ETH"));
     }
 
     @Test public void onlyTpAndSlAreLiveTerminalStatuses() {
