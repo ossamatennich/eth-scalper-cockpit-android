@@ -24,6 +24,13 @@ public final class ContinuationConfirmation {
 
     public static Result evaluate(String side, MarketSnapshot snapshot, boolean feedFresh,
                                   long candidateCreatedAt, double targetProgressBeforeFill) {
+        return evaluate(MarketProfile.eth(), side, snapshot, feedFresh, candidateCreatedAt,
+                targetProgressBeforeFill);
+    }
+
+    public static Result evaluate(MarketProfile profile, String side, MarketSnapshot snapshot,
+                                  boolean feedFresh, long candidateCreatedAt,
+                                  double targetProgressBeforeFill) {
         if (snapshot == null) return Result.reject("CONTINUATION_DONNEES_FILL_MANQUANTES");
 
         int direction = "LONG".equals(side) ? 1 : "SHORT".equals(side) ? -1 : 0;
@@ -38,7 +45,7 @@ public final class ContinuationConfirmation {
         long latency = Math.max(0L, snapshot.now - candidateCreatedAt);
 
         if (!feedFresh) {
-            return new Result(false, P01_STALE_REJECT, false, move1, move3, move8, move15, flow30);
+            return new Result(false, profile.staleReasonCode, false, move1, move3, move8, move15, flow30);
         }
         if (move1 < avg * 0.08 && flow30 <= 0.0) {
             return new Result(false, C04_REJECT, false, move1, move3, move8, move15, flow30);

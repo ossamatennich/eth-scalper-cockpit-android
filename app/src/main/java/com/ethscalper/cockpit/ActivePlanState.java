@@ -5,9 +5,12 @@ import java.util.Map;
 
 /** Immutable, validated representation of the one live final plan. */
 public final class ActivePlanState {
-    public static final int FORMAT_VERSION = 1;
+    public static final int FORMAT_VERSION = 2;
 
     public final int formatVersion;
+    public final String symbol;
+    public final String asset;
+    public final String profileVersion;
     public final String status;
     public final String side;
     public final String family;
@@ -44,9 +47,16 @@ public final class ActivePlanState {
     public final double p01Move15Aligned;
     public final double p01Flow30Aligned;
     public final String sizingDiagnostic;
+    public final double resultCostPerUnit;
+    public final double riskAllowancePerUnit;
+    public final double qualityRiskBudget;
+    public final double theoreticalMaximumLoss;
 
     private ActivePlanState(Builder b) {
         formatVersion = b.formatVersion;
+        symbol = text(b.symbol);
+        asset = text(b.asset);
+        profileVersion = text(b.profileVersion);
         status = text(b.status);
         side = text(b.side);
         family = text(b.family);
@@ -83,6 +93,10 @@ public final class ActivePlanState {
         p01Move15Aligned = b.p01Move15Aligned;
         p01Flow30Aligned = b.p01Flow30Aligned;
         sizingDiagnostic = text(b.sizingDiagnostic);
+        resultCostPerUnit = b.resultCostPerUnit;
+        riskAllowancePerUnit = b.riskAllowancePerUnit;
+        qualityRiskBudget = b.qualityRiskBudget;
+        theoreticalMaximumLoss = b.theoreticalMaximumLoss;
     }
 
     public static Builder builder() {
@@ -91,8 +105,10 @@ public final class ActivePlanState {
 
     public boolean isValid() {
         if (formatVersion != FORMAT_VERSION || !"ACTIVE".equals(status)) return false;
+        if (!MarketProfile.ETH_SYMBOL.equals(symbol) && !MarketProfile.SOL_SYMBOL.equals(symbol)) return false;
         if (!"LONG".equals(side) && !"SHORT".equals(side)) return false;
-        if (family.isEmpty() || quantity < 1 || quantity > 7 || score < 0 || score > 100) return false;
+        int maximum = MarketProfile.SOL_SYMBOL.equals(symbol) ? 120 : 7;
+        if (family.isEmpty() || quantity < 1 || quantity > maximum || score < 0 || score > 100) return false;
         if (!positive(entry) || !positive(takeProfit) || !positive(stopLoss)
                 || !positive(targetMove) || !positive(stopDistance) || !positive(lastPrice)
                 || !positive(lastBid) || !positive(lastAsk) || !positive(avgRange20)) return false;
@@ -100,12 +116,18 @@ public final class ActivePlanState {
         if ("SHORT".equals(side) && !(takeProfit < entry && stopLoss > entry)) return false;
         if (createdAt <= 0 || entryTriggeredAt < createdAt || finalConfirmedAt < entryTriggeredAt) return false;
         if (lastP01ConfirmedAt < 0 || notificationSignature.isEmpty() || notificationId <= 0) return false;
-        return finite(movementOrigin) && finite(movementExtreme) && finite(movementDistance);
+        return finite(movementOrigin) && finite(movementExtreme) && finite(movementDistance)
+                && finite(resultCostPerUnit) && resultCostPerUnit >= 0.0
+                && finite(riskAllowancePerUnit) && riskAllowancePerUnit >= 0.0
+                && finite(qualityRiskBudget) && qualityRiskBudget >= 0.0
+                && finite(theoreticalMaximumLoss) && theoreticalMaximumLoss >= 0.0;
     }
 
     public SignalDecision toSignalDecision() {
         if (!isValid()) return null;
-        return SignalDecision.confirmed(side, family,
+        MarketProfile profile = MarketProfile.SOL_SYMBOL.equals(symbol)
+                ? MarketProfile.sol() : MarketProfile.eth();
+        return SignalDecision.confirmed(profile, side, family,
                 reasonCode.isEmpty() ? ContinuationConfirmation.P01_CONFIRMED : reasonCode,
                 reasonText.isEmpty() ? "Plan final restauré" : reasonText,
                 score, quantity, entry, takeProfit, stopLoss, targetMove, stopDistance,
@@ -114,7 +136,9 @@ public final class ActivePlanState {
 
     public Map<String, String> toMap() {
         Map<String, String> out = new LinkedHashMap<>();
-        put(out, "formatVersion", formatVersion); put(out, "status", status);
+        put(out, "formatVersion", formatVersion); put(out, "symbol", symbol);
+        put(out, "asset", asset); put(out, "profileVersion", profileVersion);
+        put(out, "status", status);
         put(out, "side", side); put(out, "family", family);
         put(out, "reasonCode", reasonCode); put(out, "reasonText", reasonText);
         put(out, "score", score); put(out, "quantity", quantity);
@@ -132,14 +156,22 @@ public final class ActivePlanState {
         put(out, "p01Move1Aligned", p01Move1Aligned); put(out, "p01Move3Aligned", p01Move3Aligned);
         put(out, "p01Move8Aligned", p01Move8Aligned); put(out, "p01Move15Aligned", p01Move15Aligned);
         put(out, "p01Flow30Aligned", p01Flow30Aligned); put(out, "sizingDiagnostic", sizingDiagnostic);
+        put(out, "resultCostPerUnit", resultCostPerUnit);
+        put(out, "riskAllowancePerUnit", riskAllowancePerUnit);
+        put(out, "qualityRiskBudget", qualityRiskBudget);
+        put(out, "theoreticalMaximumLoss", theoreticalMaximumLoss);
         return out;
     }
 
     public static ActivePlanState fromMap(Map<String, String> values) {
         if (values == null || values.isEmpty()) return null;
         try {
+            String symbol = optional(values, "symbol", MarketProfile.ETH_SYMBOL);
+            MarketProfile profile = MarketProfile.SOL_SYMBOL.equals(symbol)
+                    ? MarketProfile.sol() : MarketProfile.eth();
             Builder b = builder()
-                    .formatVersion(integer(values, "formatVersion"))
+                    .formatVersion(FORMAT_VERSION)
+                    .market(profile)
                     .status(value(values, "status")).side(value(values, "side"))
                     .family(value(values, "family")).reasonCode(value(values, "reasonCode"))
                     .reasonText(value(values, "reasonText")).score(integer(values, "score"))
@@ -160,7 +192,11 @@ public final class ActivePlanState {
                     .p01(decimal(values, "p01Move1Aligned"), decimal(values, "p01Move3Aligned"),
                             decimal(values, "p01Move8Aligned"), decimal(values, "p01Move15Aligned"),
                             decimal(values, "p01Flow30Aligned"))
-                    .sizingDiagnostic(value(values, "sizingDiagnostic"));
+                    .sizingDiagnostic(value(values, "sizingDiagnostic"))
+                    .unitRisk(optionalDecimal(values, "resultCostPerUnit", 0.0),
+                            optionalDecimal(values, "riskAllowancePerUnit", 0.0),
+                            optionalDecimal(values, "qualityRiskBudget", 0.0),
+                            optionalDecimal(values, "theoreticalMaximumLoss", 0.0));
             ActivePlanState state = b.build();
             return state.isValid() ? state : null;
         } catch (RuntimeException ignored) {
@@ -172,6 +208,12 @@ public final class ActivePlanState {
         String value = map.get(key);
         if (value == null) throw new IllegalArgumentException(key);
         return value;
+    }
+    private static String optional(Map<String,String> map,String key,String fallback) {
+        String value=map.get(key); return value==null?fallback:value;
+    }
+    private static double optionalDecimal(Map<String,String> map,String key,double fallback) {
+        String value=map.get(key); return value==null?fallback:Double.parseDouble(value);
     }
 
     private static int integer(Map<String, String> map, String key) { return Integer.parseInt(value(map, key)); }
@@ -189,6 +231,7 @@ public final class ActivePlanState {
 
     public static final class Builder {
         private int formatVersion = FORMAT_VERSION;
+        private String symbol = MarketProfile.ETH_SYMBOL, asset = "ETH", profileVersion = "ETH_V23321";
         private String status = "ACTIVE", side = "", family = "", reasonCode = "", reasonText = "";
         private int score, quantity;
         private double entry, takeProfit, stopLoss, targetMove, stopDistance, lastPrice;
@@ -202,8 +245,11 @@ public final class ActivePlanState {
         private double p01Move1Aligned = Double.NaN, p01Move3Aligned = Double.NaN;
         private double p01Move8Aligned = Double.NaN, p01Move15Aligned = Double.NaN;
         private double p01Flow30Aligned = Double.NaN;
+        private double resultCostPerUnit, riskAllowancePerUnit, qualityRiskBudget;
+        private double theoreticalMaximumLoss;
 
         public Builder formatVersion(int v) { formatVersion=v; return this; }
+        public Builder market(MarketProfile profile) { symbol=profile.symbol;asset=profile.asset;profileVersion=profile.profileVersion;return this; }
         public Builder status(String v) { status=v; return this; }
         public Builder side(String v) { side=v; return this; }
         public Builder family(String v) { family=v; return this; }
@@ -223,6 +269,7 @@ public final class ActivePlanState {
         public Builder replayRisk(String code, String detail) { replayRiskReasonCode=code; replayRiskDetail=detail; return this; }
         public Builder p01(double move1, double move3, double move8, double move15, double flow30) { p01Move1Aligned=move1; p01Move3Aligned=move3; p01Move8Aligned=move8; p01Move15Aligned=move15; p01Flow30Aligned=flow30; return this; }
         public Builder sizingDiagnostic(String v) { sizingDiagnostic=v; return this; }
+        public Builder unitRisk(double cost,double allowance,double budget,double loss) { resultCostPerUnit=cost;riskAllowancePerUnit=allowance;qualityRiskBudget=budget;theoreticalMaximumLoss=loss;return this; }
         public ActivePlanState build() { return new ActivePlanState(this); }
     }
 }

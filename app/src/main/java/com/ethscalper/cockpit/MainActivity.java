@@ -63,7 +63,7 @@ public class MainActivity extends Activity {
 
     private LinearLayout root;
     private TextView statusPill, feedAge, decisionValue, decisionReason, actionValue, actionDetails;
-    private TextView ethPrice, ethQuotes, btcPrice, btcQuotes, movementValue, signalValue;
+    private TextView ethPrice, ethQuotes, solPrice, solQuotes, btcPrice, btcQuotes, movementValue, signalValue, solSignalValue;
     private TextView diagnosticValue, serviceInfo, aiInfo;
     private boolean showingLegacyCockpit;
     private boolean receiverRegistered;
@@ -127,7 +127,7 @@ public class MainActivity extends Activity {
         TextView eyebrow = text("NATIVE MARKET INTELLIGENCE", 11, CYAN, true);
         eyebrow.setLetterSpacing(0.12f);
         header.addView(eyebrow);
-        header.addView(text("ETH SCALPER\nCOCKPIT", 27, TEXT, true));
+        header.addView(text("ETH + SOL SCALPER\nCOCKPIT", 27, TEXT, true));
 
         LinearLayout statusRow = new LinearLayout(this);
         statusRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -148,13 +148,13 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.33.2.1 · All-Sleeve Quantity Uplift", 12, MUTED, true);
+        TextView version = text("v2.34.0 · Multi-Market Research", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
 
     private void buildDecisionCard() {
-        LinearLayout card = card("DÉCISION UNIQUE", ORANGE);
+        LinearLayout card = card("ÉTAT GÉNÉRAL MULTI-MARCHÉS", ORANGE);
         decisionValue = text("ATTENDRE", 36, ORANGE, true);
         decisionValue.setLetterSpacing(0.04f);
         card.addView(decisionValue);
@@ -179,6 +179,11 @@ public class MainActivity extends Activity {
         card.addView(ethPrice);
         ethQuotes = text("BID —    ·    ASK —", 14, MUTED, true);
         card.addView(ethQuotes);
+        card.addView(marketLabel("SOL / USDT PERP"));
+        solPrice = text("—", 34, TEXT, true);
+        card.addView(solPrice);
+        solQuotes = text("BID —    ·    ASK —", 14, MUTED, true);
+        card.addView(solQuotes);
         View separator = new View(this);
         separator.setBackgroundColor(BORDER);
         LinearLayout.LayoutParams separatorParams = new LinearLayout.LayoutParams(
@@ -206,10 +211,13 @@ public class MainActivity extends Activity {
     }
 
     private void buildSignalCard() {
-        LinearLayout card = card("SIGNAL NATIF", RED);
+        LinearLayout card = card("PLANS ETH + SOL", RED);
         signalValue = text("Aucun signal natif pour le moment.", 16, TEXT, true);
         signalValue.setLineSpacing(dp(3), 1f);
         card.addView(signalValue);
+        solSignalValue = text("SOLUSDT · analyse silencieuse", 16, TEXT, true);
+        solSignalValue.setPadding(0, dp(12), 0, 0);
+        card.addView(solSignalValue);
     }
 
     private void buildDiagnosticCard() {
@@ -425,6 +433,12 @@ public class MainActivity extends Activity {
             String action = state.optString("action", "Analyse du marché en cours");
             double eth = number(state, "eth"), bid = number(state, "bid"), ask = number(state, "ask");
             double btc = number(state, "btc"), btcBid = number(state, "btcBid"), btcAsk = number(state, "btcAsk");
+            JSONObject markets=state.optJSONObject("markets");
+            JSONObject solMarket=markets==null?null:markets.optJSONObject("SOLUSDT");
+            double sol=solMarket==null?Double.NaN:number(solMarket,"last");
+            double solBid=solMarket==null?Double.NaN:number(solMarket,"bid");
+            double solAsk=solMarket==null?Double.NaN:number(solMarket,"ask");
+            JSONObject solSignal=solMarket==null?null:solMarket.optJSONObject("signal");
             JSONObject movement = state.optJSONObject("movement");
             JSONObject lastSignal = state.optJSONObject("lastSignal");
             JSONArray diagnostics = state.optJSONArray("diagnostics");
@@ -443,9 +457,10 @@ public class MainActivity extends Activity {
                 if (statusPill == null) return;
                 renderConnection(connected, ageSeconds);
                 renderDecision(decision, visibleReason);
-                renderPrices(eth, bid, ask, btc, btcBid, btcAsk);
+                renderPrices(eth, bid, ask, sol, solBid, solAsk, btc, btcBid, btcAsk);
                 renderMovement(movement);
                 renderSignal(lastSignal, signalAt, decision, visibleReason, state.optBoolean("activeSignal", false), state.optString("activeSignalStatus", "NONE"));
+                renderSolSignal(solMarket,solSignal);
                 renderAction(action, decision, lastSignal, eth, signalAt,
                         state.optBoolean("activeSignal", false),
                         state.optString("activeSignalStatus", "NONE"),
@@ -483,11 +498,21 @@ public class MainActivity extends Activity {
         decisionReason.setText(reason);
     }
 
-    private void renderPrices(double eth, double bid, double ask, double btc, double btcBid, double btcAsk) {
+    private void renderPrices(double eth, double bid, double ask,double sol,double solBid,double solAsk, double btc, double btcBid, double btcAsk) {
         ethPrice.setText(formatPrice(eth));
         ethQuotes.setText("BID " + formatPrice(bid) + "    ·    ASK " + formatPrice(ask));
+        solPrice.setText(formatPrice(sol));solQuotes.setText("BID "+formatPrice(solBid)+"    ·    ASK "+formatPrice(solAsk));
         btcPrice.setText(formatPrice(btc));
         btcQuotes.setText("BID " + formatPrice(btcBid) + "    ·    ASK " + formatPrice(btcAsk));
+    }
+
+    private void renderSolSignal(JSONObject market,JSONObject signal){
+        if(solSignalValue==null)return;if(market==null){solSignalValue.setText("SOLUSDT · initialisation");return;}
+        if(signal==null){solSignalValue.setText("SOLUSDT · "+market.optString("state","ANALYSE")+" · aucun plan actif");return;}
+        String state=market.optString("state","ANALYSE");
+        solSignalValue.setText("SOLUSDT · "+state+"\n"+signal.optString("side","")+" · "+signal.optInt("qty",0)+" SOL"
+                +"\nLIMIT "+formatPrice(number(signal,"entry"))+" · TP "+formatPrice(number(signal,"tp"))+" · SL "+formatPrice(number(signal,"sl")));
+        solSignalValue.setTextColor(CYAN);
     }
 
     private void renderMovement(JSONObject movement) {
@@ -656,7 +681,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_Scalper_Diagnostic_v2_32_5_" +
+            String fileName = "ETH_SOL_Scalper_Diagnostic_v2_34_0_" +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -678,6 +703,9 @@ public class MainActivity extends Activity {
                 JSONArray persistentFrames = new JSONArray(persistentFramesRaw == null || persistentFramesRaw.trim().isEmpty() ? "[]" : persistentFramesRaw);
                 JSONObject overnightSummary = new JSONObject(overnightSummaryRaw == null || overnightSummaryRaw.trim().isEmpty() ? "{}" : overnightSummaryRaw);
                 addZipText(zip, "status.json", state.toString(2));
+                addZipText(zip, "markets.json", state.optJSONObject("markets") == null ? "{}" : state.optJSONObject("markets").toString(2));
+                addZipText(zip, "active_plans.json", state.optJSONArray("activePlans") == null ? "[]" : state.optJSONArray("activePlans").toString(2));
+                addZipText(zip, "profiles_manifest.json", "{\"version\":\"2.34.0\",\"profiles\":[\"ETH_V23321\",\"SOL_V1_20260727\"],\"referenceMarket\":\"BTCUSDT\"}");
                 addZipText(zip, "engine_metrics.json", metrics == null ? "{}" : metrics.toString(2));
                 addZipText(zip, "engine_metrics.txt", buildEngineMetricsText(state));
                 addZipText(zip, "observation_journal.json", observed == null ? "[]" : observed.toString(2));
@@ -694,7 +722,7 @@ public class MainActivity extends Activity {
                 addZipText(zip, "persistent_market_frames.jsonl", persistentFramesJsonl == null ? "" : persistentFramesJsonl);
                 addZipText(zip, "overnight_recorder_summary.json", overnightSummary.toString(2));
                 addZipText(zip, "overnight_recorder_summary.txt",
-                        "OVERNIGHT RECORDER v2.33.2.1\n\n" +
+                        "OVERNIGHT RECORDER v2.34.0\n\n" +
                         "observationEvents=" + overnightSummary.optInt("observationEvents", 0) + "\n" +
                         "marketFrames=" + overnightSummary.optInt("marketFrames", 0) + "\n" +
                         "durationSec=" + overnightSummary.optLong("durationSec", 0) + "\n" +
@@ -744,8 +772,8 @@ public class MainActivity extends Activity {
 
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
-        b.append("ETH SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.33.2.1 Android natif · All-Sleeve Quantity Uplift\n");
+        b.append("ETH + SOL SCALPER COCKPIT — DIAGNOSTIC\n");
+        b.append("Version app: v2.34.0 Android natif · Multi-Market Research\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
         b.append("Mode: V230_HYBRID_AI_SCALP_ENGINE — recherche uniquement, aucun trade réel\n\n");
 

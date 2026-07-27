@@ -1,6 +1,9 @@
 package com.ethscalper.cockpit;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 
 /** Transaction boundary for the dedicated active-plan state. */
@@ -25,10 +28,26 @@ public final class ActivePlanPersistence {
         }
     }
 
+    public boolean saveForMarket(ActivePlanState state) {
+        if (state == null || !state.isValid()) return false;
+        try {
+            Map<String,String> all = new LinkedHashMap<>(backend.readAll());
+            removePrefix(all, prefix(state.symbol));
+            for (Map.Entry<String,String> entry : state.toMap().entrySet()) {
+                all.put(prefix(state.symbol) + entry.getKey(), entry.getValue());
+            }
+            return backend.replaceAll(all);
+        } catch (RuntimeException ignored) { return false; }
+    }
+
     public RestoreResult restore() {
         try {
             Map<String, String> values = backend.readAll();
             if (values == null || values.isEmpty()) return RestoreResult.empty();
+            if (!values.containsKey("entry")) {
+                boolean namespaced=false;for(String key:values.keySet())if(key.startsWith("plan.")){namespaced=true;break;}
+                return namespaced?restore(MarketProfile.ETH_SYMBOL):RestoreResult.invalid();
+            }
             ActivePlanState state = ActivePlanState.fromMap(values);
             return state == null ? RestoreResult.invalid() : RestoreResult.restored(state);
         } catch (RuntimeException ignored) {
@@ -36,9 +55,40 @@ public final class ActivePlanPersistence {
         }
     }
 
+    public RestoreResult restore(String symbol) {
+        try {
+            Map<String,String> all=backend.readAll();
+            Map<String,String> values=extract(all,prefix(symbol));
+            if (values.isEmpty() && MarketProfile.ETH_SYMBOL.equals(symbol)
+                    && all.containsKey("entry")) values=new LinkedHashMap<>(all);
+            if (values.isEmpty()) return RestoreResult.empty();
+            ActivePlanState state=ActivePlanState.fromMap(values);
+            if (state==null || !symbol.equals(state.symbol)) return RestoreResult.invalid();
+            return RestoreResult.restored(state);
+        } catch (RuntimeException ignored) { return RestoreResult.invalid(); }
+    }
+
+    public List<RestoreResult> restoreAll(MarketRegistry registry) {
+        List<RestoreResult> out=new ArrayList<>();
+        for (MarketProfile profile:registry.tradedMarkets()) out.add(restore(profile.symbol));
+        return out;
+    }
+
     public boolean clearForTerminal(String status) {
         if (!SignalSafetyPolicies.isTerminalStatus(status)) return false;
         return clear();
+    }
+
+    public boolean clearForTerminal(String symbol,String status) {
+        if (!SignalSafetyPolicies.isTerminalStatus(status)) return false;
+        try {
+            Map<String,String> all=new LinkedHashMap<>(backend.readAll());
+            removePrefix(all,prefix(symbol));
+            if (MarketProfile.ETH_SYMBOL.equals(symbol) && all.containsKey("entry")) {
+                for (String key:new ArrayList<>(all.keySet())) if (!key.startsWith("plan.")) all.remove(key);
+            }
+            return backend.replaceAll(all);
+        } catch (RuntimeException ignored) { return false; }
     }
 
     public ResetResult resetDiagnostics(boolean activePlanPresent) {
@@ -54,9 +104,28 @@ public final class ActivePlanPersistence {
         }
     }
 
+    public boolean clear(String symbol) {
+        try {Map<String,String> all=new LinkedHashMap<>(backend.readAll());removePrefix(all,prefix(symbol));
+            if(MarketProfile.ETH_SYMBOL.equals(symbol)&&all.containsKey("entry"))for(String key:new ArrayList<>(all.keySet()))if(!key.startsWith("plan."))all.remove(key);
+            return backend.replaceAll(all);}catch(RuntimeException ignored){return false;}
+    }
+
     public interface Backend {
         Map<String, String> readAll();
         boolean replaceAll(Map<String, String> values);
+    }
+
+    private static String prefix(String symbol) { return "plan."+symbol+"."; }
+    private static Map<String,String> extract(Map<String,String> all,String prefix) {
+        Map<String,String> out=new LinkedHashMap<>();
+        if (all==null) return out;
+        for (Map.Entry<String,String> entry:all.entrySet()) {
+            if (entry.getKey().startsWith(prefix)) out.put(entry.getKey().substring(prefix.length()),entry.getValue());
+        }
+        return out;
+    }
+    private static void removePrefix(Map<String,String> all,String prefix) {
+        for (String key:new ArrayList<>(all.keySet())) if (key.startsWith(prefix)) all.remove(key);
     }
 
     public static final class RestoreResult {

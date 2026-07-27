@@ -112,6 +112,92 @@ public final class SignalEngine {
         return decision;
     }
 
+    /** Generic entry point. Historical calls remain an exact ETH shortcut. */
+    public synchronized SignalDecision evaluate(MarketSnapshot snapshot, MarketProfile profile) {
+        if (profile == null || snapshot == null) {
+            throw new IllegalArgumentException("snapshot/profile");
+        }
+        if (MarketProfile.ETH_SYMBOL.equals(profile.symbol)) return evaluate(snapshot);
+        if (!profile.symbol.equals(snapshot.symbol)) {
+            throw new IllegalArgumentException("Snapshot/profile symbol mismatch");
+        }
+        double spread = positive(snapshot.marketAsk) && positive(snapshot.marketBid)
+                ? snapshot.marketAsk - snapshot.marketBid : Double.NaN;
+        double maxSpread = profile.scaledMaximum(profile.maximumSpreadReference,
+                snapshot.marketLast, profile.priceTick);
+        if (Double.isFinite(spread) && spread > maxSpread) {
+            return SignalDecision.waiting(profile, "V230_SPREAD_BAD",
+                    "Spread trop large pour scalp research", 0, "NONE", false,
+                    snapshot.marketLast, snapshot.marketLast, 0.0, false);
+        }
+        double scaledAmin = profile.scaledMinimum(profile.aMinimumReference,
+                snapshot.marketLast);
+        if (!positive(scaledAmin)) {
+            return SignalDecision.waiting(profile, "V230_NO_DATA",
+                    "Données marché/BTC insuffisantes", 0, "NONE", false,
+                    snapshot.marketLast, snapshot.marketLast, 0.0, false);
+        }
+        double factor = .35 / scaledAmin;
+        SignalDecision ethDecision = evaluate(scaleForEthEngine(snapshot, factor));
+        if (!ethDecision.isSignal()) {
+            return SignalDecision.waiting(profile, ethDecision.reasonCode,
+                    ethDecision.reasonText, ethDecision.score, ethDecision.impulse,
+                    ethDecision.resetConfirmed, ethDecision.movementOrigin / factor,
+                    ethDecision.movementExtreme / factor,
+                    ethDecision.movementDistance / factor, ethDecision.movementConsumed);
+        }
+        int direction = "LONG".equals(ethDecision.side) ? 1 : -1;
+        double entry = direction > 0
+                ? (positive(snapshot.marketAsk) ? snapshot.marketAsk : snapshot.marketLast)
+                : (positive(snapshot.marketBid) ? snapshot.marketBid : snapshot.marketLast);
+        double target = profile.scaledMinimum(profile.p02SeedTargetReference, entry);
+        if (Math.abs(ethDecision.targetMove - TP_SCALP) > 1e-12) {
+            target = profile.ceilToTick(profile.detectorDistance(ethDecision.targetMove, entry, false));
+        }
+        double targetCap=profile.scaledMaximum(profile.targetMaximumReference,entry,target);
+        target=Math.min(target,targetCap);
+        double stop = profile.scaledMinimum(profile.p02SeedStopReference, entry);
+        if (Math.abs(ethDecision.stopDistance - SL_SCALP) > 1e-12) {
+            stop=profile.ceilToTick(profile.detectorDistance(ethDecision.stopDistance,entry,false));
+        }
+        double stopMin=profile.scaledMinimum(profile.stopMinimumReference,entry);
+        double stopCap=profile.scaledMaximum(profile.stopMaximumReference,entry,stopMin);
+        stop=Math.max(stopMin,Math.min(stop,stopCap));
+        double roundedEntry = profile.floorToTick(entry);
+        double tp = direction > 0 ? profile.floorToTick(roundedEntry + target)
+                : profile.ceilToTick(roundedEntry - target);
+        double sl = direction > 0 ? profile.floorToTick(roundedEntry - stop)
+                : profile.ceilToTick(roundedEntry + stop);
+        return SignalDecision.signal(profile, ethDecision.side, ethDecision.family,
+                ethDecision.score, ethDecision.quantity, roundedEntry, tp, sl,
+                Math.abs(tp - roundedEntry), Math.abs(sl - roundedEntry),
+                ethDecision.impulse, ethDecision.resetConfirmed,
+                ethDecision.movementOrigin / factor, ethDecision.movementExtreme / factor,
+                ethDecision.movementDistance / factor);
+    }
+
+    private static MarketSnapshot scaleForEthEngine(MarketSnapshot s, double factor) {
+        return MarketSnapshot.builder(s.now).lastSignalAt(s.lastSignalAt)
+                .eth(s.marketLast * factor, s.marketBid * factor, s.marketAsk * factor)
+                .btc(s.btcLast, s.btcBid, s.btcAsk)
+                .candleCounts(s.ethCandles, s.btcCandles)
+                .averages(s.avgRange20 * factor, s.avgVolume20)
+                .movement(s.move1 * factor, s.move3 * factor, s.move8 * factor,
+                        s.recentHigh * factor, s.recentLow * factor)
+                .move15(s.move15 * factor).flow(s.flowNorm, s.lastVolume)
+                .btcMove5(s.btcMove5)
+                .professionalFeatures(s.recentRange * factor, s.volumeRatio,
+                        s.rangePosition, s.distanceToHigh * factor,
+                        s.distanceToLow * factor, s.roomLong * factor,
+                        s.roomShort * factor, s.pullbackFromHigh * factor,
+                        s.pullbackFromLow * factor, s.move1Norm, s.move3Norm,
+                        s.move8Norm, s.moveAccel13, s.moveAccel38,
+                        s.breakoutHighDistance * factor,
+                        s.breakoutLowDistance * factor, s.antiBurstScore)
+                .flowWindows(s.flow15, s.flow30, s.flow60, s.flow120)
+                .btcMoves(s.btcMove1, s.btcMove3, s.btcMove5, s.btcMove8).build();
+    }
+
     private static Plan premiumContinuationPlan(MarketSnapshot s, Scores scores) {
         int side = scores.longScore >= scores.shortScore ? 1 : -1;
         double best = Math.max(scores.longScore, scores.shortScore);

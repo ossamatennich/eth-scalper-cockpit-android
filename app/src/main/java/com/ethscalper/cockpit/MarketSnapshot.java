@@ -1,6 +1,12 @@
 package com.ethscalper.cockpit;
 
 public final class MarketSnapshot {
+    public final String symbol;
+    public final String asset;
+    public final String profileVersion;
+    public final double marketLast;
+    public final double marketBid;
+    public final double marketAsk;
     public final long now;
     public final long lastSignalAt;
     public final double ethLast;
@@ -61,6 +67,13 @@ public final class MarketSnapshot {
     public final double antiBurstScore;
 
     private MarketSnapshot(Builder b) {
+        MarketProfile profile = b.profile == null ? MarketProfile.eth() : b.profile;
+        symbol = profile.symbol;
+        asset = profile.asset;
+        profileVersion = profile.profileVersion;
+        marketLast = b.ethLast;
+        marketBid = b.ethBid;
+        marketAsk = b.ethAsk;
         now = b.now;
         lastSignalAt = b.lastSignalAt;
         ethLast = b.ethLast;
@@ -124,6 +137,7 @@ public final class MarketSnapshot {
 
     public static final class Builder {
         private final long now;
+        private MarketProfile profile = MarketProfile.eth();
         private long lastSignalAt;
         private double ethLast, ethBid, ethAsk, btcLast, btcBid, btcAsk;
         private int ethCandles, btcCandles;
@@ -140,7 +154,14 @@ public final class MarketSnapshot {
         private Builder(long now) { this.now = now; }
 
         public Builder lastSignalAt(long v) { lastSignalAt = v; return this; }
-        public Builder eth(double last, double bid, double ask) { ethLast=last; ethBid=bid; ethAsk=ask; return this; }
+        /** Historical alias: always creates an ETHUSDT snapshot. */
+        public Builder eth(double last, double bid, double ask) {
+            profile=MarketProfile.eth(); ethLast=last; ethBid=bid; ethAsk=ask; return this;
+        }
+        public Builder market(MarketProfile marketProfile, double last, double bid, double ask) {
+            if (marketProfile == null) throw new IllegalArgumentException("marketProfile");
+            profile=marketProfile; ethLast=last; ethBid=bid; ethAsk=ask; return this;
+        }
         public Builder btc(double last, double bid, double ask) { btcLast=last; btcBid=bid; btcAsk=ask; return this; }
         public Builder candleCounts(int ethCount, int btcCount) { ethCandles=ethCount; btcCandles=btcCount; return this; }
         public Builder averages(double range, double volume) { avgRange20=range; avgVolume20=volume; return this; }

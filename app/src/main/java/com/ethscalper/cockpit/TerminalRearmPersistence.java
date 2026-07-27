@@ -2,6 +2,7 @@ package com.ethscalper.cockpit;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.LinkedHashMap;
 
 /** Atomic persistence and pure timing policy for the three-minute terminal rearm. */
 public final class TerminalRearmPersistence {
@@ -17,6 +18,15 @@ public final class TerminalRearmPersistence {
                 Long.toString(lastTerminalAt)));
     }
 
+    public boolean save(String symbol,long lastTerminalAt) {
+        if(lastTerminalAt<=0||backend==null)return false;
+        Map<String,String> values=new LinkedHashMap<>();
+        Map<String,String> current=backend.read();if(current!=null)values.putAll(current);
+        values.put(KEY_LAST_TERMINAL_AT+"."+symbol,Long.toString(lastTerminalAt));
+        if(MarketProfile.ETH_SYMBOL.equals(symbol))values.put(KEY_LAST_TERMINAL_AT,Long.toString(lastTerminalAt));
+        return backend.write(values);
+    }
+
     public long restore() {
         try {
             if (backend == null) return 0L;
@@ -27,6 +37,15 @@ public final class TerminalRearmPersistence {
         } catch (Exception ignored) {
             return 0L;
         }
+    }
+
+    public long restore(String symbol) {
+        try {
+            Map<String,String> values=backend.read();if(values==null)return 0;
+            String value=values.get(KEY_LAST_TERMINAL_AT+"."+symbol);
+            if(value==null&&MarketProfile.ETH_SYMBOL.equals(symbol))value=values.get(KEY_LAST_TERMINAL_AT);
+            long restored=Long.parseLong(value);return restored>0?restored:0;
+        }catch(Exception ignored){return 0;}
     }
 
     public static long remainingMs(long now, long lastTerminalAt) {

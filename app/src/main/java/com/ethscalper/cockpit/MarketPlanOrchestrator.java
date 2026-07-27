@@ -1,0 +1,167 @@
+package com.ethscalper.cockpit;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+
+/** Per-runtime candidate and TP/SL-only coordinator. It has no Android dependency. */
+public final class MarketPlanOrchestrator {
+    public static final String BTC_STALE="V2340_BTC_REFERENCE_FEED_STALE";
+    public static final String RANGE_DIAGNOSTIC=CandidateLifecycle.RANGE_FADE_DIAGNOSTIC_ONLY;
+
+    public Event evaluate(MarketRuntime runtime, SharedReferenceContext btc, long now,
+                          boolean marketFeedFresh, boolean btcFeedFresh) {
+        MarketSnapshot snapshot=MarketSnapshotFactory.build(runtime,btc,now);
+        Event terminal=terminalIfTouched(runtime,snapshot,now);
+        if(terminal!=null)return terminal;
+        if(runtime.hasActivePlan())return Event.none(runtime.lastSignal);
+        boolean fresh=marketFeedFresh&&btcFeedFresh;
+        Event confirmed=advanceCandidates(runtime,snapshot,now,fresh);
+        if(confirmed!=null)return confirmed;
+        if(!fresh||!runtime.allowsNewPlan(now)) {
+            runtime.lastDecision=SignalDecision.waiting(runtime.profile,
+                    marketFeedFresh?BTC_STALE:runtime.profile.staleReasonCode,
+                    "Nouveaux candidats bloqués; plans existants surveillés",0,"",false,0,0,0,false);
+            return Event.none(runtime.lastDecision);
+        }
+        String setup=P02SleeveFilter.setupCandidateFor(snapshot,runtime.profile);
+        if(runtime.p02SetupTracker.observe(setup)) addP02(runtime,snapshot,setup,now);
+        SignalDecision raw=runtime.signalEngine.evaluate(snapshot,runtime.profile);
+        runtime.lastDecision=raw;
+        if(raw!=null&&raw.isSignal()) {
+            if(raw.family.contains("RANGE_FADE")) return Event.diagnostic(RANGE_DIAGNOSTIC,raw);
+            addCandidate(runtime,new RuntimeCandidate(raw,CandidateLifecycle.SLEEVE_P01,now));
+        }
+        return Event.none(raw);
+    }
+
+    private Event advanceCandidates(MarketRuntime runtime,MarketSnapshot snapshot,long now,
+                                    boolean fresh) {
+        Iterator<Object> iterator=runtime.observedSignals.iterator();
+        while(iterator.hasNext()) {
+            Object value=iterator.next(); if(!(value instanceof RuntimeCandidate))continue;
+            RuntimeCandidate c=(RuntimeCandidate)value;
+            c.adverse=DynamicTradePlan.updateAdverseExcursion60(c.signal.side,c.signal.entry,
+                    snapshot.marketBid,snapshot.marketAsk,c.adverse);
+            c.favorable=DynamicTradePlan.updateFavorableExcursionBeforeFill(c.signal.side,
+                    c.signal.entry,snapshot.marketBid,snapshot.marketAsk,c.favorable);
+            if(CandidateLifecycle.targetReachedBeforeConfirmedFill(c.signal,snapshot)) {
+                iterator.remove();runtime.candidateTombstones.markMissed(c.signature);
+                return Event.diagnostic(CandidateLifecycle.TARGET_BEFORE_FILL,c.signal);
+            }
+            long age=now-c.createdAt;
+            long max=CandidateLifecycle.SLEEVE_P02.equals(c.sleeve)?45_000L:90_000L;
+            if(age>max){iterator.remove();runtime.candidateTombstones.markMissed(c.signature);continue;}
+            if(!fresh||!CandidateLifecycle.currentlyExecutable(c.signal,snapshot)) {
+                c.resetEarly();continue;
+            }
+            CandidateLifecycle.FillResult result;
+            if(CandidateLifecycle.SLEEVE_P01.equals(c.sleeve)&&age<15_000L) {
+                CandidateLifecycle.FillResult quality=CandidateLifecycle.processEarlyP01Candidate(
+                        runtime.profile,c.signal,snapshot,true,c.createdAt,now,progress(c),c.adverse,
+                        false,!runtime.hasActivePlan(),runtime.rearmRemainingMs(now)==0,
+                        c.signal.entry,false);
+                P01EarlyConfirmation.StabilityResult stability=P01EarlyConfirmation.advance(now,
+                        c.earlySince,c.earlyMode,quality.earlyP01);
+                c.earlySince=stability.qualitySince;c.earlyMode=stability.mode;
+                if(!stability.confirmed)continue;
+                result=CandidateLifecycle.processEarlyP01Candidate(runtime.profile,c.signal,
+                        snapshot,true,c.createdAt,now,progress(c),c.adverse,false,
+                        !runtime.hasActivePlan(),runtime.rearmRemainingMs(now)==0,c.signal.entry,true);
+            } else {
+                TrendRegime60.Result trend=CandidateLifecycle.SLEEVE_P02.equals(c.sleeve)
+                        ? trend(runtime,c,snapshot,now):null;
+                result=CandidateLifecycle.processPendingCandidate(runtime.profile,c.signal,
+                        snapshot,true,c.createdAt,now,progress(c),c.adverse,false,c.sleeve,trend);
+            }
+            if(result.confirmed) {
+                iterator.remove();ActivePlanState state=state(runtime,result,now,snapshot);
+                runtime.activePlan=state;runtime.lastSignal=result.publishedSignal;
+                runtime.lastP01ConfirmedAt=now;
+                return Event.confirmed(result.publishedSignal,state,result);
+            }
+        }
+        return null;
+    }
+
+    private void addP02(MarketRuntime runtime,MarketSnapshot s,String setup,long now) {
+        String side=P02SleeveFilter.sideFor(setup);if(side.isEmpty())return;
+        int d="LONG".equals(side)?1:-1;
+        double entry=d>0?s.marketAsk:s.marketBid;if(!(entry>0))return;
+        double tp=runtime.profile.scaledMinimum(runtime.profile.p02SeedTargetReference,entry);
+        double sl=runtime.profile.scaledMinimum(runtime.profile.p02SeedStopReference,entry);
+        SignalDecision seed=SignalDecision.signal(runtime.profile,side,
+                "v2.34 P02_CONTINUATION",80,ConfirmedSizing.BASE_QUANTITY,
+                runtime.profile.floorToTick(entry),runtime.profile.roundPriceConservative(entry+d*tp,d>0),
+                runtime.profile.roundPriceConservative(entry-d*sl,d>0),tp,sl,"P02",true,entry,entry,0);
+        NormalizedSignalMetrics.Result metrics=NormalizedSignalMetrics.calculate(runtime.profile,
+                side,seed,s,0);
+        if(P02SleeveFilter.prefilter(metrics).accepted)addCandidate(runtime,
+                new RuntimeCandidate(seed,CandidateLifecycle.SLEEVE_P02,now));
+    }
+
+    private void addCandidate(MarketRuntime runtime,RuntimeCandidate candidate) {
+        if(runtime.candidateTombstones.blocks(candidate.signature))return;
+        for(Object value:runtime.observedSignals) if(value instanceof RuntimeCandidate
+                &&((RuntimeCandidate)value).signature.equals(candidate.signature))return;
+        runtime.observedSignals.addLast(candidate);
+    }
+
+    private static TrendRegime60.Result trend(MarketRuntime r,RuntimeCandidate c,
+                                               MarketSnapshot s,long now) {
+        List<TrendRegime60.MinuteClose> closes=new ArrayList<>();
+        for(MarketRuntime.MarketBar b:r.candles)closes.add(new TrendRegime60.MinuteClose(b.openTime,b.close));
+        List<TrendRegime60.Point> points=TrendRegime60.pointsFromMinuteCloses(closes,now,s.marketLast);
+        NormalizedSignalMetrics.Result metrics=NormalizedSignalMetrics.calculate(r.profile,
+                c.signal.side,c.signal,s,c.adverse);
+        return TrendRegime60.evaluate(c.signal.side,metrics.a,metrics,points,now);
+    }
+
+    private static Event terminalIfTouched(MarketRuntime r,MarketSnapshot s,long now) {
+        if(!r.hasActivePlan())return null;ActivePlanState p=r.activePlan;
+        double exitQuote="LONG".equals(p.side)?s.marketBid:s.marketAsk;
+        String status="";
+        if("LONG".equals(p.side)){if(exitQuote>=p.takeProfit)status="TP_TOUCHED";else if(exitQuote<=p.stopLoss)status="SL_TOUCHED";}
+        else {if(exitQuote<=p.takeProfit)status="TP_TOUCHED";else if(exitQuote>=p.stopLoss)status="SL_TOUCHED";}
+        if(status.isEmpty())return null;r.terminal(now,status);return Event.terminal(status,p,exitQuote);
+    }
+
+    private static ActivePlanState state(MarketRuntime r,CandidateLifecycle.FillResult fill,
+                                         long now,MarketSnapshot s) {
+        SignalDecision d=fill.publishedSignal;DynamicTradePlan.Result p=fill.dynamicPlan;
+        String signature=signature(d,now);
+        return ActivePlanState.builder().market(r.profile).side(d.side).family(d.family)
+                .reasonCode(d.reasonCode).reasonText(d.reasonText).score(d.score).quantity(d.quantity)
+                .prices(d.entry,d.takeProfit,d.stopLoss).risk(d.targetMove,d.stopDistance)
+                .times(now,now,now).premium15m(fill.premium15m)
+                .notification(signature,3000+Math.floorMod(signature.hashCode(),1_000_000))
+                .lastMarket(s.marketLast,s.marketBid,s.marketAsk,s.avgRange20)
+                .lastP01ConfirmedAt(now).movement(d.impulse,d.resetConfirmed,d.movementOrigin,
+                        d.movementExtreme,d.movementDistance)
+                .unitRisk(p.resultCostPerUnit,p.riskAllowancePerUnit,p.qualityRiskBudget,
+                        p.theoreticalMaximumLoss).sizingDiagnostic(sizing(p)).build();
+    }
+
+    private static String sizing(DynamicTradePlan.Result p){return String.format(Locale.US,
+            "costPerUnit=%.4f|allowancePerUnit=%.4f|budget=%.2f|riskPerUnit=%.4f|quantity=%d|loss=%.4f",
+            p.resultCostPerUnit,p.riskAllowancePerUnit,p.qualityRiskBudget,p.riskPerUnit,p.finalQuantity,p.theoreticalMaximumLoss);}
+    private static double progress(RuntimeCandidate c){return c.signal.targetMove>0?c.favorable/c.signal.targetMove:0;}
+    public static String signature(SignalDecision d,long now){return d.symbol+"|"+d.side+"|"+d.family+"|"+d.entry+"|"+d.takeProfit+"|"+d.stopLoss+"|"+(now/60_000L);}
+
+    public static final class RuntimeCandidate {
+        public final SignalDecision signal;public final String sleeve,signature;public final long createdAt;
+        public double adverse,favorable;public long earlySince;public String earlyMode="";
+        RuntimeCandidate(SignalDecision signal,String sleeve,long createdAt){this.signal=signal;this.sleeve=sleeve;this.createdAt=createdAt;this.signature=signal.symbol+"|"+signal.side+"|"+signal.family+"|"+signal.entry+"|"+signal.takeProfit+"|"+signal.stopLoss;}
+        void resetEarly(){earlySince=0;earlyMode="";}
+    }
+
+    public static final class Event {
+        public final String type,reasonCode,status;public final SignalDecision signal;public final ActivePlanState plan;public final CandidateLifecycle.FillResult fill;public final double exitPrice;
+        private Event(String type,String reason,String status,SignalDecision signal,ActivePlanState plan,CandidateLifecycle.FillResult fill,double exitPrice){this.type=type;this.reasonCode=reason;this.status=status;this.signal=signal;this.plan=plan;this.fill=fill;this.exitPrice=exitPrice;}
+        static Event none(SignalDecision d){return new Event("NONE","","",d,null,null,Double.NaN);}
+        static Event diagnostic(String r,SignalDecision d){return new Event("DIAGNOSTIC",r,"",d,null,null,Double.NaN);}
+        static Event confirmed(SignalDecision d,ActivePlanState p,CandidateLifecycle.FillResult f){return new Event("CONFIRMED",d.reasonCode,"",d,p,f,Double.NaN);}
+        static Event terminal(String s,ActivePlanState p,double x){return new Event("TERMINAL",s,s,null,p,null,x);}
+    }
+}

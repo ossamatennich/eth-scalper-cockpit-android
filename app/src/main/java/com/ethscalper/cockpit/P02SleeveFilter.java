@@ -13,8 +13,14 @@ public final class P02SleeveFilter {
     private P02SleeveFilter() {}
 
     public static String setupCandidateFor(MarketSnapshot s) {
+        return setupCandidateFor(s, MarketProfile.eth());
+    }
+
+    public static String setupCandidateFor(MarketSnapshot s, MarketProfile profile) {
         if (s == null) return NONE;
-        double threshold = Math.max(0.75, s.avgRange20 * 0.55);
+        double floor = MarketProfile.ETH_SYMBOL.equals(profile.symbol) ? 0.75
+                : profile.scaledMinimum(profile.p02AppearanceFloorReference, s.marketLast);
+        double threshold = Math.max(floor, s.avgRange20 * 0.55);
         boolean c1Long = s.move1 > threshold && s.move3 > threshold * 1.15;
         boolean c1Short = s.move1 < -threshold && s.move3 < -threshold * 1.15;
         boolean c2Long = s.move3 > threshold * 1.35 && s.move1 > -s.avgRange20 * 0.25;

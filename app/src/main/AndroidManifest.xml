@@ -14,7 +14,7 @@
         android:allowBackup="true"
         android:usesCleartextTraffic="false"
         android:theme="@style/AppTheme"
-        android:label="ETH Scalper Cockpit v2.33.2.1 — All-Sleeve Quantity Uplift"
+        android:label="ETH + SOL Scalper Cockpit v2.34.0 — Multi-Market Research"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
 

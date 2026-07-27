@@ -20,6 +20,7 @@ public final class DynamicTradePlan {
     public static final double DEFAULT_RISK_BUDGET_USDT = 14.55;
     public static final double DEFAULT_PRICE_TICK = 0.01;
     public static final int MAX_QUANTITY = 7;
+    public static final String MARKET_QUANTITY_INVALID = "V2340_MARKET_QUANTITY_INVALID";
 
     private DynamicTradePlan() {}
 
@@ -66,6 +67,79 @@ public final class DynamicTradePlan {
                 qualityCap, RESULT_ROUND_TRIP_COST_PER_ETH,
                 RISK_EXECUTION_ALLOWANCE_PER_ETH, LEGACY_RISK_BUDGET_USDT,
                 DEFAULT_RISK_BUDGET_USDT, DEFAULT_PRICE_TICK, true);
+    }
+
+    /** Profile-aware calculation. The ETH branch is intentionally the historical path. */
+    public static Result calculate(MarketProfile profile, String side, double entry,
+                                   double avgRange20, double e60, double recentHigh,
+                                   double recentLow, int qualityLevel) {
+        if (profile == null) return Result.rejected(INVALID_DATA);
+        if (MarketProfile.ETH_SYMBOL.equals(profile.symbol)) {
+            return calculate(side, entry, avgRange20, e60, recentHigh, recentLow, qualityLevel);
+        }
+        return calculateAdaptive(profile, side, entry, avgRange20, e60,
+                recentHigh, recentLow, qualityLevel);
+    }
+
+    private static Result calculateAdaptive(MarketProfile profile, String side, double entry,
+                                            double avgRange20, double e60,
+                                            double recentHigh, double recentLow,
+                                            int qualityLevel) {
+        int direction = "LONG".equals(side) ? 1 : "SHORT".equals(side) ? -1 : 0;
+        if (direction == 0 || !positive(entry) || !finite(avgRange20) || !finite(e60)
+                || !positive(recentHigh) || !positive(recentLow)) {
+            return Result.rejected(INVALID_DATA);
+        }
+        double aMin = profile.scaledMinimum(profile.aMinimumReference, entry);
+        double a = Math.max(aMin, avgRange20);
+        double adverse = Math.max(0.0, e60);
+        double room = direction > 0 ? Math.max(0.0, recentHigh - entry)
+                : Math.max(0.0, entry - recentLow);
+        double stopMin = profile.scaledMinimum(profile.stopMinimumReference, entry);
+        double stopCap = profile.scaledMaximum(profile.stopMaximumReference, entry, stopMin);
+        double stopRequired = Math.max(stopMin, Math.max(a, adverse + .20 * a));
+        double stopMaximum = Math.min(stopCap, 2.00 * a);
+        double resultCost = profile.scaledMinimum(profile.resultRoundTripCostReference, entry);
+        double allowance = profile.scaledMinimum(profile.riskExecutionAllowanceReference, entry);
+        double scaledTargetFloor = profile.scaledMinimum(profile.targetFloorReference, entry);
+        double scaledTargetCap = profile.scaledMaximum(profile.targetMaximumReference, entry,
+                scaledTargetFloor);
+        double targetFloor = Math.max(scaledTargetFloor, 1.95 * resultCost);
+        double targetRaw = 2.70 * a + .20 * room;
+        double targetDistance = clamp(targetRaw, targetFloor, scaledTargetCap);
+        double rr = targetDistance / stopRequired;
+        double stopLoss = direction > 0
+                ? floorToTick(entry - stopRequired, profile.priceTick)
+                : ceilToTick(entry + stopRequired, profile.priceTick);
+        double takeProfit = direction > 0
+                ? floorToTick(entry + targetDistance, profile.priceTick)
+                : ceilToTick(entry - targetDistance, profile.priceTick);
+        double roundedStop = direction > 0 ? entry - stopLoss : stopLoss - entry;
+        double roundedTarget = direction > 0 ? takeProfit - entry : entry - takeProfit;
+        double riskPerUnit = roundedStop + allowance;
+        int level = Math.max(3, Math.min(7, qualityLevel));
+        double qualityBudget = profile.qualityRiskBudget(level);
+        int rawQuantity = (int) Math.floor((qualityBudget + 1e-12) / riskPerUnit);
+        int steppedQuantity = (rawQuantity / profile.quantityStep) * profile.quantityStep;
+        double loss = steppedQuantity * riskPerUnit;
+        Result calculated = new Result(false, CONFIRMED, a, adverse, room, stopRequired,
+                stopMaximum, targetFloor, targetRaw, targetDistance, stopLoss, takeProfit,
+                roundedStop, roundedTarget, rr, resultCost, allowance, qualityBudget,
+                riskPerUnit, rawQuantity, level, steppedQuantity, loss, profile.priceTick,
+                profile.legacyRiskBudgetUsdt, rawQuantity, steppedQuantity, false,
+                steppedQuantity, qualityBudget, rawQuantity, loss, loss);
+        if (stopRequired - stopMaximum > 1e-9) return calculated.withRejection(STOP_TOO_WIDE);
+        if (!positive(stopLoss) || !positive(takeProfit) || !positive(roundedStop)
+                || !positive(roundedTarget) || !finite(rr)) {
+            return calculated.withRejection(INVALID_DATA);
+        }
+        if (rr < 1.40) return calculated.withRejection(REWARD_RISK_INSUFFICIENT);
+        if (rawQuantity < profile.minimumQuantity || steppedQuantity < profile.minimumQuantity
+                || steppedQuantity > profile.maximumQuantity
+                || loss > qualityBudget + 1e-9) {
+            return calculated.withRejection(MARKET_QUANTITY_INVALID);
+        }
+        return calculated.withValidity(CONFIRMED);
     }
 
     /** Preserves the exact v2.33.1 sizing path for the unchanged P02 sleeve. */
@@ -243,6 +317,12 @@ public final class DynamicTradePlan {
         public final int upliftedRiskQuantity;
         public final double theoreticalMaximumLossBeforeUplift;
         public final double theoreticalMaximumLossAfterUplift;
+        /** Generic per-unit aliases; historical PerEth fields remain byte-compatible. */
+        public final double resultCostPerUnit;
+        public final double riskAllowancePerUnit;
+        public final double qualityRiskBudget;
+        public final double riskPerUnit;
+        public final int rawQuantity;
 
         private Result(boolean valid, String reasonCode, double a,
                        double adverseExcursion60, double structuralRoom,
@@ -293,6 +373,11 @@ public final class DynamicTradePlan {
             this.upliftedRiskQuantity = upliftedRiskQuantity;
             this.theoreticalMaximumLossBeforeUplift = theoreticalMaximumLossBeforeUplift;
             this.theoreticalMaximumLossAfterUplift = theoreticalMaximumLossAfterUplift;
+            this.resultCostPerUnit = estimatedRoundTripCostPerEth;
+            this.riskAllowancePerUnit = riskExecutionAllowancePerEth;
+            this.qualityRiskBudget = riskBudgetUsdt;
+            this.riskPerUnit = riskPerEth;
+            this.rawQuantity = riskQuantity;
         }
 
         private static Result rejected(String code) {

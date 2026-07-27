@@ -17,17 +17,15 @@ public final class SharedPreferencesTerminalRearmBackend implements TerminalRear
 
     @Override public Map<String, String> read() {
         Map<String, String> values = new HashMap<>();
-        String value = preferences.getString(TerminalRearmPersistence.KEY_LAST_TERMINAL_AT, "");
-        if (value != null && !value.isEmpty()) {
-            values.put(TerminalRearmPersistence.KEY_LAST_TERMINAL_AT, value);
-        }
+        for(Map.Entry<String,?> entry:preferences.getAll().entrySet())
+            if(entry.getValue() instanceof String)values.put(entry.getKey(),(String)entry.getValue());
         return values;
     }
 
     @Override public boolean write(Map<String, String> values) {
-        String value = values == null ? null
-                : values.get(TerminalRearmPersistence.KEY_LAST_TERMINAL_AT);
-        return value != null && preferences.edit()
-                .putString(TerminalRearmPersistence.KEY_LAST_TERMINAL_AT, value).commit();
+        if(values==null)return false;
+        SharedPreferences.Editor editor=preferences.edit().clear();
+        for(Map.Entry<String,String> entry:values.entrySet())editor.putString(entry.getKey(),entry.getValue());
+        return editor.commit();
     }
 }
