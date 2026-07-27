@@ -211,13 +211,9 @@ public final class CandidateLifecycle {
 
         ConfirmedSizing.Result sizing = ConfirmedSizing.computeConfirmedSizingQuantity(
                 candidate, snapshot, confirmation, premium15m, historicalReplayRiskVeto);
-        DynamicTradePlan.Result dynamicPlan = p02
-                ? DynamicTradePlan.calculateLegacy(candidate.side, candidate.entry,
-                        snapshot.avgRange20, adverseExcursion60,
-                        snapshot.recentHigh, snapshot.recentLow, sizing.finalQuantity)
-                : DynamicTradePlan.calculate(candidate.side, candidate.entry,
-                        snapshot.avgRange20, adverseExcursion60,
-                        snapshot.recentHigh, snapshot.recentLow, sizing.finalQuantity);
+        DynamicTradePlan.Result dynamicPlan = DynamicTradePlan.calculate(
+                candidate.side, candidate.entry, snapshot.avgRange20, adverseExcursion60,
+                snapshot.recentHigh, snapshot.recentLow, sizing.finalQuantity);
         if (!dynamicPlan.valid) {
             return FillResult.rejected(dynamicPlan.reasonCode, confirmation, sizing, dynamicPlan,
                     metrics, p01Filter, p02Filter, trendRegime, sleeve);

@@ -34,6 +34,22 @@ public class DualSleeveLifecycleIntegrationTest {
                 .build();
     }
 
+    private MarketSnapshot baselineThreeSnapshot(String side, long now) {
+        int d = "LONG".equals(side) ? 1 : -1;
+        double high = d > 0 ? 100.8 : 105;
+        double low = d > 0 ? 95 : 99.2;
+        return MarketSnapshot.builder(now)
+                .eth(100, d > 0 ? 99.99 : 100, d > 0 ? 100 : 100.01)
+                .btc(60_000, 59_999, 60_001).candleCounts(60, 20)
+                .averages(.455, 100)
+                .movement(d * .30, d * .60, d * .50, high, low)
+                .move15(d * .10).flow(d * .20, 100)
+                .flowWindows(d * .20, d * .20, d * .50, d * .50)
+                .professionalFeatures(high - low, 1, d > 0 ? .8 : .2,
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                .build();
+    }
+
     private TrendRegime60.Result trend(String side, MarketSnapshot snapshot, long now) {
         return regime(side, snapshot, now, false);
     }
@@ -113,11 +129,65 @@ public class DualSleeveLifecycleIntegrationTest {
         CandidateLifecycle.FillResult fill = confirm("LONG", 30_000, true);
         assertTrue(fill.confirmed);
         ConfirmedSignalPayload payload = ConfirmedSignalPayload.from(fill.publishedSignal);
+        assertEquals(2, fill.dynamicPlan.baselineFinalQuantity);
+        assertEquals(3, fill.dynamicPlan.finalQuantity);
         assertEquals(fill.dynamicPlan.finalQuantity, fill.publishedSignal.quantity);
         assertEquals(fill.publishedSignal.quantity, payload.quantityForScreen());
         assertEquals(fill.publishedSignal.quantity, payload.quantityForNotification());
         assertEquals(fill.publishedSignal.quantity, payload.quantityForDiagnostic());
-        assertTrue(fill.dynamicPlan.theoreticalMaximumLoss <= 10.0 + 1e-9);
+        assertTrue(fill.dynamicPlan.theoreticalMaximumLoss <= 14.55 + 1e-9);
+    }
+
+    @Test public void p02LegacyTwoPublishesExactlyThreeWithoutChangingLevels() {
+        long now = CREATED + 30_000;
+        MarketSnapshot snapshot = snapshot("LONG", now, true);
+        CandidateLifecycle.FillResult fill = confirm("LONG", 30_000, true);
+        DynamicTradePlan.Result legacy = DynamicTradePlan.calculateLegacy(
+                "LONG", p02("LONG").entry, snapshot.avgRange20, .1,
+                snapshot.recentHigh, snapshot.recentLow, fill.sizing.finalQuantity);
+        assertEquals(2, legacy.finalQuantity);
+        assertEquals(3, fill.publishedSignal.quantity);
+        assertEquals(legacy.stopLoss, fill.publishedSignal.stopLoss, 0.0);
+        assertEquals(legacy.takeProfit, fill.publishedSignal.takeProfit, 0.0);
+        assertEquals(p02("LONG").entry, fill.publishedSignal.entry, 0.0);
+    }
+
+    @Test public void p02LegacyThreePublishesExactlyFour() {
+        long now = CREATED + 30_000;
+        MarketSnapshot snapshot = baselineThreeSnapshot("SHORT", now);
+        CandidateLifecycle.FillResult fill = CandidateLifecycle.processPendingCandidate(
+                p02("SHORT"), snapshot, true, CREATED, now, 0, .1, false,
+                CandidateLifecycle.SLEEVE_P02, trend("SHORT", snapshot, now));
+        assertTrue(fill.confirmed);
+        assertEquals(3, fill.dynamicPlan.legacyRiskQuantity);
+        assertEquals(3, fill.dynamicPlan.baselineFinalQuantity);
+        assertEquals(4, fill.publishedSignal.quantity);
+    }
+
+    @Test public void p02UsesGeneralUpliftMappingForLegacySixAndSeven() {
+        int p02LegacySix = 6;
+        int p02LegacySeven = 7;
+        assertEquals(7, DynamicTradePlan.upliftQuantity(p02LegacySix));
+        assertEquals(7, DynamicTradePlan.upliftQuantity(p02LegacySeven));
+    }
+
+    @Test public void p02FinalQuantityIsAlwaysWithinThreeAndSeven() {
+        for (int legacy = 1; legacy <= 7; legacy++) {
+            int quantity = DynamicTradePlan.upliftQuantity(legacy);
+            assertTrue(quantity >= 3);
+            assertTrue(quantity <= 7);
+        }
+    }
+
+    @Test public void natural20260727P02ControlChangesOnlyQuantity() {
+        CandidateLifecycle.FillResult fill = confirm("LONG", 30_000, true);
+        assertEquals(2, fill.dynamicPlan.baselineFinalQuantity);
+        assertEquals(3, fill.dynamicPlan.finalQuantity);
+        assertEquals(-8.07, -5.38 * fill.dynamicPlan.finalQuantity
+                / fill.dynamicPlan.baselineFinalQuantity, 1e-9);
+        assertEquals(20_000L, CandidateLifecycle.P02_MIN_CONFIRMATION_AGE_MS);
+        assertEquals(45_000L, CandidateLifecycle.P02_MAX_PENDING_AGE_MS);
+        assertEquals(1_000L, P01EarlyConfirmation.REQUIRED_STABILITY_MS);
     }
 
     @Test public void rangeFadeRemainsDiagnosticOnlyBesideBothSleeves() {

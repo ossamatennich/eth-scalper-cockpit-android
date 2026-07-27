@@ -177,6 +177,21 @@ public class ActivePlanPersistenceIntegrationTest {
         assertEquals(2, ActivePlanState.fromMap(values).quantity);
     }
 
+    @Test public void upliftedP02QuantityIsIdenticalAfterPersistenceRestore() {
+        Map<String, String> values = activeState().toMap();
+        values.put("family", "P02_TREND");
+        values.put("quantity", "3");
+        values.put("sizingDiagnostic", "{\"baselineFinalQuantity\":2,\"finalQuantity\":3}");
+        ActivePlanState p02 = ActivePlanState.fromMap(values);
+        MemoryBackend backend = new MemoryBackend();
+        assertTrue(new ActivePlanPersistence(backend).save(p02));
+        ActivePlanState restored = new ActivePlanPersistence(backend).restore().state;
+        assertNotNull(restored);
+        assertEquals(3, restored.quantity);
+        assertEquals(3, restored.toSignalDecision().quantity);
+        assertTrue(restored.sizingDiagnostic.contains("\"finalQuantity\":3"));
+    }
+
     private ActivePlanState restore() {
         return new ActivePlanPersistence(savedBackend()).restore().state;
     }
