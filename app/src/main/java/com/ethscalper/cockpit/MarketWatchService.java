@@ -25,11 +25,13 @@ import org.json.JSONObject;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.io.IOException;
 import java.io.File;
 import java.io.FileInputStream;
@@ -71,7 +73,7 @@ public class MarketWatchService extends Service {
     private static final long LEGACY_LIMIT_MANUAL_ENTRY_DELAY_MS = 15 * 1000L;
     private static final long ETH_BOOK_MAX_AGE_MS = 8_000L;
     private static final String PERSISTENT_DIR = "eth_scalper_overnight_recorder";
-    private static final String PERSISTENT_OBSERVATIONS_FILE = "persistent_observation_journal.jsonl";
+    private static final String PERSISTENT_OBSERVATIONS_FILE = "persistent_market_events.jsonl";
     private static final String PERSISTENT_MARKET_FRAMES_FILE = "persistent_market_frames.jsonl";
     private static final long PERSISTENT_MARKET_FRAME_INTERVAL_MS = 5 * 1000L;
     private static final String ALERT_DEDUPE_PREFERENCES = "confirmed_signal_alerts_v2330";
@@ -276,7 +278,7 @@ public class MarketWatchService extends Service {
         if (frameNewest > newest) newest = frameNewest;
 
         o.put("mode", "PERSISTENT_OVERNIGHT_RECORDER");
-        o.put("version", "2.34.0");
+        o.put("version", BuildConfig.VERSION_NAME);
         o.put("description", "Journal persistant: conserve les signaux et les frames même si l'écran/app est fermé, jusqu'à réinitialisation diagnostic.");
         o.put("observationEvents", obsStats.optInt("count", 0));
         o.put("marketFrames", frameStats.optInt("count", 0));
@@ -354,6 +356,7 @@ public class MarketWatchService extends Service {
             }
         });
         marketDataRouter=new MarketDataRouter(marketRegistry,marketCoordinator,legacyMirrors);
+        migratePersistentFramesToSymbolAwareFormat();
         ensureChannels(this);
         activePlanPersistence = new ActivePlanPersistence(
                 new SharedPreferencesActivePlanBackend(this));
@@ -406,9 +409,7 @@ public class MarketWatchService extends Service {
             lastPersistentMarketFrameAt = 0;
             resetPersistentRecorder();
             for(MarketRuntime runtime:marketCoordinator.runtimes().values())
-                if(runtime.hasActivePlan())persistRuntimePlanEvent(runtime.activePlan,
-                        "V23401_DIAGNOSTICS_RESET_ACTIVE_PLAN_REINSERTED",
-                        System.currentTimeMillis());
+                flushRuntimeRecorder(runtime,System.currentTimeMillis(),true);
             if (activePlan != null) {
                 observedSignals.addLast(activePlan);
                 observedSignalId = Math.max(observedSignalId, activePlan.id);
@@ -524,6 +525,11 @@ public class MarketWatchService extends Service {
             runtime.activePlan=restored.state;
             runtime.lastSignal=restored.state.toSignalDecision();
             runtime.lastP01ConfirmedAt=restored.state.lastP01ConfirmedAt;
+            runtime.recorder.record(System.currentTimeMillis(),"PLAN_RESTORED",
+                    ActivePlanPersistence.RESTORED,"Plan actif restauré silencieusement.",
+                    "STRUCTURAL_SHARED","","",runtime.lastSignal,null,0,true,true,0,
+                    runtimePlanDetails(runtime.activePlan));
+            flushRuntimeRecorder(runtime,System.currentTimeMillis(),true);
             notifyRestoredMarketPlan(runtime);
         }
     }
@@ -605,13 +611,13 @@ public class MarketWatchService extends Service {
         NotificationManager manager = (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
         if (manager == null) return;
 
-        NotificationChannel watch = new NotificationChannel(CH_WATCH, "Moteur ETH permanent",
+        NotificationChannel watch = new NotificationChannel(CH_WATCH, "Moteur ETH + SOL permanent",
                 NotificationManager.IMPORTANCE_LOW);
         watch.setDescription("Maintient la surveillance ETH/BTC native en arrière-plan.");
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH + SOL confirmés — v2.34.0",
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH + SOL confirmés — v"+BuildConfig.VERSION_NAME,
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Un son signifie exclusivement qu'un signal final manuel est confirmé.");
         signals.enableVibration(true);
@@ -1135,14 +1141,73 @@ public class MarketWatchService extends Service {
             MarketPlanOrchestrator.Event event=marketOrchestrator.evaluate(runtime,sharedBtc,now,
                     marketFresh,sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
             if("CONFIRMED".equals(event.type)) {
-                if(activePlanPersistence.saveForMarket(event.plan)) notifyMarketPlan(event.plan,true);
-                else {runtime.activePlan=null;runtime.lastSignal=null;}
+                MarketSnapshot current=MarketSnapshotFactory.build(runtime,sharedBtc,now);
+                if(activePlanPersistence.saveForMarket(event.plan)) {
+                    runtime.recorder.record(now,"PLAN_CONFIRMED",event.reasonCode,
+                            "Plan persisté et publié.","STRUCTURAL_SHARED","",event.fill.sleeve,
+                            event.signal,current,Math.max(0,now-event.plan.createdAt),marketFresh,
+                            sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,runtimePlanDetails(event.plan));
+                    notifyMarketPlan(event.plan,true);
+                } else {runtime.recorder.record(now,"PLAN_PERSISTENCE_REJECTED",
+                        ActivePlanPersistence.PERSIST_FAILED,"Publication refusée : persistance atomique impossible.",
+                        "STRUCTURAL_SHARED","",event.fill.sleeve,event.signal,current,
+                        Math.max(0,now-event.plan.createdAt),marketFresh,
+                        sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,runtimePlanDetails(event.plan));
+                    runtime.activePlan=null;runtime.lastSignal=null;}
             } else if("TERMINAL".equals(event.type)) {
                 terminalRearmPersistence.save(profile.symbol,now);runtime.lastTerminalAt=now;
                 activePlanPersistence.clearForTerminal(profile.symbol,event.status);
                 notifyMarketTerminal(event.plan,event.status);
             }
+            recordRuntimeEngineDiagnostics(runtime,now,marketFresh,
+                    sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
+            flushRuntimeRecorder(runtime,now,false);
         }
+    }
+
+    private void flushRuntimeRecorder(MarketRuntime runtime,long now,boolean forceFrame) {
+        if(runtime==null)return;
+        List<MarketDiagnosticRecorder.Record> pending=runtime.recorder.eventsAfter(
+                runtime.lastPersistedRecorderSequence);
+        for(MarketDiagnosticRecorder.Record record:pending) {
+            try { appendPersistentJsonLine(PERSISTENT_OBSERVATIONS_FILE,
+                    new JSONObject(record.values)); } catch(Exception ignored) {}
+            runtime.lastPersistedRecorderSequence=Math.max(
+                    runtime.lastPersistedRecorderSequence,record.sequence);
+        }
+        if(forceFrame||runtime.lastPersistentFrameAt==0
+                ||now-runtime.lastPersistentFrameAt>=PERSISTENT_MARKET_FRAME_INTERVAL_MS) {
+            List<Map<String,Object>> frames=runtime.recorder.frameMaps();
+            if(!frames.isEmpty()) {
+                try { appendPersistentJsonLine(PERSISTENT_MARKET_FRAMES_FILE,
+                        new JSONObject(frames.get(frames.size()-1))); } catch(Exception ignored) {}
+                runtime.lastPersistentFrameAt=now;
+            }
+        }
+    }
+
+    private void recordRuntimeEngineDiagnostics(MarketRuntime runtime,long now,
+                                                boolean marketFresh,boolean btcFresh) {
+        MarketSnapshot snapshot=MarketSnapshotFactory.build(runtime,sharedBtc,now);
+        for(DiagnosticEntry entry:runtime.signalEngine.recentDiagnostics(40)) {
+            if(entry.timestamp<=runtime.lastRecordedEngineDiagnosticAt)continue;
+            runtime.recorder.record(entry.timestamp,"ENGINE_DIAGNOSTIC",entry.code,entry.message,
+                    "STRUCTURAL_SHARED","","",runtime.lastDecision,snapshot,0,marketFresh,
+                    btcFresh,0,Collections.emptyMap());
+            runtime.lastRecordedEngineDiagnosticAt=Math.max(
+                    runtime.lastRecordedEngineDiagnosticAt,entry.timestamp);
+        }
+    }
+
+    private static Map<String,Object> runtimePlanDetails(ActivePlanState plan) {
+        LinkedHashMap<String,Object> out=new LinkedHashMap<>();if(plan==null)return out;
+        out.put("quantity",plan.quantity);out.put("entry",plan.entry);
+        out.put("tp",plan.takeProfit);out.put("sl",plan.stopLoss);
+        out.put("riskBudgetUsdt",plan.qualityRiskBudget);
+        out.put("resultCostPerUnit",plan.resultCostPerUnit);
+        out.put("riskAllowancePerUnit",plan.riskAllowancePerUnit);
+        out.put("theoreticalMaximumLoss",plan.theoreticalMaximumLoss);
+        out.put("notificationId",plan.notificationId);return out;
     }
 
     private void syncSharedBtcFromLegacy() {
@@ -1721,6 +1786,21 @@ public class MarketWatchService extends Service {
         LAST_OVERNIGHT_RECORDER_SUMMARY_JSON = "{}";
     }
 
+    private void migratePersistentFramesToSymbolAwareFormat() {
+        File file=persistentFile(PERSISTENT_MARKET_FRAMES_FILE);if(!file.exists())return;
+        String raw=readTextFile(file);if(raw==null||raw.isEmpty())return;
+        StringBuilder migrated=new StringBuilder();boolean changed=false;
+        for(String line:raw.split("\\r?\\n")){if(line.trim().isEmpty())continue;
+            try {JSONObject value=new JSONObject(line);if(!value.has("symbol")){
+                    value.put("symbol",MarketProfile.ETH_SYMBOL);value.put("asset","ETH");
+                    value.put("profileVersion",MarketProfile.eth().profileVersion);changed=true;}
+                migrated.append(value).append('\n');}catch(Exception ignored){}
+        }
+        if(!changed)return;try(FileOutputStream out=new FileOutputStream(file,false)){
+            out.write(migrated.toString().getBytes(StandardCharsets.UTF_8));out.flush();
+        }catch(Exception ignored){}
+    }
+
     private void persistMarketFrame(MarketFrame frame, long now, boolean force) {
         if (frame == null) return;
         if (!force && lastPersistentMarketFrameAt > 0 && now - lastPersistentMarketFrameAt < PERSISTENT_MARKET_FRAME_INTERVAL_MS) {
@@ -1729,6 +1809,9 @@ public class MarketWatchService extends Service {
 
         try {
             JSONObject json = marketFrameJson(frame);
+            json.put("symbol",MarketProfile.ETH_SYMBOL);
+            json.put("asset","ETH");
+            json.put("profileVersion",MarketProfile.eth().profileVersion);
             json.put("persistedAt", now);
             appendPersistentJsonLine(PERSISTENT_MARKET_FRAMES_FILE, json);
             lastPersistentMarketFrameAt = now;
@@ -1740,6 +1823,10 @@ public class MarketWatchService extends Service {
 
         try {
             JSONObject o = new JSONObject();
+            o.put("symbol",MarketProfile.ETH_SYMBOL);
+            o.put("asset","ETH");
+            o.put("profileVersion",MarketProfile.eth().profileVersion);
+            o.put("eventType",event);
             o.put("event", event);
             o.put("eventAt", now);
             o.put("id", item.id);
@@ -1864,6 +1951,15 @@ public class MarketWatchService extends Service {
 
             try { o.put("signalMetrics", signalMetricsJson(item)); } catch (Exception ignored) {}
             appendPersistentJsonLine(PERSISTENT_OBSERVATIONS_FILE, o);
+            MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+            ethRuntime.recorder.record(now,event,item.lastConfirmationCode,
+                    item.signal.reasonText,"ETH_HISTORICAL_ONLY",item.replayRiskReasonCode,
+                    item.sleeve,item.signal,snapshot,Math.max(0,now-item.createdAt),
+                    ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                    item.adverseExcursion60,Map.of("candidateSignature",item.candidateSignature,
+                            "quantity",item.signal.quantity,"entry",item.signal.entry,
+                            "tp",item.signal.takeProfit,"sl",item.signal.stopLoss));
+            ethRuntime.lastPersistedRecorderSequence=ethRuntime.recorder.latestSequence();
         } catch (Exception ignored) {}
     }
 
@@ -1874,6 +1970,8 @@ public class MarketWatchService extends Service {
 
         MarketFrame frame = new MarketFrame(now, snapshot, decision, setupCandidateFor(snapshot));
         marketFrames.addLast(frame);
+        marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.frame(now,decision,snapshot,
+                ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
         updateMarketFrameFutureLabels(snapshot.ethLast, now);
         persistMarketFrame(frame, now, decision != null && decision.isSignal());
 
@@ -3758,7 +3856,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "TEST NOTIFICATION ETH + SOL", "Test silencieux v2.34.0 · aucun ordre n’est envoyé", false));
+                "TEST NOTIFICATION ETH + SOL", "Test silencieux v"+BuildConfig.VERSION_NAME+" · aucun ordre n’est envoyé", false));
     }
 
     private Notification buildSignalNotification(String title, String body, boolean audible) {
@@ -3809,7 +3907,7 @@ public class MarketWatchService extends Service {
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return new Notification.Builder(this, CH_WATCH)
                 .setSmallIcon(R.drawable.ic_stat_eth)
-                .setContentTitle("ETH Scalper · moteur natif actif")
+                .setContentTitle("ETH + SOL Scalper · moteur natif actif")
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setOngoing(true)
@@ -3838,7 +3936,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.34.0.1-android-hardened-multi-market-research");
+            state.put("version", BuildConfig.VERSION_NAME+"-android-complete-multi-market-research");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -3877,6 +3975,11 @@ public class MarketWatchService extends Service {
                 if(runtime.hasActivePlan())activePlans.put(activePlanJson(runtime.activePlan));
             }
             state.put("activePlans",activePlans);
+            state.put("marketDiagnostics",runtimeEventsJson("ALL"));
+            state.put("marketCandidates",runtimeEventsJson("CANDIDATE"));
+            state.put("marketPlanHistory",runtimeEventsJson("PLAN"));
+            state.put("multiMarketFrames",runtimeFramesJson());
+            state.put("marketSummary",runtimeSummaryJson());
             double ethRisk=activeSignal&&lastSignal!=null?lastSignal.quantity*(lastSignal.stopDistance+2.35):0;
             double totalRisk=ethRisk;
             JSONObject riskBySymbol=new JSONObject();riskBySymbol.put(MarketProfile.ETH_SYMBOL,ethRisk);
@@ -3999,6 +4102,32 @@ public class MarketWatchService extends Service {
         if(signal!=null)value.put("signal",signalJson(signal));return value;
     }
 
+    private JSONArray runtimeEventsJson(String filter) throws Exception {
+        JSONArray out=new JSONArray();
+        for(MarketRuntime runtime:marketCoordinator.runtimes().values()) {
+            for(Map<String,Object> values:runtime.recorder.eventMaps()) {
+                String type=String.valueOf(values.get("eventType"));
+                if("CANDIDATE".equals(filter)&&!type.contains("CANDIDATE")
+                        &&!type.contains("ADMISSION")&&!type.contains("P01")&&!type.contains("P02"))continue;
+                if("PLAN".equals(filter)&&!type.contains("PLAN")
+                        &&!"TP_TOUCHED".equals(type)&&!"SL_TOUCHED".equals(type))continue;
+                out.put(new JSONObject(values));
+            }
+        }
+        return out;
+    }
+
+    private JSONArray runtimeFramesJson() throws Exception {
+        JSONArray out=new JSONArray();for(MarketRuntime runtime:marketCoordinator.runtimes().values())
+            for(Map<String,Object> values:runtime.recorder.frameMaps())out.put(new JSONObject(values));
+        return out;
+    }
+
+    private JSONObject runtimeSummaryJson() throws Exception {
+        JSONObject out=new JSONObject();for(MarketRuntime runtime:marketCoordinator.runtimes().values())
+            out.put(runtime.profile.symbol,new JSONObject(runtime.recorder.summary()));return out;
+    }
+
     private JSONObject activePlanJson(ActivePlanState p)throws Exception{
         JSONObject value=new JSONObject();value.put("symbol",p.symbol);value.put("asset",p.asset);
         value.put("profileVersion",p.profileVersion);value.put("side",p.side);value.put("family",p.family);
@@ -4078,7 +4207,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH + SOL Scalper Cockpit v2.34.0 — Multi-Market Research");
+        m.put("rulesProfile", "ETH + SOL Scalper Cockpit v"+BuildConfig.VERSION_NAME+" — Complete Multi-Market Research");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 

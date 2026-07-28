@@ -1,5 +1,7 @@
 import math
 import importlib.util
+import hashlib
+import json
 from pathlib import Path
 import unittest
 
@@ -41,6 +43,30 @@ class SolProfileValidatorTest(unittest.TestCase):
     def test_target_floor_above_cap_is_rejected(self):
         with self.assertRaises(RuntimeError):
             validator.validate_distance_bounds(0.03, 0.10, 0.24, 0.23)
+
+
+class SolProfileManifestIntegrityTest(unittest.TestCase):
+    def test_versioned_manifest_matches_canonical_sha_and_report(self):
+        root = Path(__file__).resolve().parents[1]
+        manifest_path = root / "SOL_PROFILE_V1_CORPUS_MANIFEST.json"
+        report_path = root / "SOL_PROFILE_V1_RESEARCH_REPORT.md"
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
+        expected = document.pop("manifestSha256")
+        canonical = json.dumps(
+            document, sort_keys=True, separators=(",", ":")).encode()
+        self.assertEqual(expected, hashlib.sha256(canonical).hexdigest())
+        self.assertEqual(
+            {"ETHUSDT": 1088640, "SOLUSDT": 1088640, "BTCUSDT": 1088640},
+            document["counts"])
+        self.assertEqual(
+            {"ETHUSDT": 0, "SOLUSDT": 0, "BTCUSDT": 0}, document["gaps"])
+        self.assertEqual(
+            {"ETHUSDT": 0, "SOLUSDT": 0, "BTCUSDT": 0}, document["duplicates"])
+        self.assertEqual(15496, document["quantityRejectionsAboveSafetyCap"])
+        report = report_path.read_text(encoding="utf-8")
+        self.assertIn(expected, report)
+        self.assertIn("1,088,640 bougies", report)
+        self.assertIn("15,496 calculs de quantité rejetés", report)
 
 
 if __name__ == "__main__":

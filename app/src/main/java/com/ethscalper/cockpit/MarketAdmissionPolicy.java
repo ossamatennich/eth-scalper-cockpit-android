@@ -17,8 +17,8 @@ public final class MarketAdmissionPolicy {
     public static final String TARGET_CONSUMED = "V23401_CONTINUATION_ALREADY_CONSUMED";
     public static final String FLOW_CONFLICT = "V23401_CONTINUATION_FLOW_CONFLICT";
     public static final String MOVEMENT_CONFLICT = "V23401_CONTINUATION_MOVEMENT_CONFLICT";
-    public static final String SOL_REPLAY_UNAVAILABLE =
-            "V23401_SOL_HISTORICAL_REPLAY_MODEL_UNAVAILABLE";
+    public static final String MARKET_REPLAY_UNAVAILABLE =
+            "V23402_MARKET_HISTORICAL_REPLAY_MODEL_UNAVAILABLE";
 
     public enum Classification { STRUCTURAL_SHARED, ETH_HISTORICAL_ONLY }
 
@@ -67,8 +67,8 @@ public final class MarketAdmissionPolicy {
             return Result.reject(MOVEMENT_CONFLICT);
         }
 
-        String historicalDiagnostic = profile.adaptivePriceScale
-                ? SOL_REPLAY_UNAVAILABLE : "";
+        String historicalDiagnostic = !MarketProfile.ETH_SYMBOL.equals(profile.symbol)
+                ? MARKET_REPLAY_UNAVAILABLE : "";
         return new Result(true, ACCEPTED, Classification.STRUCTURAL_SHARED,
                 false, historicalDiagnostic);
     }

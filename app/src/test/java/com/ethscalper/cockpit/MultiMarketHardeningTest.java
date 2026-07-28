@@ -78,7 +78,7 @@ public final class MultiMarketHardeningTest {
                 snapshot(sol,"LONG"),context(true,true,false,true,false,false,false,false));
         assertTrue(result.accepted);assertEquals(MarketAdmissionPolicy.ACCEPTED,result.reasonCode);
         assertFalse(result.historicalReplayRiskVeto);
-        assertEquals(MarketAdmissionPolicy.SOL_REPLAY_UNAVAILABLE,
+        assertEquals(MarketAdmissionPolicy.MARKET_REPLAY_UNAVAILABLE,
                 result.historicalDiagnosticCode);
         assertTrue(MarketAdmissionPolicy.rules().stream().anyMatch(r->
                 r.classification==MarketAdmissionPolicy.Classification.ETH_HISTORICAL_ONLY));
@@ -143,6 +143,10 @@ public final class MultiMarketHardeningTest {
         assertEquals(CandidateLifecycle.SLEEVE_P02,event.fill.sleeve);
         assertEquals(1_234L,runtime.lastP01ConfirmedAt);
         assertEquals(1_234L,event.plan.lastP01ConfirmedAt);
+        assertTrue(runtime.recorder.eventMaps().stream().anyMatch(e->
+                "SOLUSDT".equals(e.get("symbol"))&&"P02_OLS60".equals(e.get("eventType"))));
+        assertTrue(runtime.recorder.eventMaps().stream().anyMatch(e->
+                "CONFIRMATION_READY".equals(e.get("eventType"))&&"P02".equals(e.get("sleeve"))));
     }
 
     private static Fixture fixture(){return new Fixture();}

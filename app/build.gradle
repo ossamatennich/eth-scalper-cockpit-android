@@ -3,13 +3,14 @@ plugins { id 'com.android.application' }
 android {
     namespace 'com.ethscalper.cockpit'
     compileSdk 35
+    buildFeatures { buildConfig true }
 
     defaultConfig {
         applicationId 'com.ethscalper.cockpit'
         minSdk 26
         targetSdk 35
-        versionCode 23401
-        versionName '2.34.0.1'
+        versionCode 23402
+        versionName '2.34.0.2'
     }
 
     buildTypes {

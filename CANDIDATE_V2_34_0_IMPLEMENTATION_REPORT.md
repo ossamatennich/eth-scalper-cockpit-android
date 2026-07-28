@@ -1,13 +1,13 @@
-# Candidate v2.34.0.1 — Implementation report
+# Candidate v2.34.0.2 — Implementation report
 
 ## Référence et portée
 
 - Dépôt : `ossamatennich/eth-scalper-cockpit-android`
 - Branche : `agent/v2.32.7-scalp-p01-candidate`
-- HEAD de départ verrouillé : `04926018fb2260e5fee89bb6b2bdaf1acf652d4d`
+- HEAD de départ verrouillé : `baed6bc535dce77228a51b907ed77aac0e17ea14`
 - Base PR : `agent/v2.32.6-candidate`
-- Version : `23401` / `2.34.0.1`
-- Nom : **ETH + SOL Scalper Cockpit v2.34.0.1 — Hardened Multi-Market Research**
+- Version : `23402` / `2.34.0.2`
+- Nom : **ETH + SOL Scalper Cockpit v2.34.0.2 — Complete Multi-Market Research**
 - Mode : `RESEARCH_ONLY`, `realTradingAllowed=false`, exécution manuelle uniquement.
 
 ## Routage extensible
@@ -24,7 +24,17 @@
 
 `MarketAdmissionPolicy` applique avant admission les protections structurelles partagées : validité du candidat et du plan, fraîcheur du marché et de BTC, verrou mono-plan par symbole, réarmement, mémoire opposée isolée, déduplication, tombstones, mouvement consommé et conflits momentum/flow. Les règles sont classées `STRUCTURAL_SHARED` ou `ETH_HISTORICAL_ONLY`.
 
-Le modèle historique replay ETH n'est pas présenté comme un veto SOL : son absence produit le diagnostic comparatif explicite `V23401_SOL_HISTORICAL_REPLAY_MODEL_UNAVAILABLE`. Le chemin ETH historique demeure inchangé.
+Le modèle historique replay ETH n'est pas présenté comme un veto non-ETH : son absence produit le diagnostic comparatif générique `V23402_MARKET_HISTORICAL_REPLAY_MODEL_UNAVAILABLE`, avec symbole, profil et classification `ETH_HISTORICAL_ONLY`. Ce diagnostic n'est jamais bloquant. Le chemin ETH historique demeure inchangé.
+
+## Recorder multi-marchés complet
+
+Chaque `MarketRuntime` possède un `MarketDiagnosticRecorder` borné et indépendant. Il enregistre frames, diagnostics moteur, décisions, admissions, candidats P01/P02, déduplications, tombstones, confirmations, persistance/publication, terminaux, restaurations, resets et réarmements. Chaque ligne porte le symbole, l'actif, la version du profil et les métriques de marché/sleeve/risque. Seuls `PLAN_CONFIRMED` ou `PLAN_RESTORED` comptent comme trades ; un candidat pending ou rejeté ne le peut pas.
+
+Les événements et frames sont persistés dans `persistent_market_events.jsonl` et `persistent_market_frames.jsonl`. Le reset conserve et réinsère chaque plan actif dans le journal de son symbole. Une migration ajoute les identifiants ETH aux anciennes frames dépourvues de symbole.
+
+## Export ZIP v2.34.0.2
+
+Le ZIP `ETH_SOL_Scalper_Diagnostic_v2_34_0_2_<date>.zip` expose les 19 fichiers contractuels multi-marchés, dont diagnostics/candidats/plans/frames en JSON et CSV, journaux persistants JSON/JSONL, profils, résumés et health check. Les exports historiques ETH complémentaires restent disponibles sous des noms `legacy_eth_*`. Les versions produites utilisent `BuildConfig.VERSION_NAME` et `BuildConfig.VERSION_CODE`.
 
 ## Timestamp P01
 

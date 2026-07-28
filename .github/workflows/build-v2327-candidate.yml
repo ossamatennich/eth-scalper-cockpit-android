@@ -1,4 +1,4 @@
-name: Version candidate de l'APK v2.34.0.1 hardened multi-market research
+name: Version candidate de l'APK v2.34.0.2 complete multi-market research
 
 on:
   push:
@@ -28,6 +28,8 @@ jobs:
         run: gradle testDebugUnitTest
       - name: All unit tests
         run: gradle test
+      - name: Python SOL profile validator tests
+        run: python3 -m unittest tools/test_validate_sol_profile.py
       - name: Build debug APK
         run: gradle assembleDebug
       - name: Build release APK
@@ -37,5 +39,5 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ETH-SOL-Scalper-Cockpit-v2.34.0.1-debug-apk
+          name: ETH-SOL-Scalper-Cockpit-v2.34.0.2-debug-apk
           path: app/build/outputs/apk/debug/*.apk

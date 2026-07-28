@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Collections;
 
 /** Per-runtime candidate and TP/SL-only coordinator. It has no Android dependency. */
 public final class MarketPlanOrchestrator {
@@ -13,8 +16,11 @@ public final class MarketPlanOrchestrator {
     public Event evaluate(MarketRuntime runtime, SharedReferenceContext btc, long now,
                           boolean marketFeedFresh, boolean btcFeedFresh) {
         MarketSnapshot snapshot=MarketSnapshotFactory.build(runtime,btc,now);
+        runtime.recorder.frame(now,runtime.lastDecision,snapshot,marketFeedFresh,btcFeedFresh);
         Event terminal=terminalIfTouched(runtime,snapshot,now);
-        if(terminal!=null)return terminal;
+        if(terminal!=null){record(runtime,snapshot,terminal.plan,null,now,terminal.status,
+                terminal.reasonCode,"Plan terminé au "+terminal.status,"STRUCTURAL_SHARED","",
+                "",0,marketFeedFresh,btcFeedFresh,0,Map.of("exitPrice",terminal.exitPrice));return terminal;}
         if(runtime.hasActivePlan())return Event.none(runtime.lastSignal);
         boolean fresh=marketFeedFresh&&btcFeedFresh;
         Event confirmed=advanceCandidates(runtime,snapshot,now,fresh);
@@ -23,6 +29,11 @@ public final class MarketPlanOrchestrator {
             runtime.lastDecision=SignalDecision.waiting(runtime.profile,
                     marketFeedFresh?BTC_STALE:runtime.profile.staleReasonCode,
                     "Nouveaux candidats bloqués; plans existants surveillés",0,"",false,0,0,0,false);
+            record(runtime,snapshot,null,runtime.lastDecision,now,
+                    runtime.rearmRemainingMs(now)>0?"REARM_BLOCKED":"ADMISSION_REJECTED",
+                    runtime.lastDecision.reasonCode,runtime.lastDecision.reasonText,
+                    "STRUCTURAL_SHARED","","",0,marketFeedFresh,btcFeedFresh,0,
+                    Map.of("rearmRemainingMs",runtime.rearmRemainingMs(now)));
             return Event.none(runtime.lastDecision);
         }
         String setup=P02SleeveFilter.setupCandidateFor(snapshot,runtime.profile);
@@ -30,8 +41,15 @@ public final class MarketPlanOrchestrator {
                 marketFeedFresh,btcFeedFresh);
         SignalDecision raw=runtime.signalEngine.evaluate(snapshot,runtime.profile);
         runtime.lastDecision=raw;
+        record(runtime,snapshot,null,raw,now,"RAW_DECISION",raw==null?"":raw.reasonCode,
+                raw==null?"":raw.reasonText,"STRUCTURAL_SHARED","","",0,
+                marketFeedFresh,btcFeedFresh,0,Collections.emptyMap());
         if(raw!=null&&raw.isSignal()) {
-            if(raw.family.contains("RANGE_FADE")) return Event.diagnostic(RANGE_DIAGNOSTIC,raw);
+            if(raw.family.contains("RANGE_FADE")) {record(runtime,snapshot,null,raw,now,
+                    "RANGE_FADE_DIAGNOSTIC_ONLY",RANGE_DIAGNOSTIC,
+                    "RANGE_FADE conservé pour calibration — aucune publication finale.",
+                    "STRUCTURAL_SHARED","","RANGE_FADE",0,marketFeedFresh,btcFeedFresh,0,
+                    Collections.emptyMap());return Event.diagnostic(RANGE_DIAGNOSTIC,raw);}
             admitCandidate(runtime,snapshot,
                     new RuntimeCandidate(raw,CandidateLifecycle.SLEEVE_P01,now),now,
                     marketFeedFresh,btcFeedFresh);
@@ -51,11 +69,19 @@ public final class MarketPlanOrchestrator {
                     c.signal.entry,snapshot.marketBid,snapshot.marketAsk,c.favorable);
             if(CandidateLifecycle.targetReachedBeforeConfirmedFill(c.signal,snapshot)) {
                 iterator.remove();runtime.candidateTombstones.markMissed(c.signature);
+                record(runtime,snapshot,null,c.signal,now,"CANDIDATE_MISSED_NO_FILL",
+                        CandidateLifecycle.TARGET_BEFORE_FILL,"Cible atteinte avant fill confirmé.",
+                        "STRUCTURAL_SHARED",c.historicalDiagnosticCode,c.sleeve,now-c.createdAt,
+                        fresh,fresh,c.adverse,Collections.emptyMap());
                 return Event.diagnostic(CandidateLifecycle.TARGET_BEFORE_FILL,c.signal);
             }
             long age=now-c.createdAt;
             long max=CandidateLifecycle.SLEEVE_P02.equals(c.sleeve)?45_000L:90_000L;
-            if(age>max){iterator.remove();runtime.candidateTombstones.markMissed(c.signature);continue;}
+            if(age>max){iterator.remove();runtime.candidateTombstones.markMissed(c.signature);
+                record(runtime,snapshot,null,c.signal,now,"CANDIDATE_EXPIRED",
+                        "V23402_PENDING_CANDIDATE_EXPIRED","Candidat silencieux expiré.",
+                        "STRUCTURAL_SHARED",c.historicalDiagnosticCode,c.sleeve,age,fresh,fresh,
+                        c.adverse,Collections.emptyMap());continue;}
             if(!fresh||!CandidateLifecycle.currentlyExecutable(c.signal,snapshot)) {
                 c.resetEarly();continue;
             }
@@ -68,13 +94,21 @@ public final class MarketPlanOrchestrator {
                 P01EarlyConfirmation.StabilityResult stability=P01EarlyConfirmation.advance(now,
                         c.earlySince,c.earlyMode,quality.earlyP01);
                 c.earlySince=stability.qualitySince;c.earlyMode=stability.mode;
-                if(!stability.confirmed)continue;
+                if(!stability.confirmed){record(runtime,snapshot,null,c.signal,now,
+                        "P01_EARLY_STABILITY",quality.reasonCode,"Stabilité P01 anticipée.",
+                        "STRUCTURAL_SHARED",c.historicalDiagnosticCode,c.sleeve,age,fresh,fresh,
+                        c.adverse,Map.of("earlyP01Mode",c.earlyMode,"earlyP01StabilityMs",
+                                c.earlySince==0?0:now-c.earlySince,"earlyP01ReasonCode",quality.reasonCode));continue;}
                 result=CandidateLifecycle.processEarlyP01Candidate(runtime.profile,c.signal,
                         snapshot,true,c.createdAt,now,progress(c),c.adverse,c.historicalReplayRiskVeto,
                         !runtime.hasActivePlan(),runtime.rearmRemainingMs(now)==0,c.signal.entry,true);
             } else {
                 TrendRegime60.Result trend=CandidateLifecycle.SLEEVE_P02.equals(c.sleeve)
                         ? trend(runtime,c,snapshot,now):null;
+                if(trend!=null)record(runtime,snapshot,null,c.signal,now,"P02_OLS60",
+                        trend.reasonCode,"Évaluation OLS60 P02.","STRUCTURAL_SHARED",
+                        c.historicalDiagnosticCode,c.sleeve,age,fresh,fresh,c.adverse,
+                        trendDetails(trend));
                 result=CandidateLifecycle.processPendingCandidate(runtime.profile,c.signal,
                         snapshot,true,c.createdAt,now,progress(c),c.adverse,
                         c.historicalReplayRiskVeto,c.sleeve,trend);
@@ -85,8 +119,16 @@ public final class MarketPlanOrchestrator {
                     runtime.lastP01ConfirmedAt=now;
                 ActivePlanState state=state(runtime,result,now,snapshot);
                 runtime.activePlan=state;runtime.lastSignal=result.publishedSignal;
+                record(runtime,snapshot,state,result.publishedSignal,now,"CONFIRMATION_READY",
+                        result.publishedSignal.reasonCode,result.publishedSignal.reasonText,
+                        "STRUCTURAL_SHARED",c.historicalDiagnosticCode,c.sleeve,age,fresh,fresh,
+                        c.adverse,planDetails(result.dynamicPlan));
                 return Event.confirmed(result.publishedSignal,state,result);
             }
+            record(runtime,snapshot,null,c.signal,now,"CONFIRMATION_REJECTED",
+                    result.reasonCode,"Confirmation refusée.","STRUCTURAL_SHARED",
+                    c.historicalDiagnosticCode,c.sleeve,age,fresh,fresh,c.adverse,
+                    result.dynamicPlan==null?Collections.emptyMap():planDetails(result.dynamicPlan));
         }
         return null;
     }
@@ -126,10 +168,25 @@ public final class MarketPlanOrchestrator {
                 candidate.signal,snapshot,context);
         runtime.signalEngine.recordExternalDiagnostic(now,result.reasonCode,
                 result.classification+" | "+result.historicalDiagnosticCode);
+        record(runtime,snapshot,null,candidate.signal,now,
+                result.accepted?"ADMISSION_ACCEPTED":"ADMISSION_REJECTED",result.reasonCode,
+                result.accepted?"Candidat admis silencieusement.":"Candidat rejeté silencieusement.",
+                result.classification.name(),result.historicalDiagnosticCode,candidate.sleeve,0,
+                marketFeedFresh,btcFeedFresh,0,Map.of("candidateSignature",candidate.signature));
+        if(!result.historicalDiagnosticCode.isEmpty())record(runtime,snapshot,null,candidate.signal,
+                now,"HISTORICAL_DIAGNOSTIC",result.historicalDiagnosticCode,
+                "Aucun modèle replay historique certifié pour ce marché.",
+                MarketAdmissionPolicy.Classification.ETH_HISTORICAL_ONLY.name(),
+                result.historicalDiagnosticCode,candidate.sleeve,0,marketFeedFresh,btcFeedFresh,0,
+                Collections.emptyMap());
         if(!result.accepted)return;
         candidate.historicalReplayRiskVeto=result.historicalReplayRiskVeto;
         candidate.historicalDiagnosticCode=result.historicalDiagnosticCode;
         addCandidate(runtime,candidate);
+        record(runtime,snapshot,null,candidate.signal,now,"CANDIDATE_CREATED",result.reasonCode,
+                "Candidat silencieux créé.",result.classification.name(),
+                result.historicalDiagnosticCode,candidate.sleeve,0,marketFeedFresh,btcFeedFresh,0,
+                Map.of("candidateSignature",candidate.signature));
     }
 
     private void addCandidate(MarketRuntime runtime,RuntimeCandidate candidate) {
@@ -179,6 +236,35 @@ public final class MarketPlanOrchestrator {
             p.resultCostPerUnit,p.riskAllowancePerUnit,p.qualityRiskBudget,p.riskPerUnit,p.finalQuantity,p.theoreticalMaximumLoss);}
     private static double progress(RuntimeCandidate c){return c.signal.targetMove>0?c.favorable/c.signal.targetMove:0;}
     public static String signature(SignalDecision d,long now){return d.symbol+"|"+d.side+"|"+d.family+"|"+d.entry+"|"+d.takeProfit+"|"+d.stopLoss+"|"+(now/60_000L);}
+
+    private static Map<String,Object> trendDetails(TrendRegime60.Result trend){
+        LinkedHashMap<String,Object> out=new LinkedHashMap<>();out.put("p02Mode",trend.mode);
+        out.put("olsCount",trend.count);out.put("olsSlope",trend.slope);
+        out.put("olsT60",trend.t60);out.put("p02ReasonCode",trend.reasonCode);return out;
+    }
+    private static Map<String,Object> planDetails(DynamicTradePlan.Result p){
+        LinkedHashMap<String,Object> out=new LinkedHashMap<>();if(p==null)return out;
+        out.put("A",p.a);out.put("E60",p.adverseExcursion60);out.put("R",p.structuralRoom);
+        out.put("riskBudgetUsdt",p.qualityRiskBudget);out.put("resultCostPerUnit",p.resultCostPerUnit);
+        out.put("riskAllowancePerUnit",p.riskAllowancePerUnit);
+        out.put("theoreticalMaximumLoss",p.theoreticalMaximumLoss);out.put("quantity",p.finalQuantity);
+        out.put("tp",p.takeProfit);out.put("sl",p.stopLoss);return out;
+    }
+    private static void record(MarketRuntime runtime,MarketSnapshot snapshot,ActivePlanState plan,
+            SignalDecision signal,long now,String type,String code,String text,String classification,
+            String historical,String sleeve,long age,boolean marketFresh,boolean btcFresh,
+            double adverse,Map<String,Object> details){
+        if(signal==null&&plan!=null)signal=plan.toSignalDecision();
+        LinkedHashMap<String,Object> merged=new LinkedHashMap<>();if(details!=null)merged.putAll(details);
+        if(plan!=null){merged.put("quantity",plan.quantity);merged.put("entry",plan.entry);
+            merged.put("tp",plan.takeProfit);merged.put("sl",plan.stopLoss);
+            merged.put("riskBudgetUsdt",plan.qualityRiskBudget);
+            merged.put("resultCostPerUnit",plan.resultCostPerUnit);
+            merged.put("riskAllowancePerUnit",plan.riskAllowancePerUnit);
+            merged.put("theoreticalMaximumLoss",plan.theoreticalMaximumLoss);}
+        runtime.recorder.record(now,type,code,text,classification,historical,sleeve,signal,
+                snapshot,age,marketFresh,btcFresh,adverse,merged);
+    }
 
     public static final class RuntimeCandidate {
         public final SignalDecision signal;public final String sleeve,signature;public final long createdAt;

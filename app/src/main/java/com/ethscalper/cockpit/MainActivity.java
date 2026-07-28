@@ -151,7 +151,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.34.0.1 · Hardened Multi-Market Research", 12, MUTED, true);
+        TextView version = text("v"+BuildConfig.VERSION_NAME+" · Complete Multi-Market Research", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -685,7 +685,7 @@ public class MainActivity extends Activity {
             }
 
             JSONObject state = new JSONObject(raw);
-            String fileName = "ETH_SOL_Scalper_Diagnostic_v2_34_0_" +
+            String fileName = DiagnosticExportContract.zipPrefix(BuildConfig.VERSION_NAME) +
                     new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
 
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
@@ -706,27 +706,43 @@ public class MainActivity extends Activity {
                 JSONArray persistentObserved = new JSONArray(persistentObservedRaw == null || persistentObservedRaw.trim().isEmpty() ? "[]" : persistentObservedRaw);
                 JSONArray persistentFrames = new JSONArray(persistentFramesRaw == null || persistentFramesRaw.trim().isEmpty() ? "[]" : persistentFramesRaw);
                 JSONObject overnightSummary = new JSONObject(overnightSummaryRaw == null || overnightSummaryRaw.trim().isEmpty() ? "{}" : overnightSummaryRaw);
+                JSONArray marketDiagnostics=state.optJSONArray("marketDiagnostics");if(marketDiagnostics==null)marketDiagnostics=new JSONArray();
+                JSONArray marketCandidates=state.optJSONArray("marketCandidates");if(marketCandidates==null)marketCandidates=new JSONArray();
+                JSONArray marketPlanHistory=state.optJSONArray("marketPlanHistory");if(marketPlanHistory==null)marketPlanHistory=new JSONArray();
+                JSONArray multiMarketFrames=state.optJSONArray("multiMarketFrames");if(multiMarketFrames==null)multiMarketFrames=new JSONArray();
+                JSONObject multiMarketSummary=state.optJSONObject("marketSummary");if(multiMarketSummary==null)multiMarketSummary=new JSONObject();
                 addZipText(zip, "status.json", state.toString(2));
                 addZipText(zip, "markets.json", state.optJSONObject("markets") == null ? "{}" : state.optJSONObject("markets").toString(2));
                 addZipText(zip, "active_plans.json", state.optJSONArray("activePlans") == null ? "[]" : state.optJSONArray("activePlans").toString(2));
-                addZipText(zip, "profiles_manifest.json", "{\"version\":\"2.34.0\",\"profiles\":[\"ETH_V23321\",\"SOL_V1_20260727\"],\"referenceMarket\":\"BTCUSDT\"}");
+                addZipText(zip, "profiles_manifest.json", buildProfilesManifest().toString(2));
+                addZipText(zip,"market_diagnostics.json",marketDiagnostics.toString(2));
+                addZipText(zip,"market_diagnostics.csv",buildMultiMarketCsv(marketDiagnostics));
+                addZipText(zip,"market_candidates.json",marketCandidates.toString(2));
+                addZipText(zip,"market_candidates.csv",buildMultiMarketCsv(marketCandidates));
+                addZipText(zip,"market_plan_history.json",marketPlanHistory.toString(2));
+                addZipText(zip,"market_frames.json",multiMarketFrames.toString(2));
+                addZipText(zip,"market_frames.csv",buildMultiMarketCsv(multiMarketFrames));
+                addZipText(zip,"persistent_market_events.json",persistentObserved.toString(2));
+                addZipText(zip,"persistent_market_events.jsonl",persistentObservedJsonl==null?"":persistentObservedJsonl);
+                addZipText(zip,"persistent_market_frames.json",persistentFrames.toString(2));
+                addZipText(zip,"persistent_market_frames.jsonl",persistentFramesJsonl==null?"":persistentFramesJsonl);
+                addZipText(zip,"market_summary.json",multiMarketSummary.toString(2));
+                addZipText(zip,"market_summary.txt",buildMultiMarketSummaryText(multiMarketSummary));
                 addZipText(zip, "engine_metrics.json", metrics == null ? "{}" : metrics.toString(2));
                 addZipText(zip, "engine_metrics.txt", buildEngineMetricsText(state));
                 addZipText(zip, "observation_journal.json", observed == null ? "[]" : observed.toString(2));
                 addZipText(zip, "observation_journal.csv", buildObservationJournalCsv(observed));
                 addZipText(zip, "observation_summary.txt", buildObservationSummaryText(state));
-                addZipText(zip, "market_frames.json", marketFrames.toString(2));
-                addZipText(zip, "market_frames.csv", buildMarketFramesCsv(marketFrames));
-                addZipText(zip, "market_summary.json", marketSummary.toString(2));
-                addZipText(zip, "market_summary.txt", buildMarketSummaryText(marketSummary));
+                addZipText(zip, "legacy_eth_market_frames.json", marketFrames.toString(2));
+                addZipText(zip, "legacy_eth_market_frames.csv", buildMarketFramesCsv(marketFrames));
+                addZipText(zip, "legacy_eth_market_summary.json", marketSummary.toString(2));
+                addZipText(zip, "legacy_eth_market_summary.txt", buildMarketSummaryText(marketSummary));
 
                 addZipText(zip, "persistent_observation_journal.json", persistentObserved.toString(2));
                 addZipText(zip, "persistent_observation_journal.jsonl", persistentObservedJsonl == null ? "" : persistentObservedJsonl);
-                addZipText(zip, "persistent_market_frames.json", persistentFrames.toString(2));
-                addZipText(zip, "persistent_market_frames.jsonl", persistentFramesJsonl == null ? "" : persistentFramesJsonl);
                 addZipText(zip, "overnight_recorder_summary.json", overnightSummary.toString(2));
                 addZipText(zip, "overnight_recorder_summary.txt",
-                        "OVERNIGHT RECORDER v2.34.0\n\n" +
+                        "OVERNIGHT RECORDER v"+BuildConfig.VERSION_NAME+"\n\n" +
                         "observationEvents=" + overnightSummary.optInt("observationEvents", 0) + "\n" +
                         "marketFrames=" + overnightSummary.optInt("marketFrames", 0) + "\n" +
                         "durationSec=" + overnightSummary.optLong("durationSec", 0) + "\n" +
@@ -734,10 +750,7 @@ public class MainActivity extends Activity {
                 addZipText(zip, "summary.txt", buildDiagnosticSummary(state));
                 addZipText(zip, "health_check.txt", buildHealthCheck(state));
                 addZipText(zip, "diagnostics.csv", buildDiagnosticsCsv(state.optJSONArray("diagnostics")));
-                addZipText(zip, "instructions.txt",
-                        "Envoyer ce ZIP à ChatGPT pour analyse du moteur ETH Scalper.\nDepuis v2.32.6, le ZIP inclut un recorder persistant longue durée.\n" +
-                        "Ce fichier ne contient aucune clé API et aucun ordre automatique.\n" +
-                        "Le trading reste manuel.\n");
+                addZipText(zip, "instructions.txt",DiagnosticExportContract.instructions(BuildConfig.VERSION_NAME));
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -777,7 +790,7 @@ public class MainActivity extends Activity {
     private String buildDiagnosticSummary(JSONObject s) {
         StringBuilder b = new StringBuilder();
         b.append("ETH + SOL SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v2.34.0 Android natif · Multi-Market Research\n");
+        b.append("Version app: v").append(BuildConfig.VERSION_NAME).append(" Android natif · Complete Multi-Market Research\n");
         b.append("Version service: ").append(s.optString("version", "—")).append("\n");
         b.append("Mode: V230_HYBRID_AI_SCALP_ENGINE — recherche uniquement, aucun trade réel\n\n");
 
@@ -1167,6 +1180,42 @@ public class MainActivity extends Activity {
                     .append(csv(item.optString("message", ""))).append('\n');
         }
         return b.toString();
+    }
+
+    private JSONObject buildProfilesManifest() throws Exception {
+        JSONObject out=new JSONObject();out.put("version",BuildConfig.VERSION_NAME);
+        out.put("versionCode",BuildConfig.VERSION_CODE);JSONArray profiles=new JSONArray();
+        for(MarketProfile profile:MarketRegistry.production().tradedMarkets()) {
+            JSONObject item=new JSONObject();item.put("symbol",profile.symbol);
+            item.put("asset",profile.asset);item.put("profileVersion",profile.profileVersion);
+            profiles.put(item);
+        }
+        out.put("profiles",profiles);JSONObject reference=new JSONObject();
+        reference.put("symbol",MarketProfile.BTC_SYMBOL);reference.put("asset","BTC");
+        reference.put("tradable",false);out.put("referenceMarket",reference);return out;
+    }
+
+    private String buildMultiMarketCsv(JSONArray arr) {
+        String[] fields={"symbol","asset","profileVersion","eventAt","eventType","reasonCode",
+                "reasonText","classification","historicalDiagnosticCode","sleeve","side","family",
+                "candidateAgeMs","marketFeedFresh","btcFeedFresh","last","bid","ask","entry","tp",
+                "sl","quantity","score","A","E60","R","m1","m3","m8","f15","f30","f60",
+                "f120","volumeRatio","rangePosition","room","earlyP01Mode","earlyP01StabilityMs",
+                "earlyP01ReasonCode","p02Mode","olsCount","olsSlope","olsT60","p02ReasonCode",
+                "riskBudgetUsdt","resultCostPerUnit","riskAllowancePerUnit",
+                "theoreticalMaximumLoss","terminalStatus"};
+        StringBuilder out=new StringBuilder(String.join(",",fields)).append('\n');
+        if(arr==null)return out.toString();for(int i=0;i<arr.length();i++){
+            JSONObject value=arr.optJSONObject(i);if(value==null)continue;
+            for(int j=0;j<fields.length;j++){if(j>0)out.append(',');
+                out.append(csv(value.isNull(fields[j])?"":String.valueOf(value.opt(fields[j]))));}
+            out.append('\n');
+        }return out.toString();
+    }
+
+    private String buildMultiMarketSummaryText(JSONObject summary) {
+        return "ETH + SOL multi-market recorder v"+BuildConfig.VERSION_NAME+"\n"
+                +(summary==null?"{}":summary.toString())+"\n";
     }
 
     private String csv(String value) {

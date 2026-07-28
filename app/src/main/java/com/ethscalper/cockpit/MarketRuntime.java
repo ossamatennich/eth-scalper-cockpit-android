@@ -14,6 +14,7 @@ public final class MarketRuntime {
     public final CandidateTombstones candidateTombstones = new CandidateTombstones();
     public final P02SleeveFilter.SetupTracker p02SetupTracker = new P02SleeveFilter.SetupTracker();
     public final Deque<MarketSnapshot> marketFrames = new ArrayDeque<>();
+    public final MarketDiagnosticRecorder recorder;
 
     public double last = Double.NaN, bid = Double.NaN, ask = Double.NaN;
     public long lastTickerAt, lastKlineAt, lastAggTradeAt, lastRestTickerAt, lastRestKlineAt;
@@ -21,6 +22,8 @@ public final class MarketRuntime {
     public long restKlineRefreshes, restTradeRefreshes;
     public long lastAggTradeId = -1L;
     public long lastP01ConfirmedAt, lastTerminalAt;
+    public long lastPersistedRecorderSequence,lastPersistentFrameAt;
+    public long lastRecordedEngineDiagnosticAt;
     public String lastTerminalStatus="";
     public SignalDecision lastSignal;
     public SignalDecision lastDecision;
@@ -30,6 +33,7 @@ public final class MarketRuntime {
     public MarketRuntime(MarketProfile profile) {
         if (profile == null) throw new IllegalArgumentException("profile");
         this.profile = profile;
+        this.recorder = new MarketDiagnosticRecorder(profile);
     }
 
     public boolean hasActivePlan() {
@@ -62,7 +66,22 @@ public final class MarketRuntime {
         pendingCandidates.clear();
         candidateTombstones.clear();
         marketFrames.clear();
-        if (hasActivePlan()) observedSignals.addLast(activePlan);
+        recorder.reset();
+        recorder.record(System.currentTimeMillis(),"DIAGNOSTICS_RESET","V23402_DIAGNOSTICS_RESET",
+                "Diagnostics et frames non actifs réinitialisés.","STRUCTURAL_SHARED","","",
+                null,null,0,true,true,0,java.util.Collections.emptyMap());
+        if (hasActivePlan()) {
+            observedSignals.addLast(activePlan);
+            recorder.record(System.currentTimeMillis(),"RESET_ACTIVE_PLAN_REINSERTED",
+                    "V23402_DIAGNOSTICS_RESET_ACTIVE_PLAN_REINSERTED",
+                    "Plan actif conservé et réinséré après reset.","STRUCTURAL_SHARED","","",
+                    activePlan.toSignalDecision(),null,0,true,true,0,java.util.Map.of("quantity",activePlan.quantity,
+                            "entry",activePlan.entry,"tp",activePlan.takeProfit,"sl",activePlan.stopLoss,
+                            "riskBudgetUsdt",activePlan.qualityRiskBudget,
+                            "resultCostPerUnit",activePlan.resultCostPerUnit,
+                            "riskAllowancePerUnit",activePlan.riskAllowancePerUnit,
+                            "theoreticalMaximumLoss",activePlan.theoreticalMaximumLoss));
+        }
     }
 
     public static final class MarketBar {

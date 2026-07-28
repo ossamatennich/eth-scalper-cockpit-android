@@ -1,8 +1,8 @@
-# Candidate v2.34.0.1 — Test report
+# Candidate v2.34.0.2 — Test report
 
 ## Baseline et couverture
 
-Les 210 tests historiques restent présents, sans suppression ni affaiblissement. La candidate compte **259 tests JVM distincts par variante** et **8 tests Python distincts**, soit **267 tests distincts**.
+Les 259 tests JVM existants restent présents, sans suppression ni affaiblissement. La candidate compte **270 tests JVM distincts par variante** et **9 tests Python distincts**, soit **279 tests distincts**.
 
 Couverture ajoutée : vrai golden master ETH issu du commit historique, routage service bookTicker/kline/aggTrade, préchargement et fallback génériques, troisième symbole sans branche spécifique, admission SOL structurelle, scénarios simultanés ETH/SOL, notifications distinctes, terminaux isolés, reset conservant deux plans, feeds et mémoire opposée isolés, et P02 sans mutation de `lastP01ConfirmedAt`.
 
@@ -29,18 +29,22 @@ Couverture ajoutée : vrai golden master ETH issu du commit historique, routage 
 - Contrôle médiane [0.85 ; 1.35] : PASS.
 - Calculs rejetés explicitement hors 1..120 : 15 496 ; aucun clamp silencieux.
 
-Les huit tests unitaires Python couvrent les bornes 1/120, les rejets 0/121, un calcul réel au-dessus de 120, le budget, SL min/max et TP floor/cap.
+Les huit tests unitaires historiques Python couvrent les bornes 1/120, les rejets 0/121, un calcul réel au-dessus de 120, le budget, SL min/max et TP floor/cap. Le neuvième test charge le manifest versionné, recalcule son SHA canonique et vérifie counts, gaps, doublons, `quantityRejectionsAboveSafetyCap=15496` et la cohérence du rapport.
 
 ## Résultats techniques locaux
 
-- `testDebugUnitTest --rerun-tasks` : PASS, 259 tests, 0 échec, 0 erreur, 0 ignoré.
-- `test --rerun-tasks` : PASS, 259 debug + 259 release, toutes vertes.
-- Tests Python : PASS, 8/8.
+- `testDebugUnitTest --rerun-tasks` : PASS, 270 tests, 0 échec, 0 erreur, 0 ignoré.
+- `test --rerun-tasks` : PASS, 270 debug + 270 release, toutes vertes.
+- `python3 -m unittest tools/test_validate_sol_profile.py` : PASS, 9/9.
 - `assembleDebug` : PASS.
 - `assembleRelease` : PASS.
 - `lintRelease` : PASS, 0 erreur.
-- Debug : `app/build/outputs/apk/debug/app-debug.apk`, 4 557 624 octets, SHA-256 `7d16ffba5333a2c65942791cc81314704f3f0f30d6e68eb2369fe74879a93edb`.
-- Release non signée : `app/build/outputs/apk/release/app-release-unsigned.apk`, 3 628 805 octets, SHA-256 `fd4b21400a25512d78c5e1b7f339be0975713b053cd929bf076ed3e86df9b563`.
-- Manifeste debug : package `com.ethscalper.cockpit.debug`, versionCode 23401, versionName 2.34.0.1, minSdk 26, target/compileSdk 35.
+- Debug : `app/build/outputs/apk/debug/app-debug.apk`, 4 568 560 octets, SHA-256 `0ae2bd116b0a2ed12d35f2a94c8b36d984907a0a629decac53547ff7c9b16911`.
+- Release non signée : `app/build/outputs/apk/release/app-release-unsigned.apk`, 3 637 201 octets, SHA-256 `3e48718faa568f511984c303221b72464ea443e9ce546242fe1b8bd5eb002916`.
+- Manifeste debug : package `com.ethscalper.cockpit.debug`, versionCode 23402, versionName 2.34.0.2, minSdk 26, target/compileSdk 35.
+
+## Diagnostics multi-marchés vérifiés
+
+Les tests couvrent une admission SOL acceptée et rejetée, le diagnostic historique générique, P01/P02 avec OLS60 et flows 15/30/60/120, plans/TP/SL SOL, reset/restauration ETH+SOL, deux plans dans l'export, non-comptabilisation des candidats, troisième profil, 19 fichiers ZIP, versions courantes, IDs de notification distincts et terminaux exclusivement TP/SL.
 
 Les métadonnées finales du HEAD, du run Actions et de l'artefact CI seront placées dans la description de la PR après le run afin de respecter l'unique commit demandé.
