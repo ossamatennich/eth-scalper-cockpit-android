@@ -14,6 +14,7 @@ public final class MarketRuntime {
     public final CandidateTombstones candidateTombstones = new CandidateTombstones();
     public final P02SleeveFilter.SetupTracker p02SetupTracker = new P02SleeveFilter.SetupTracker();
     public final Deque<MarketSnapshot> marketFrames = new ArrayDeque<>();
+    private final Deque<String> recordedEngineDiagnosticKeys = new ArrayDeque<>();
     public final MarketDiagnosticRecorder recorder;
 
     public double last = Double.NaN, bid = Double.NaN, ask = Double.NaN;
@@ -48,6 +49,21 @@ public final class MarketRuntime {
         return TerminalRearmPersistence.remainingMs(now, lastTerminalAt);
     }
 
+    public boolean claimPersistentFrameSlot(long now) {
+        if(lastPersistentFrameAt>0
+                &&now-lastPersistentFrameAt<PersistentMarketLog.FRAME_INTERVAL_MS)return false;
+        lastPersistentFrameAt=now;return true;
+    }
+
+    public boolean rememberEngineDiagnostic(long timestamp,String code,String message) {
+        String key=timestamp+"|"+(code==null?"":code)+"|"+(message==null?"":message);
+        if(recordedEngineDiagnosticKeys.contains(key))return false;
+        recordedEngineDiagnosticKeys.addLast(key);
+        while(recordedEngineDiagnosticKeys.size()>160)recordedEngineDiagnosticKeys.removeFirst();
+        lastRecordedEngineDiagnosticAt=Math.max(lastRecordedEngineDiagnosticAt,timestamp);
+        return true;
+    }
+
     public void terminal(long now) {
         terminal(now,"");
     }
@@ -66,6 +82,7 @@ public final class MarketRuntime {
         pendingCandidates.clear();
         candidateTombstones.clear();
         marketFrames.clear();
+        recordedEngineDiagnosticKeys.clear();
         recorder.reset();
         recorder.record(System.currentTimeMillis(),"DIAGNOSTICS_RESET","V23402_DIAGNOSTICS_RESET",
                 "Diagnostics et frames non actifs réinitialisés.","STRUCTURAL_SHARED","","",

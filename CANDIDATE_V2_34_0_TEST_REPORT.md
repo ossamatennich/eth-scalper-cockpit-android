@@ -1,8 +1,8 @@
-# Candidate v2.34.0.2 — Test report
+# Candidate v2.34.0.3 — Test report
 
 ## Baseline et couverture
 
-Les 259 tests JVM existants restent présents, sans suppression ni affaiblissement. La candidate compte **270 tests JVM distincts par variante** et **9 tests Python distincts**, soit **279 tests distincts**.
+Les 270 tests JVM existants restent présents, sans suppression ni affaiblissement. La candidate compte **280 tests JVM distincts par variante** et **9 tests Python distincts**, soit **289 tests distincts**.
 
 Couverture ajoutée : vrai golden master ETH issu du commit historique, routage service bookTicker/kline/aggTrade, préchargement et fallback génériques, troisième symbole sans branche spécifique, admission SOL structurelle, scénarios simultanés ETH/SOL, notifications distinctes, terminaux isolés, reset conservant deux plans, feeds et mémoire opposée isolés, et P02 sans mutation de `lastP01ConfirmedAt`.
 
@@ -33,18 +33,29 @@ Les huit tests unitaires historiques Python couvrent les bornes 1/120, les rejet
 
 ## Résultats techniques locaux
 
-- `testDebugUnitTest --rerun-tasks` : PASS, 270 tests, 0 échec, 0 erreur, 0 ignoré.
-- `test --rerun-tasks` : PASS, 270 debug + 270 release, toutes vertes.
+- `testDebugUnitTest --rerun-tasks` : PASS, 280 tests, 0 échec, 0 erreur, 0 ignoré.
+- `test --rerun-tasks` : PASS, 280 debug + 280 release, 0 échec, 0 erreur, 0 ignoré.
 - `python3 -m unittest tools/test_validate_sol_profile.py` : PASS, 9/9.
 - `assembleDebug` : PASS.
 - `assembleRelease` : PASS.
 - `lintRelease` : PASS, 0 erreur.
-- Debug : `app/build/outputs/apk/debug/app-debug.apk`, 4 568 560 octets, SHA-256 `0ae2bd116b0a2ed12d35f2a94c8b36d984907a0a629decac53547ff7c9b16911`.
-- Release non signée : `app/build/outputs/apk/release/app-release-unsigned.apk`, 3 637 201 octets, SHA-256 `3e48718faa568f511984c303221b72464ea443e9ce546242fe1b8bd5eb002916`.
-- Manifeste debug : package `com.ethscalper.cockpit.debug`, versionCode 23402, versionName 2.34.0.2, minSdk 26, target/compileSdk 35.
+- Debug : `app/build/outputs/apk/debug/app-debug.apk`, 4 573 244 octets, SHA-256 `90b782118f5107ca27ccc0d0c9223502fd95c1ad27cc78aeac721cbc9ba8e2e1`.
+- Release non signée : `app/build/outputs/apk/release/app-release-unsigned.apk`, 3 641 797 octets, SHA-256 `5f739dac39ee2166eb3a69ca6bd1ba1871caf5fddabaa83fbf5239855b02f391`.
+- Manifeste debug : package `com.ethscalper.cockpit.debug`, versionCode 23403, versionName 2.34.0.3, minSdk 26, target/compileSdk 35.
 
 ## Diagnostics multi-marchés vérifiés
 
 Les tests couvrent une admission SOL acceptée et rejetée, le diagnostic historique générique, P01/P02 avec OLS60 et flows 15/30/60/120, plans/TP/SL SOL, reset/restauration ETH+SOL, deux plans dans l'export, non-comptabilisation des candidats, troisième profil, 19 fichiers ZIP, versions courantes, IDs de notification distincts et terminaux exclusivement TP/SL.
+
+## Bornage diagnostics et status
+
+- Simulation de deux heures ETH + SOL : PASS.
+- Taille maximale mesurée du status final : **18 917 octets**, sous les limites 100 000/200 000.
+- `MARKET_FRAME` absent de `eventMaps()`, `eventsAfter()` et du journal persistant d'événements.
+- Cadence persistante vérifiée aux frontières 4 999/5 000 ms.
+- Rotation vérifiée : maximum 64 Mio, une génération `.1`, lecture `.1` puis courant, reset des deux.
+- Export reconstruit depuis les journaux persistants et non depuis `status.json`.
+- `PLAN_CONFIRMED` + `PLAN_RESTORED` = un seul trade confirmé et un plan restauré séparé.
+- Deux diagnostics partageant un timestamp mais ayant une identité différente sont conservés.
 
 Les métadonnées finales du HEAD, du run Actions et de l'artefact CI seront placées dans la description de la PR après le run afin de respecter l'unique commit demandé.

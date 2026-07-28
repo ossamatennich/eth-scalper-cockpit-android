@@ -1,4 +1,4 @@
-name: Version candidate de l'APK v2.34.0.2 complete multi-market research
+name: Version candidate de l'APK v2.34.0.3 stable multi-market research
 
 on:
   push:
@@ -39,5 +39,5 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ETH-SOL-Scalper-Cockpit-v2.34.0.2-debug-apk
+          name: ETH-SOL-Scalper-Cockpit-v2.34.0.3-debug-apk
           path: app/build/outputs/apk/debug/*.apk

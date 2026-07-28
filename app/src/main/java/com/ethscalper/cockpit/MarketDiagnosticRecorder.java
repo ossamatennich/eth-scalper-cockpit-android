@@ -33,8 +33,8 @@ public final class MarketDiagnosticRecorder {
         if(details!=null)value.putAll(details);
         normalizeTerminal(value);
         Record record=new Record(++sequence,value);
-        events.addLast(record);trim(events,MAX_EVENTS);
         if("MARKET_FRAME".equals(type)){frames.addLast(record);trim(frames,MAX_FRAMES);}
+        else {events.addLast(record);trim(events,MAX_EVENTS);}
         return record;
     }
 
@@ -47,7 +47,8 @@ public final class MarketDiagnosticRecorder {
 
     public synchronized List<Record> eventsAfter(long afterSequence) {
         List<Record> out=new ArrayList<>();
-        for(Record record:events)if(record.sequence>afterSequence)out.add(record);
+        for(Record record:events)if(record.sequence>afterSequence
+                &&!"MARKET_FRAME".equals(record.values.get("eventType")))out.add(record);
         return Collections.unmodifiableList(out);
     }
     public synchronized List<Map<String,Object>> eventMaps(){return maps(events);}
@@ -56,11 +57,12 @@ public final class MarketDiagnosticRecorder {
     public synchronized void reset(){events.clear();frames.clear();}
 
     public synchronized Map<String,Object> summary() {
-        int candidates=0,rejected=0,confirmed=0,tp=0,sl=0;
+        int candidates=0,rejected=0,confirmed=0,restored=0,tp=0,sl=0;
         for(Record record:events){String type=String.valueOf(record.values.get("eventType"));
             if(type.contains("CANDIDATE"))candidates++;
             if(type.contains("REJECT")||type.contains("TOMBSTONE")||type.contains("MISSED"))rejected++;
-            if("PLAN_CONFIRMED".equals(type)||"PLAN_RESTORED".equals(type))confirmed++;
+            if("PLAN_CONFIRMED".equals(type))confirmed++;
+            if("PLAN_RESTORED".equals(type))restored++;
             if("TP_TOUCHED".equals(type))tp++;if("SL_TOUCHED".equals(type))sl++;
         }
         LinkedHashMap<String,Object> out=new LinkedHashMap<>();
@@ -68,7 +70,8 @@ public final class MarketDiagnosticRecorder {
         out.put("profileVersion",profile.profileVersion);out.put("events",events.size());
         out.put("frames",frames.size());out.put("candidates",candidates);
         out.put("rejectedCandidates",rejected);out.put("confirmedTrades",confirmed);
-        out.put("tp",tp);out.put("sl",sl);return Collections.unmodifiableMap(out);
+        out.put("restoredActivePlans",restored);out.put("tp",tp);out.put("sl",sl);
+        return Collections.unmodifiableMap(out);
     }
 
     private LinkedHashMap<String,Object> base(long at,String type,String code,String text,

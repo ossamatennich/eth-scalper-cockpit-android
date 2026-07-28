@@ -75,7 +75,7 @@ public class MarketWatchService extends Service {
     private static final String PERSISTENT_DIR = "eth_scalper_overnight_recorder";
     private static final String PERSISTENT_OBSERVATIONS_FILE = "persistent_market_events.jsonl";
     private static final String PERSISTENT_MARKET_FRAMES_FILE = "persistent_market_frames.jsonl";
-    private static final long PERSISTENT_MARKET_FRAME_INTERVAL_MS = 5 * 1000L;
+    private static final long PERSISTENT_MARKET_FRAME_INTERVAL_MS = PersistentMarketLog.FRAME_INTERVAL_MS;
     private static final String ALERT_DEDUPE_PREFERENCES = "confirmed_signal_alerts_v2330";
     private static final String BINANCE_STREAM = buildBinanceStream();
 
@@ -105,7 +105,6 @@ public class MarketWatchService extends Service {
     private long observedSignalId;
     private long lastMarketFrameAt;
     private long lastMarketFrameJsonRefreshAt;
-    private long lastPersistentMarketFrameAt;
 
     private OkHttpClient client;
     private WebSocket socket;
@@ -181,7 +180,8 @@ public class MarketWatchService extends Service {
 
     public static String getPersistentObservationJournalJson(Context context) {
         try {
-            String json = jsonlFileToJsonArrayString(persistentFile(context, PERSISTENT_OBSERVATIONS_FILE));
+            String json = jsonlTextToJsonArrayString(PersistentMarketLog.readChronological(
+                    persistentFile(context, PERSISTENT_OBSERVATIONS_FILE)));
             LAST_PERSISTENT_OBSERVATIONS_JSON = json;
             return json;
         } catch (Exception ignored) {
@@ -190,12 +190,14 @@ public class MarketWatchService extends Service {
     }
 
     public static String getPersistentObservationJournalJsonl(Context context) {
-        return readTextFile(persistentFile(context, PERSISTENT_OBSERVATIONS_FILE));
+        return PersistentMarketLog.readChronological(
+                persistentFile(context, PERSISTENT_OBSERVATIONS_FILE));
     }
 
     public static String getPersistentMarketFramesJson(Context context) {
         try {
-            String json = jsonlFileToJsonArrayString(persistentFile(context, PERSISTENT_MARKET_FRAMES_FILE));
+            String json = jsonlTextToJsonArrayString(PersistentMarketLog.readChronological(
+                    persistentFile(context, PERSISTENT_MARKET_FRAMES_FILE)));
             LAST_PERSISTENT_MARKET_FRAMES_JSON = json;
             return json;
         } catch (Exception ignored) {
@@ -204,7 +206,8 @@ public class MarketWatchService extends Service {
     }
 
     public static String getPersistentMarketFramesJsonl(Context context) {
-        return readTextFile(persistentFile(context, PERSISTENT_MARKET_FRAMES_FILE));
+        return PersistentMarketLog.readChronological(
+                persistentFile(context, PERSISTENT_MARKET_FRAMES_FILE));
     }
 
     public static String getOvernightRecorderSummaryJson(Context context) {
@@ -239,11 +242,10 @@ public class MarketWatchService extends Service {
         return out.toString();
     }
 
-    private static String jsonlFileToJsonArrayString(File file) throws Exception {
+    private static String jsonlTextToJsonArrayString(String jsonl) throws Exception {
         JSONArray arr = new JSONArray();
-        if (file == null || !file.exists()) return arr.toString();
-
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+        if(jsonl==null||jsonl.isEmpty())return arr.toString();
+        try (BufferedReader reader = new BufferedReader(new java.io.StringReader(jsonl))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
@@ -260,8 +262,8 @@ public class MarketWatchService extends Service {
         File obs = persistentFile(context, PERSISTENT_OBSERVATIONS_FILE);
         File frames = persistentFile(context, PERSISTENT_MARKET_FRAMES_FILE);
 
-        JSONObject obsStats = jsonlStats(obs);
-        JSONObject frameStats = jsonlStats(frames);
+        JSONObject obsStats = jsonlStatsText(PersistentMarketLog.readChronological(obs));
+        JSONObject frameStats = jsonlStatsText(PersistentMarketLog.readChronological(frames));
 
         long oldest = 0;
         long newest = 0;
@@ -282,8 +284,8 @@ public class MarketWatchService extends Service {
         o.put("description", "Journal persistant: conserve les signaux et les frames même si l'écran/app est fermé, jusqu'à réinitialisation diagnostic.");
         o.put("observationEvents", obsStats.optInt("count", 0));
         o.put("marketFrames", frameStats.optInt("count", 0));
-        o.put("observationFileBytes", obs.exists() ? obs.length() : 0);
-        o.put("marketFileBytes", frames.exists() ? frames.length() : 0);
+        o.put("observationFileBytes", PersistentMarketLog.combinedBytes(obs));
+        o.put("marketFileBytes", PersistentMarketLog.combinedBytes(frames));
         o.put("oldestAt", oldest);
         o.put("newestAt", newest);
         o.put("durationSec", oldest > 0 && newest > oldest ? (newest - oldest) / 1000 : 0);
@@ -292,14 +294,14 @@ public class MarketWatchService extends Service {
         return o;
     }
 
-    private static JSONObject jsonlStats(File file) throws Exception {
+    private static JSONObject jsonlStatsText(String jsonl) throws Exception {
         JSONObject o = new JSONObject();
         int count = 0;
         long oldest = 0;
         long newest = 0;
 
-        if (file != null && file.exists()) {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+        if (jsonl != null && !jsonl.isEmpty()) {
+            try (BufferedReader reader = new BufferedReader(new java.io.StringReader(jsonl))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     line = line.trim();
@@ -406,7 +408,6 @@ public class MarketWatchService extends Service {
             pendingCandidateIndex.clear();
             candidateTombstones.clear();
             marketFrames.clear();
-            lastPersistentMarketFrameAt = 0;
             resetPersistentRecorder();
             for(MarketRuntime runtime:marketCoordinator.runtimes().values())
                 flushRuntimeRecorder(runtime,System.currentTimeMillis(),true);
@@ -1175,14 +1176,10 @@ public class MarketWatchService extends Service {
             runtime.lastPersistedRecorderSequence=Math.max(
                     runtime.lastPersistedRecorderSequence,record.sequence);
         }
-        if(forceFrame||runtime.lastPersistentFrameAt==0
-                ||now-runtime.lastPersistentFrameAt>=PERSISTENT_MARKET_FRAME_INTERVAL_MS) {
-            List<Map<String,Object>> frames=runtime.recorder.frameMaps();
-            if(!frames.isEmpty()) {
+        List<Map<String,Object>> frames=runtime.recorder.frameMaps();
+        if(!frames.isEmpty()&&runtime.claimPersistentFrameSlot(now)) {
                 try { appendPersistentJsonLine(PERSISTENT_MARKET_FRAMES_FILE,
                         new JSONObject(frames.get(frames.size()-1))); } catch(Exception ignored) {}
-                runtime.lastPersistentFrameAt=now;
-            }
         }
     }
 
@@ -1190,12 +1187,10 @@ public class MarketWatchService extends Service {
                                                 boolean marketFresh,boolean btcFresh) {
         MarketSnapshot snapshot=MarketSnapshotFactory.build(runtime,sharedBtc,now);
         for(DiagnosticEntry entry:runtime.signalEngine.recentDiagnostics(40)) {
-            if(entry.timestamp<=runtime.lastRecordedEngineDiagnosticAt)continue;
+            if(!runtime.rememberEngineDiagnostic(entry.timestamp,entry.code,entry.message))continue;
             runtime.recorder.record(entry.timestamp,"ENGINE_DIAGNOSTIC",entry.code,entry.message,
                     "STRUCTURAL_SHARED","","",runtime.lastDecision,snapshot,0,marketFresh,
                     btcFresh,0,Collections.emptyMap());
-            runtime.lastRecordedEngineDiagnosticAt=Math.max(
-                    runtime.lastRecordedEngineDiagnosticAt,entry.timestamp);
         }
     }
 
@@ -1768,19 +1763,21 @@ public class MarketWatchService extends Service {
 
     private void appendPersistentJsonLine(String fileName, JSONObject object) {
         if (object == null) return;
+        if(PERSISTENT_OBSERVATIONS_FILE.equals(fileName)
+                &&"MARKET_FRAME".equals(object.optString("eventType","")))return;
         try {
             File file = persistentFile(fileName);
-            String line = object.toString() + "\n";
-            try (FileOutputStream out = new FileOutputStream(file, true)) {
-                out.write(line.getBytes(StandardCharsets.UTF_8));
-                out.flush();
-            }
+            if(PERSISTENT_OBSERVATIONS_FILE.equals(fileName))PersistentMarketLog.appendEvent(file,
+                    object.optString("eventType",""),object.toString());
+            else PersistentMarketLog.appendFrame(file,object.toString());
         } catch (Exception ignored) {}
     }
 
     private void resetPersistentRecorder() {
-        try { persistentFile(PERSISTENT_OBSERVATIONS_FILE).delete(); } catch (Exception ignored) {}
-        try { persistentFile(PERSISTENT_MARKET_FRAMES_FILE).delete(); } catch (Exception ignored) {}
+        try { PersistentMarketLog.reset(persistentFile(PERSISTENT_OBSERVATIONS_FILE)); }
+        catch (Exception ignored) {}
+        try { PersistentMarketLog.reset(persistentFile(PERSISTENT_MARKET_FRAMES_FILE)); }
+        catch (Exception ignored) {}
         LAST_PERSISTENT_OBSERVATIONS_JSON = "[]";
         LAST_PERSISTENT_MARKET_FRAMES_JSON = "[]";
         LAST_OVERNIGHT_RECORDER_SUMMARY_JSON = "{}";
@@ -1799,23 +1796,6 @@ public class MarketWatchService extends Service {
         if(!changed)return;try(FileOutputStream out=new FileOutputStream(file,false)){
             out.write(migrated.toString().getBytes(StandardCharsets.UTF_8));out.flush();
         }catch(Exception ignored){}
-    }
-
-    private void persistMarketFrame(MarketFrame frame, long now, boolean force) {
-        if (frame == null) return;
-        if (!force && lastPersistentMarketFrameAt > 0 && now - lastPersistentMarketFrameAt < PERSISTENT_MARKET_FRAME_INTERVAL_MS) {
-            return;
-        }
-
-        try {
-            JSONObject json = marketFrameJson(frame);
-            json.put("symbol",MarketProfile.ETH_SYMBOL);
-            json.put("asset","ETH");
-            json.put("profileVersion",MarketProfile.eth().profileVersion);
-            json.put("persistedAt", now);
-            appendPersistentJsonLine(PERSISTENT_MARKET_FRAMES_FILE, json);
-            lastPersistentMarketFrameAt = now;
-        } catch (Exception ignored) {}
     }
 
     private void persistObservedSignalEvent(ObservedSignal item, String event, MarketSnapshot snapshot, long now) {
@@ -1973,7 +1953,6 @@ public class MarketWatchService extends Service {
         marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.frame(now,decision,snapshot,
                 ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
         updateMarketFrameFutureLabels(snapshot.ethLast, now);
-        persistMarketFrame(frame, now, decision != null && decision.isSignal());
 
         while (marketFrames.size() > 7200) marketFrames.removeFirst();
 
@@ -3975,10 +3954,6 @@ public class MarketWatchService extends Service {
                 if(runtime.hasActivePlan())activePlans.put(activePlanJson(runtime.activePlan));
             }
             state.put("activePlans",activePlans);
-            state.put("marketDiagnostics",runtimeEventsJson("ALL"));
-            state.put("marketCandidates",runtimeEventsJson("CANDIDATE"));
-            state.put("marketPlanHistory",runtimeEventsJson("PLAN"));
-            state.put("multiMarketFrames",runtimeFramesJson());
             state.put("marketSummary",runtimeSummaryJson());
             double ethRisk=activeSignal&&lastSignal!=null?lastSignal.quantity*(lastSignal.stopDistance+2.35):0;
             double totalRisk=ethRisk;
@@ -4022,7 +3997,6 @@ public class MarketWatchService extends Service {
             state.put("marketRecorderSummary", marketRecorderSummaryJson());
             state.put("observationSummary", observationSummaryJson());
             state.put("calibrationSummary", calibrationSummaryJson());
-            state.put("observedSignals", observedSignalsJson());
             state.put("engineMetrics", engineMetricsJson(snapshot, decision));
             state.put("lastSignalAt", lastSignalAt);
             state.put("lastTerminalAt", lastTerminalAt > 0 ? lastTerminalAt : JSONObject.NULL);
@@ -4071,13 +4045,7 @@ public class MarketWatchService extends Service {
                 state.put("lastSignal", signal);
                 state.put("lastPlan", signal);
             }
-            JSONArray recent = new JSONArray();
-            for (DiagnosticEntry entry : signalEngine.recentDiagnostics(80)) {
-                JSONObject item = new JSONObject();
-                item.put("at", entry.timestamp); item.put("code", entry.code); item.put("message", entry.message);
-                recent.put(item);
-            }
-            state.put("diagnostics", recent);
+            StatusPayloadPolicy.compact(state,marketCoordinator.runtimes().values());
             String output = state.toString();
             LAST_STATUS_JSON = output;
             getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().putString(STATE_JSON, output).apply();

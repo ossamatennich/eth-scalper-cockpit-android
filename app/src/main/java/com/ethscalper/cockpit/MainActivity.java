@@ -691,7 +691,6 @@ public class MainActivity extends Activity {
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
             try (ZipOutputStream zip = new ZipOutputStream(memory)) {
                 JSONObject metrics = state.optJSONObject("engineMetrics");
-                JSONArray observed = state.optJSONArray("observedSignals");
                 String marketFramesRaw = MarketWatchService.getLastMarketFramesJson();
                 String marketSummaryRaw = MarketWatchService.getLastMarketSummaryJson();
                 JSONArray marketFrames = new JSONArray(marketFramesRaw == null || marketFramesRaw.trim().isEmpty() ? "[]" : marketFramesRaw);
@@ -706,11 +705,16 @@ public class MainActivity extends Activity {
                 JSONArray persistentObserved = new JSONArray(persistentObservedRaw == null || persistentObservedRaw.trim().isEmpty() ? "[]" : persistentObservedRaw);
                 JSONArray persistentFrames = new JSONArray(persistentFramesRaw == null || persistentFramesRaw.trim().isEmpty() ? "[]" : persistentFramesRaw);
                 JSONObject overnightSummary = new JSONObject(overnightSummaryRaw == null || overnightSummaryRaw.trim().isEmpty() ? "{}" : overnightSummaryRaw);
-                JSONArray marketDiagnostics=state.optJSONArray("marketDiagnostics");if(marketDiagnostics==null)marketDiagnostics=new JSONArray();
-                JSONArray marketCandidates=state.optJSONArray("marketCandidates");if(marketCandidates==null)marketCandidates=new JSONArray();
-                JSONArray marketPlanHistory=state.optJSONArray("marketPlanHistory");if(marketPlanHistory==null)marketPlanHistory=new JSONArray();
-                JSONArray multiMarketFrames=state.optJSONArray("multiMarketFrames");if(multiMarketFrames==null)multiMarketFrames=new JSONArray();
-                JSONObject multiMarketSummary=state.optJSONObject("marketSummary");if(multiMarketSummary==null)multiMarketSummary=new JSONObject();
+                DiagnosticExportContract.ExportData rebuilt=DiagnosticExportContract.rebuild(
+                        jsonArrayMaps(persistentObserved),jsonArrayMaps(persistentFrames));
+                JSONArray marketDiagnostics=mapsJsonArray(rebuilt.diagnostics);
+                JSONArray marketCandidates=mapsJsonArray(rebuilt.candidates);
+                JSONArray marketPlanHistory=mapsJsonArray(rebuilt.plans);
+                JSONArray multiMarketFrames=mapsJsonArray(rebuilt.frames);
+                JSONObject multiMarketSummary=new JSONObject();
+                for(java.util.Map.Entry<String,java.util.Map<String,Object>> item:rebuilt.summary.entrySet())
+                    multiMarketSummary.put(item.getKey(),new JSONObject(item.getValue()));
+                JSONArray observed=persistentObserved;
                 addZipText(zip, "status.json", state.toString(2));
                 addZipText(zip, "markets.json", state.optJSONObject("markets") == null ? "{}" : state.optJSONObject("markets").toString(2));
                 addZipText(zip, "active_plans.json", state.optJSONArray("activePlans") == null ? "[]" : state.optJSONArray("activePlans").toString(2));
@@ -1193,6 +1197,22 @@ public class MainActivity extends Activity {
         out.put("profiles",profiles);JSONObject reference=new JSONObject();
         reference.put("symbol",MarketProfile.BTC_SYMBOL);reference.put("asset","BTC");
         reference.put("tradable",false);out.put("referenceMarket",reference);return out;
+    }
+
+    private java.util.List<java.util.Map<String,Object>> jsonArrayMaps(JSONArray source)throws Exception {
+        java.util.List<java.util.Map<String,Object>> out=new java.util.ArrayList<>();
+        if(source==null)return out;for(int i=0;i<source.length();i++){
+            JSONObject value=source.optJSONObject(i);if(value==null)continue;
+            java.util.Map<String,Object> map=new java.util.LinkedHashMap<>();
+            java.util.Iterator<String> keys=value.keys();while(keys.hasNext()){
+                String key=keys.next();Object item=value.opt(key);map.put(key,item==JSONObject.NULL?null:item);}
+            out.add(map);
+        }return out;
+    }
+
+    private JSONArray mapsJsonArray(java.util.List<java.util.Map<String,Object>> source) {
+        JSONArray out=new JSONArray();if(source!=null)for(java.util.Map<String,Object> value:source)
+            out.put(new JSONObject(value));return out;
     }
 
     private String buildMultiMarketCsv(JSONArray arr) {

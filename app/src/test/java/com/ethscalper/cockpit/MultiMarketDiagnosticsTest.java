@@ -104,9 +104,9 @@ public final class MultiMarketDiagnosticsTest {
         assertEquals(19,DiagnosticExportContract.REQUIRED_FILES.size());
         assertTrue(DiagnosticExportContract.REQUIRED_FILES.contains("market_diagnostics.json"));
         assertTrue(DiagnosticExportContract.REQUIRED_FILES.contains("persistent_market_events.jsonl"));
-        assertEquals("ETH_SOL_Scalper_Diagnostic_v2_34_0_2_",
-                DiagnosticExportContract.zipPrefix("2.34.0.2"));
-        assertFalse(DiagnosticExportContract.instructions("2.34.0.2").contains("v2.34.0\n"));
+        assertEquals("ETH_SOL_Scalper_Diagnostic_v2_34_0_3_",
+                DiagnosticExportContract.zipPrefix("2.34.0.3"));
+        assertFalse(DiagnosticExportContract.instructions("2.34.0.3").contains("v2.34.0\n"));
     }
 
     @Test public void applicationExporterContainsEveryRequiredZipEntry() throws Exception {
@@ -114,8 +114,8 @@ public final class MultiMarketDiagnosticsTest {
         for(String file:DiagnosticExportContract.REQUIRED_FILES)
             assertTrue("missing "+file,source.contains("\""+file+"\""));
         assertTrue(source.contains("BuildConfig.VERSION_NAME"));
-        assertTrue(source.contains("state.optJSONArray(\"marketDiagnostics\")"));
-        assertTrue(source.contains("marketDiagnostics.toString(2)"));
+        assertTrue(source.contains("DiagnosticExportContract.rebuild("));
+        assertFalse(source.contains("state.optJSONArray(\"marketDiagnostics\")"));
     }
 
     @Test public void publishedLifecycleStillHasOnlyTpAndSlTerminals() throws Exception {

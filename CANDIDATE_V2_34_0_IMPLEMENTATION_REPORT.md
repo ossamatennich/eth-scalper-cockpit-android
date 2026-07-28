@@ -1,13 +1,13 @@
-# Candidate v2.34.0.2 — Implementation report
+# Candidate v2.34.0.3 — Implementation report
 
 ## Référence et portée
 
 - Dépôt : `ossamatennich/eth-scalper-cockpit-android`
 - Branche : `agent/v2.32.7-scalp-p01-candidate`
-- HEAD de départ verrouillé : `baed6bc535dce77228a51b907ed77aac0e17ea14`
+- HEAD de départ verrouillé : `14c89bc0dbe97ff9754f5120eac37280769f1495`
 - Base PR : `agent/v2.32.6-candidate`
-- Version : `23402` / `2.34.0.2`
-- Nom : **ETH + SOL Scalper Cockpit v2.34.0.2 — Complete Multi-Market Research**
+- Version : `23403` / `2.34.0.3`
+- Nom : **ETH + SOL Scalper Cockpit v2.34.0.3 — Stable Multi-Market Research**
 - Mode : `RESEARCH_ONLY`, `realTradingAllowed=false`, exécution manuelle uniquement.
 
 ## Routage extensible
@@ -28,13 +28,15 @@ Le modèle historique replay ETH n'est pas présenté comme un veto non-ETH : so
 
 ## Recorder multi-marchés complet
 
-Chaque `MarketRuntime` possède un `MarketDiagnosticRecorder` borné et indépendant. Il enregistre frames, diagnostics moteur, décisions, admissions, candidats P01/P02, déduplications, tombstones, confirmations, persistance/publication, terminaux, restaurations, resets et réarmements. Chaque ligne porte le symbole, l'actif, la version du profil et les métriques de marché/sleeve/risque. Seuls `PLAN_CONFIRMED` ou `PLAN_RESTORED` comptent comme trades ; un candidat pending ou rejeté ne le peut pas.
+Chaque `MarketRuntime` possède un `MarketDiagnosticRecorder` borné et indépendant. Les événements lifecycle sont exclusivement conservés dans `events`; `MARKET_FRAME` est exclusivement conservé dans la deque `frames`. Chaque ligne porte le symbole, l'actif, la version du profil et les métriques de marché/sleeve/risque. Seul `PLAN_CONFIRMED` compte comme trade ; `PLAN_RESTORED` alimente le compteur séparé `restoredActivePlans`. Un candidat pending, rejeté ou réinséré ne compte jamais comme trade.
 
-Les événements et frames sont persistés dans `persistent_market_events.jsonl` et `persistent_market_frames.jsonl`. Le reset conserve et réinsère chaque plan actif dans le journal de son symbole. Une migration ajoute les identifiants ETH aux anciennes frames dépourvues de symbole.
+Les événements et frames sont persistés séparément dans `persistent_market_events.jsonl` et `persistent_market_frames.jsonl`. Les frames sont échantillonnées au maximum une fois toutes les cinq secondes par symbole. Chaque fichier courant est limité à 64 Mio et conserve au plus une génération `.1`; l'export relit `.1` puis le courant. Le reset efface les deux générations tout en conservant et réinsérant chaque plan actif.
 
-## Export ZIP v2.34.0.2
+## Status Android borné et export ZIP v2.34.0.3
 
-Le ZIP `ETH_SOL_Scalper_Diagnostic_v2_34_0_2_<date>.zip` expose les 19 fichiers contractuels multi-marchés, dont diagnostics/candidats/plans/frames en JSON et CSV, journaux persistants JSON/JSONL, profils, résumés et health check. Les exports historiques ETH complémentaires restent disponibles sous des noms `legacy_eth_*`. Les versions produites utilisent `BuildConfig.VERSION_NAME` et `BuildConfig.VERSION_CODE`.
+Le status Android ne transporte plus les collections longues `marketDiagnostics`, `marketCandidates`, `marketPlanHistory`, `multiMarketFrames` ou `observedSignals`. Il conserve les états courants, plans, risques, résumés et au plus 20 diagnostics récents. Le test simulé de deux heures ETH+SOL mesure 18 917 octets.
+
+Le ZIP `ETH_SOL_Scalper_Diagnostic_v2_34_0_3_<date>.zip` reconstruit diagnostics, candidats, plans, frames et résumés à partir des deux journaux JSONL persistants, y compris leur génération `.1`. Les exports historiques ETH complémentaires restent disponibles sous des noms `legacy_eth_*`.
 
 ## Timestamp P01
 
