@@ -27,6 +27,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.io.IOException;
@@ -82,6 +83,7 @@ public class MarketWatchService extends Service {
             new MultiMarketCoordinator(marketRegistry);
     private final SharedReferenceContext sharedBtc = new SharedReferenceContext();
     private final MarketPlanOrchestrator marketOrchestrator = new MarketPlanOrchestrator();
+    private MarketDataRouter marketDataRouter;
     private final Deque<Candle> ethCandles = new ArrayDeque<>();
     private final Deque<Candle> btcCandles = new ArrayDeque<>();
     private final Deque<TradeFlow> flows = new ArrayDeque<>();
@@ -323,6 +325,35 @@ public class MarketWatchService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         p02SetupTracker.reset();
+        LinkedHashMap<String, MarketDataRouter.LegacyMirror> legacyMirrors =
+                new LinkedHashMap<>();
+        legacyMirrors.put(MarketProfile.ETH_SYMBOL, new MarketDataRouter.LegacyMirror() {
+            @Override public void onBookTicker(double last, double bid, double ask, long now) {
+                ethLast=last;ethBid=bid;ethAsk=ask;lastEthBookTickerAt=now;
+            }
+            @Override public void onKline(MarketRuntime.MarketBar bar, long receivedAt) {
+                ethLast=bar.close;upsert(ethCandles,toLegacyCandle(bar),180);
+            }
+            @Override public void onAggTrade(MarketRuntime.AggTrade trade,long receivedAt) {
+                if(trade.id>lastRestAggTradeId)lastRestAggTradeId=trade.id;
+                flows.addLast(new TradeFlow(trade.at,trade.buyerMaker
+                        ?-trade.quantity:trade.quantity));
+                lastAggTradeAt=trade.at;pruneFlows(receivedAt);
+            }
+            @Override public void onAggTradeBatch(int accepted,long receivedAt) {
+                if(accepted>0){restTradeRefreshes++;lastRestTradeOkAt=receivedAt;}
+            }
+            @Override public void onCandleBatch(List<MarketRuntime.MarketBar> bars,
+                                                boolean replace,long receivedAt) {
+                if(replace)ethCandles.clear();
+                for(MarketRuntime.MarketBar bar:bars)upsert(ethCandles,toLegacyCandle(bar),180);
+                if(!bars.isEmpty()){
+                    ethLast=bars.get(bars.size()-1).close;restKlineRefreshes++;
+                    lastRestKlineOkAt=receivedAt;
+                }
+            }
+        });
+        marketDataRouter=new MarketDataRouter(marketRegistry,marketCoordinator,legacyMirrors);
         ensureChannels(this);
         activePlanPersistence = new ActivePlanPersistence(
                 new SharedPreferencesActivePlanBackend(this));
@@ -364,12 +395,7 @@ public class MarketWatchService extends Service {
         } else if (ACTION_RESET_DIAGNOSTICS.equals(action)) {
             ObservedSignal activePlan = activeFinalSignal();
             for(MarketRuntime runtime:marketCoordinator.runtimes().values()) {
-                runtime.p02SetupTracker.reset();
-                runtime.signalEngine.clearDiagnostics();
-                runtime.observedSignals.clear();
-                runtime.pendingCandidates.clear();
-                runtime.candidateTombstones.clear();
-                runtime.marketFrames.clear();
+                runtime.resetDiagnosticsPreservingActivePlan();
             }
             p02SetupTracker.reset();
             signalEngine.clearDiagnostics();
@@ -379,6 +405,10 @@ public class MarketWatchService extends Service {
             marketFrames.clear();
             lastPersistentMarketFrameAt = 0;
             resetPersistentRecorder();
+            for(MarketRuntime runtime:marketCoordinator.runtimes().values())
+                if(runtime.hasActivePlan())persistRuntimePlanEvent(runtime.activePlan,
+                        "V23401_DIAGNOSTICS_RESET_ACTIVE_PLAN_REINSERTED",
+                        System.currentTimeMillis());
             if (activePlan != null) {
                 observedSignals.addLast(activePlan);
                 observedSignalId = Math.max(observedSignalId, activePlan.id);
@@ -701,31 +731,41 @@ public class MarketWatchService extends Service {
         if (client == null) return;
 
         long liveKlineAge = ageSeconds(now, lastKlineAt);
+        boolean tradedKlineMissing=false;
+        for(MarketRuntime runtime:marketCoordinator.runtimes().values()) {
+            if(runtime.candles.size()<30||runtime.lastKlineAt==0
+                    ||now-runtime.lastKlineAt>120_000L)tradedKlineMissing=true;
+        }
         boolean needKlines = lastRestKlineRefreshAt == 0
                 || now - lastRestKlineRefreshAt >= 15_000L
-                || ethCandles.size() < 30
                 || btcCandles.size() < 10
+                || tradedKlineMissing
                 || liveKlineAge < 0
                 || liveKlineAge > 120;
 
         if (needKlines) {
             lastRestKlineRefreshAt = now;
-            fetchRestKlines("ETHUSDT", true);
-            fetchRestKlines("BTCUSDT", false);
-            fetchRuntimeKlines(marketCoordinator.runtime(MarketProfile.SOL_SYMBOL),60,false);
+            for(MarketRuntime runtime:marketCoordinator.runtimes().values())
+                fetchRuntimeKlines(runtime,60,false);
+            fetchReferenceKlines(60,false);
         }
 
         long liveTradeAge = ageSeconds(now, lastAggTradeAt);
+        boolean tradedTradeMissing=false;
+        for(MarketRuntime runtime:marketCoordinator.runtimes().values()) {
+            if(runtime.aggTrades.isEmpty()||runtime.lastAggTradeAt==0
+                    ||now-runtime.lastAggTradeAt>120_000L)tradedTradeMissing=true;
+        }
         boolean needTrades = lastRestTradeRefreshAt == 0
                 || now - lastRestTradeRefreshAt >= 7_000L
-                || flows.isEmpty()
+                || tradedTradeMissing
                 || liveTradeAge < 0
                 || liveTradeAge > 120;
 
         if (needTrades) {
             lastRestTradeRefreshAt = now;
-            fetchRestAggTrades("ETHUSDT");
-            fetchRuntimeAggTrades(marketCoordinator.runtime(MarketProfile.SOL_SYMBOL));
+            for(MarketRuntime runtime:marketCoordinator.runtimes().values())
+                fetchRuntimeAggTrades(runtime);
         }
     }
 
@@ -846,9 +886,9 @@ public class MarketWatchService extends Service {
     private void prefillHistoricalCandlesIfNeeded() {
         if (historyPrefillRequested || client == null) return;
         historyPrefillRequested = true;
-        fetchHistoricalKlines("ETHUSDT", true);
-        fetchRuntimeKlines(marketCoordinator.runtime(MarketProfile.SOL_SYMBOL),180,true);
-        fetchHistoricalKlines("BTCUSDT", false);
+        for(MarketRuntime runtime:marketCoordinator.runtimes().values())
+            fetchRuntimeKlines(runtime,180,true);
+        fetchReferenceKlines(180,true);
     }
 
     private void fetchHistoricalKlines(String symbol, boolean isEth) {
@@ -914,7 +954,14 @@ public class MarketWatchService extends Service {
             @Override public void onResponse(Call call,Response response){
                 try{JSONArray rows=new JSONArray(response.body()==null?"":response.body().string());List<Candle> loaded=new ArrayList<>();
                     for(int i=0;i<rows.length();i++){JSONArray row=rows.optJSONArray(i);if(row!=null&&row.length()>=6)loaded.add(new Candle(row.optLong(0),row.optDouble(1),row.optDouble(2),row.optDouble(3),row.optDouble(4),row.optDouble(5)));}
-                    handler.post(()->{if(replace)runtime.candles.clear();for(Candle candle:loaded)upsertRuntime(runtime,candle);if(!loaded.isEmpty()){runtime.last=loaded.get(loaded.size()-1).close;runtime.lastRestKlineAt=System.currentTimeMillis();}evaluateSignal(System.currentTimeMillis());});
+                    handler.post(()->{long receivedAt=System.currentTimeMillis();
+                        List<MarketRuntime.MarketBar> bars=new ArrayList<>();
+                        for(Candle candle:loaded)bars.add(toRuntimeBar(candle));
+                        if(replace)marketDataRouter.replacePreloadedCandles(
+                                runtime.profile.symbol,bars,receivedAt);
+                        else marketDataRouter.mergeFallbackCandles(
+                                runtime.profile.symbol,bars,receivedAt);
+                        evaluateSignal(receivedAt);});
                 }catch(Exception ignored){}finally{try{response.close();}catch(Exception ignored){}}
             }});
     }
@@ -923,8 +970,13 @@ public class MarketWatchService extends Service {
         Request request=new Request.Builder().url("https://fapi.binance.com/fapi/v1/aggTrades?symbol="+runtime.profile.symbol+"&limit=500").build();
         client.newCall(request).enqueue(new Callback(){
             @Override public void onFailure(Call call,IOException error){}
-            @Override public void onResponse(Call call,Response response){try{String raw=response.body()==null?"":response.body().string();handler.post(()->{try{JSONArray rows=new JSONArray(raw);for(int i=0;i<rows.length();i++){JSONObject row=rows.optJSONObject(i);if(row==null)continue;long id=row.optLong("a",-1);if(id<=runtime.lastAggTradeId)continue;double q=row.optDouble("q",0),price=row.optDouble("p",runtime.last);long at=row.optLong("T",System.currentTimeMillis());if(q>0)runtime.aggTrades.addLast(new MarketRuntime.AggTrade(id,at,price,q,row.optBoolean("m",false)));runtime.lastAggTradeId=Math.max(runtime.lastAggTradeId,id);runtime.lastAggTradeAt=at;}runtime.lastRestTickerAt=System.currentTimeMillis();pruneRuntimeTrades(runtime,System.currentTimeMillis());evaluateSignal(System.currentTimeMillis());}catch(Exception ignored){}});}catch(Exception ignored){}finally{try{response.close();}catch(Exception ignored){}}}
+            @Override public void onResponse(Call call,Response response){try{String raw=response.body()==null?"":response.body().string();handler.post(()->{try{JSONArray rows=new JSONArray(raw);List<MarketRuntime.AggTrade> trades=new ArrayList<>();for(int i=0;i<rows.length();i++){JSONObject row=rows.optJSONObject(i);if(row==null)continue;long id=row.optLong("a",-1);double q=row.optDouble("q",0),price=row.optDouble("p",runtime.last);long at=row.optLong("T",System.currentTimeMillis());trades.add(new MarketRuntime.AggTrade(id,at,price,q,row.optBoolean("m",false)));}long receivedAt=System.currentTimeMillis();marketDataRouter.mergeFallbackAggTrades(runtime.profile.symbol,trades,receivedAt);evaluateSignal(receivedAt);}catch(Exception ignored){}});}catch(Exception ignored){}finally{try{response.close();}catch(Exception ignored){}}}
         });
+    }
+
+    private void fetchReferenceKlines(int limit,boolean replace) {
+        if(replace)fetchHistoricalKlines(MarketProfile.BTC_SYMBOL,false);
+        else fetchRestKlines(MarketProfile.BTC_SYMBOL,false);
     }
 
     private void handleMessage(String text) {
@@ -954,22 +1006,17 @@ public class MarketWatchService extends Service {
         bookTickerMessages++;
         long now = System.currentTimeMillis();
         lastBookTickerAt = now;
-        if (stream.startsWith("ethusdt")) {
-            lastEthBookTickerAt = now;
-            ethBid = data.optDouble("b", ethBid);
-            ethAsk = data.optDouble("a", ethAsk);
-            if (ethBid > 0 && ethAsk > 0) ethLast = (ethBid + ethAsk) / 2.0;
-            syncTicker(marketCoordinator.runtime(MarketProfile.ETH_SYMBOL),ethLast,ethBid,ethAsk,now);
-        } else if (stream.startsWith("solusdt")) {
-            MarketRuntime runtime=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);
-            double bid=data.optDouble("b",runtime.bid),ask=data.optDouble("a",runtime.ask);
-            syncTicker(runtime,bid>0&&ask>0?(bid+ask)/2.0:runtime.last,bid,ask,now);
-        } else if (stream.startsWith("btcusdt")) {
+        String symbol=MarketDataRouter.symbolFromStream(stream);
+        if (MarketProfile.BTC_SYMBOL.equals(symbol)) {
             btcBid = data.optDouble("b", btcBid);
             btcAsk = data.optDouble("a", btcAsk);
             if (btcBid > 0 && btcAsk > 0) btcLast = (btcBid + btcAsk) / 2.0;
             sharedBtc.bid=btcBid;sharedBtc.ask=btcAsk;sharedBtc.last=btcLast;
             sharedBtc.lastTickerAt=now;sharedBtc.bookTickerMessages++;
+        } else if(marketRegistry.contains(symbol)) {
+            MarketRuntime runtime=marketCoordinator.runtime(symbol);
+            marketDataRouter.routeBookTicker(symbol,data.optDouble("b",runtime.bid),
+                    data.optDouble("a",runtime.ask),now);
         }
     }
 
@@ -980,40 +1027,26 @@ public class MarketWatchService extends Service {
         if (kline == null) return;
         Candle candle = new Candle(kline.optLong("t"), kline.optDouble("o"), kline.optDouble("h"),
                 kline.optDouble("l"), kline.optDouble("c"), kline.optDouble("v"));
-        if (stream.startsWith("ethusdt")) {
-            ethLast = candle.close;
-            upsert(ethCandles, candle, 180);
-            upsertRuntime(marketCoordinator.runtime(MarketProfile.ETH_SYMBOL),candle);
-        } else if(stream.startsWith("solusdt")) {
-            MarketRuntime runtime=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);
-            runtime.last=candle.close;runtime.lastKlineAt=System.currentTimeMillis();runtime.klineMessages++;
-            upsertRuntime(runtime,candle);
-        } else if (stream.startsWith("btcusdt")) {
+        String symbol=MarketDataRouter.symbolFromStream(stream);
+        if (MarketProfile.BTC_SYMBOL.equals(symbol)) {
             btcLast = candle.close;
             upsert(btcCandles, candle, 180);
             sharedBtc.last=candle.close;sharedBtc.lastKlineAt=System.currentTimeMillis();sharedBtc.klineMessages++;
             upsertSharedBtc(candle);
+        } else if(marketRegistry.contains(symbol)) {
+            marketDataRouter.routeKline(symbol,toRuntimeBar(candle),System.currentTimeMillis());
         }
     }
 
     private void handleAggTrade(String stream, JSONObject data) {
-        if(stream.startsWith("solusdt")) {
-            MarketRuntime runtime=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);
-            long id=data.optLong("a",-1),time=data.optLong("T",System.currentTimeMillis());
-            double price=data.optDouble("p",runtime.last),quantity=data.optDouble("q",0);
-            if(quantity>0)runtime.aggTrades.addLast(new MarketRuntime.AggTrade(id,time,price,quantity,data.optBoolean("m",false)));
-            runtime.lastAggTradeId=Math.max(runtime.lastAggTradeId,id);runtime.lastAggTradeAt=time;runtime.aggTradeMessages++;
-            pruneRuntimeTrades(runtime,System.currentTimeMillis());
-            return;
-        }
         aggTradeMessages++;
-        lastAggTradeAt = System.currentTimeMillis();
-        long tradeId = data.optLong("a", -1);
-        if (tradeId > lastRestAggTradeId) lastRestAggTradeId = tradeId;
-        long time = data.optLong("T", System.currentTimeMillis());
-        double quantity = data.optDouble("q", 0);
-        flows.addLast(new TradeFlow(time, data.optBoolean("m", false) ? -quantity : quantity));
-        pruneFlows(System.currentTimeMillis());
+        String symbol=MarketDataRouter.symbolFromStream(stream);
+        if(!marketRegistry.contains(symbol))return;
+        MarketRuntime runtime=marketCoordinator.runtime(symbol);
+        long time=data.optLong("T",System.currentTimeMillis());
+        marketDataRouter.routeAggTrade(symbol,new MarketRuntime.AggTrade(
+                data.optLong("a",-1),time,data.optDouble("p",runtime.last),
+                data.optDouble("q",0),data.optBoolean("m",false)),System.currentTimeMillis());
     }
 
     private synchronized void evaluateSignal(long now) {
@@ -1857,6 +1890,15 @@ public class MarketWatchService extends Service {
 
     private String setupCandidateFor(MarketSnapshot s) {
         return P02SleeveFilter.setupCandidateFor(s);
+    }
+
+    private void persistRuntimePlanEvent(ActivePlanState plan,String event,long now) {
+        if(plan==null)return;
+        try {
+            JSONObject value=new JSONObject(plan.toMap());
+            value.put("event",event);value.put("at",now);
+            appendPersistentJsonLine(PERSISTENT_OBSERVATIONS_FILE,value);
+        } catch(Exception ignored) {}
     }
 
     private void updateMarketFrameFutureLabels(double price, long now) {
@@ -3619,6 +3661,8 @@ public class MarketWatchService extends Service {
     }
 
     private static void syncTicker(MarketRuntime runtime,double last,double bid,double ask,long now){runtime.last=last;runtime.bid=bid;runtime.ask=ask;runtime.lastTickerAt=now;runtime.bookTickerMessages++;}
+    private static MarketRuntime.MarketBar toRuntimeBar(Candle c){return new MarketRuntime.MarketBar(c.openTime,c.open,c.high,c.low,c.close,c.volume);}
+    private static Candle toLegacyCandle(MarketRuntime.MarketBar b){return new Candle(b.openTime,b.open,b.high,b.low,b.close,b.volume);}
     private static void upsertRuntime(MarketRuntime runtime,Candle c){
         if(!runtime.candles.isEmpty()&&runtime.candles.peekLast().openTime==c.openTime)runtime.candles.removeLast();
         runtime.candles.addLast(new MarketRuntime.MarketBar(c.openTime,c.open,c.high,c.low,c.close,c.volume));
@@ -3794,7 +3838,7 @@ public class MarketWatchService extends Service {
             if (activeSignal && lastSignal != null) decision = lastSignal;
 
             JSONObject state = new JSONObject();
-            state.put("version", "2.34.0-android-multi-market-research");
+            state.put("version", "2.34.0.1-android-hardened-multi-market-research");
             state.put("nativeActive", running);
             state.put("connected", connected);
             state.put("lastAgeSec", age);
@@ -3807,24 +3851,43 @@ public class MarketWatchService extends Service {
             state.put("candles", ethCandles.size());
             state.put("tradeFlowSamples", flows.size());
             JSONObject markets=new JSONObject();
-            markets.put(MarketProfile.ETH_SYMBOL,marketStatusJson(MarketProfile.eth(),ethLast,ethBid,ethAsk,
-                    ethCandles.size(),lastEthBookTickerAt,lastSignal,activeSignal,lastTerminalAt,now));
-            MarketRuntime solRuntime=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);
-            markets.put(MarketProfile.SOL_SYMBOL,marketStatusJson(solRuntime.profile,solRuntime.last,
-                    solRuntime.bid,solRuntime.ask,solRuntime.candles.size(),solRuntime.lastTickerAt,
-                    solRuntime.lastSignal,solRuntime.hasActivePlan(),solRuntime.lastTerminalAt,now));
+            for(MarketProfile profile:marketRegistry.tradedMarkets()) {
+                if(MarketProfile.ETH_SYMBOL.equals(profile.symbol)) {
+                    markets.put(profile.symbol,marketStatusJson(profile,ethLast,ethBid,ethAsk,
+                            ethCandles.size(),lastEthBookTickerAt,lastSignal,activeSignal,
+                            lastTerminalAt,activeStatus,now));
+                } else {
+                    MarketRuntime runtime=marketCoordinator.runtime(profile.symbol);
+                    markets.put(profile.symbol,marketStatusJson(profile,runtime.last,runtime.bid,
+                            runtime.ask,runtime.candles.size(),runtime.lastTickerAt,
+                            runtime.lastSignal,runtime.hasActivePlan(),runtime.lastTerminalAt,
+                            runtime.lastTerminalStatus,now));
+                }
+            }
             state.put("markets",markets);
             JSONObject reference=new JSONObject();reference.put("symbol",MarketProfile.BTC_SYMBOL);
             putPrice(reference,"last",btcLast);putPrice(reference,"bid",btcBid);putPrice(reference,"ask",btcAsk);
             reference.put("feedAgeSec",ageSeconds(now,sharedBtc.lastTickerAt));reference.put("tradable",false);
             state.put("referenceMarket",reference);
-            JSONArray activePlans=new JSONArray();if(activeSignal&&lastSignal!=null)activePlans.put(signalJson(lastSignal));
-            if(solRuntime.hasActivePlan())activePlans.put(activePlanJson(solRuntime.activePlan));
+            JSONArray activePlans=new JSONArray();
+            if(activeSignal&&lastSignal!=null)activePlans.put(signalJson(lastSignal));
+            for(MarketProfile profile:marketRegistry.tradedMarkets()) {
+                if(MarketProfile.ETH_SYMBOL.equals(profile.symbol))continue;
+                MarketRuntime runtime=marketCoordinator.runtime(profile.symbol);
+                if(runtime.hasActivePlan())activePlans.put(activePlanJson(runtime.activePlan));
+            }
             state.put("activePlans",activePlans);
             double ethRisk=activeSignal&&lastSignal!=null?lastSignal.quantity*(lastSignal.stopDistance+2.35):0;
-            double solRisk=solRuntime.hasActivePlan()?solRuntime.activePlan.theoreticalMaximumLoss:0;
-            JSONObject aggregate=new JSONObject();aggregate.put("ethActiveRiskUsdt",ethRisk);
-            aggregate.put("solActiveRiskUsdt",solRisk);aggregate.put("totalActiveRiskUsdt",ethRisk+solRisk);
+            double totalRisk=ethRisk;
+            JSONObject riskBySymbol=new JSONObject();riskBySymbol.put(MarketProfile.ETH_SYMBOL,ethRisk);
+            for(MarketProfile profile:marketRegistry.tradedMarkets()) {
+                if(MarketProfile.ETH_SYMBOL.equals(profile.symbol))continue;
+                MarketRuntime runtime=marketCoordinator.runtime(profile.symbol);
+                double risk=runtime.hasActivePlan()?runtime.activePlan.theoreticalMaximumLoss:0;
+                riskBySymbol.put(profile.symbol,risk);totalRisk+=risk;
+            }
+            JSONObject aggregate=new JSONObject();aggregate.put("riskBySymbol",riskBySymbol);
+            aggregate.put("totalActiveRiskUsdt",totalRisk);
             aggregate.put("informationalOnly",true);state.put("aggregateRisk",aggregate);
             state.put("bookTickerMessages", bookTickerMessages);
             state.put("klineMessages", klineMessages);
@@ -3923,14 +3986,16 @@ public class MarketWatchService extends Service {
 
     private JSONObject marketStatusJson(MarketProfile profile,double last,double bid,double ask,
                                         int candles,long tickerAt,SignalDecision signal,
-                                        boolean active,long terminalAt,long now)throws Exception{
+                                        boolean active,long terminalAt,String terminal,long now)throws Exception{
         JSONObject value=new JSONObject();value.put("symbol",profile.symbol);value.put("asset",profile.asset);
         value.put("profileVersion",profile.profileVersion);putPrice(value,"last",last);putPrice(value,"bid",bid);putPrice(value,"ask",ask);
         value.put("candles",candles);value.put("feedAgeSec",ageSeconds(now,tickerAt));value.put("active",active);
         value.put("rearmRemainingMs",TerminalRearmPersistence.remainingMs(now,terminalAt));
-        String terminal="";
-        if(MarketProfile.SOL_SYMBOL.equals(profile.symbol))terminal=marketCoordinator.runtime(profile.symbol).lastTerminalStatus;
         value.put("state",active?"PLAN ACTIF":!terminal.isEmpty()?terminal:tickerAt<=0||now-tickerAt>ETH_BOOK_MAX_AGE_MS?"STALE":"ANALYSE");
+        double modeledRisk=0;
+        if(active&&signal!=null)modeledRisk=signal.quantity*(signal.stopDistance
+                +profile.scaledMinimum(profile.riskExecutionAllowanceReference,signal.entry));
+        value.put("modeledRiskUsdt",modeledRisk);
         if(signal!=null)value.put("signal",signalJson(signal));return value;
     }
 

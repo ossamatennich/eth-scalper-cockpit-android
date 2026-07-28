@@ -46,7 +46,9 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -63,7 +65,8 @@ public class MainActivity extends Activity {
 
     private LinearLayout root;
     private TextView statusPill, feedAge, decisionValue, decisionReason, actionValue, actionDetails;
-    private TextView ethPrice, ethQuotes, solPrice, solQuotes, btcPrice, btcQuotes, movementValue, signalValue, solSignalValue;
+    private final Map<String, MarketCardViews> marketCards = new LinkedHashMap<>();
+    private TextView btcPrice, btcQuotes, movementValue, signalValue;
     private TextView diagnosticValue, serviceInfo, aiInfo;
     private boolean showingLegacyCockpit;
     private boolean receiverRegistered;
@@ -148,7 +151,7 @@ public class MainActivity extends Activity {
         feedAge.setLayoutParams(ageParams);
         statusRow.addView(feedAge);
 
-        TextView version = text("v2.34.0 · Multi-Market Research", 12, MUTED, true);
+        TextView version = text("v2.34.0.1 · Hardened Multi-Market Research", 12, MUTED, true);
         version.setGravity(Gravity.END);
         statusRow.addView(version);
     }
@@ -174,16 +177,17 @@ public class MainActivity extends Activity {
 
     private void buildPriceCard() {
         LinearLayout card = card("PRIX FUTURES EN TEMPS RÉEL", CYAN);
-        card.addView(marketLabel("ETH / USDT PERP"));
-        ethPrice = text("—", 34, TEXT, true);
-        card.addView(ethPrice);
-        ethQuotes = text("BID —    ·    ASK —", 14, MUTED, true);
-        card.addView(ethQuotes);
-        card.addView(marketLabel("SOL / USDT PERP"));
-        solPrice = text("—", 34, TEXT, true);
-        card.addView(solPrice);
-        solQuotes = text("BID —    ·    ASK —", 14, MUTED, true);
-        card.addView(solQuotes);
+        marketCards.clear();
+        for(MarketUiCatalog.CardDescriptor descriptor:
+                MarketUiCatalog.cards(MarketRegistry.production())) {
+            MarketCardViews views=new MarketCardViews();
+            card.addView(marketLabel(descriptor.asset+" / USDT PERP · "+descriptor.symbol));
+            views.price=text("—",34,TEXT,true);card.addView(views.price);
+            views.quotes=text("BID —    ·    ASK —",14,MUTED,true);card.addView(views.quotes);
+            views.status=text(descriptor.symbol+" · initialisation",14,MUTED,false);
+            views.status.setPadding(0,dp(5),0,dp(14));card.addView(views.status);
+            marketCards.put(descriptor.symbol,views);
+        }
         View separator = new View(this);
         separator.setBackgroundColor(BORDER);
         LinearLayout.LayoutParams separatorParams = new LinearLayout.LayoutParams(
@@ -215,9 +219,6 @@ public class MainActivity extends Activity {
         signalValue = text("Aucun signal natif pour le moment.", 16, TEXT, true);
         signalValue.setLineSpacing(dp(3), 1f);
         card.addView(signalValue);
-        solSignalValue = text("SOLUSDT · analyse silencieuse", 16, TEXT, true);
-        solSignalValue.setPadding(0, dp(12), 0, 0);
-        card.addView(solSignalValue);
     }
 
     private void buildDiagnosticCard() {
@@ -434,11 +435,6 @@ public class MainActivity extends Activity {
             double eth = number(state, "eth"), bid = number(state, "bid"), ask = number(state, "ask");
             double btc = number(state, "btc"), btcBid = number(state, "btcBid"), btcAsk = number(state, "btcAsk");
             JSONObject markets=state.optJSONObject("markets");
-            JSONObject solMarket=markets==null?null:markets.optJSONObject("SOLUSDT");
-            double sol=solMarket==null?Double.NaN:number(solMarket,"last");
-            double solBid=solMarket==null?Double.NaN:number(solMarket,"bid");
-            double solAsk=solMarket==null?Double.NaN:number(solMarket,"ask");
-            JSONObject solSignal=solMarket==null?null:solMarket.optJSONObject("signal");
             JSONObject movement = state.optJSONObject("movement");
             JSONObject lastSignal = state.optJSONObject("lastSignal");
             JSONArray diagnostics = state.optJSONArray("diagnostics");
@@ -457,10 +453,10 @@ public class MainActivity extends Activity {
                 if (statusPill == null) return;
                 renderConnection(connected, ageSeconds);
                 renderDecision(decision, visibleReason);
-                renderPrices(eth, bid, ask, sol, solBid, solAsk, btc, btcBid, btcAsk);
+                renderMarketCards(markets);
+                renderReferencePrice(btc,btcBid,btcAsk);
                 renderMovement(movement);
                 renderSignal(lastSignal, signalAt, decision, visibleReason, state.optBoolean("activeSignal", false), state.optString("activeSignalStatus", "NONE"));
-                renderSolSignal(solMarket,solSignal);
                 renderAction(action, decision, lastSignal, eth, signalAt,
                         state.optBoolean("activeSignal", false),
                         state.optString("activeSignalStatus", "NONE"),
@@ -498,22 +494,30 @@ public class MainActivity extends Activity {
         decisionReason.setText(reason);
     }
 
-    private void renderPrices(double eth, double bid, double ask,double sol,double solBid,double solAsk, double btc, double btcBid, double btcAsk) {
-        ethPrice.setText(formatPrice(eth));
-        ethQuotes.setText("BID " + formatPrice(bid) + "    ·    ASK " + formatPrice(ask));
-        solPrice.setText(formatPrice(sol));solQuotes.setText("BID "+formatPrice(solBid)+"    ·    ASK "+formatPrice(solAsk));
+    private void renderReferencePrice(double btc,double btcBid,double btcAsk) {
         btcPrice.setText(formatPrice(btc));
         btcQuotes.setText("BID " + formatPrice(btcBid) + "    ·    ASK " + formatPrice(btcAsk));
     }
 
-    private void renderSolSignal(JSONObject market,JSONObject signal){
-        if(solSignalValue==null)return;if(market==null){solSignalValue.setText("SOLUSDT · initialisation");return;}
-        if(signal==null){solSignalValue.setText("SOLUSDT · "+market.optString("state","ANALYSE")+" · aucun plan actif");return;}
-        String state=market.optString("state","ANALYSE");
-        solSignalValue.setText("SOLUSDT · "+state+"\n"+signal.optString("side","")+" · "+signal.optInt("qty",0)+" SOL"
-                +"\nLIMIT "+formatPrice(number(signal,"entry"))+" · TP "+formatPrice(number(signal,"tp"))+" · SL "+formatPrice(number(signal,"sl")));
-        solSignalValue.setTextColor(CYAN);
+    private void renderMarketCards(JSONObject markets){
+        for(Map.Entry<String,MarketCardViews> entry:marketCards.entrySet()) {
+            MarketCardViews views=entry.getValue();
+            JSONObject market=markets==null?null:markets.optJSONObject(entry.getKey());
+            if(market==null){views.price.setText("—");views.quotes.setText("BID —    ·    ASK —");
+                views.status.setText(entry.getKey()+" · initialisation");continue;}
+            views.price.setText(formatPrice(number(market,"last")));
+            views.quotes.setText("BID "+formatPrice(number(market,"bid"))+"    ·    ASK "+formatPrice(number(market,"ask")));
+            JSONObject signal=market.optJSONObject("signal");
+            String status=market.optString("state","ANALYSE")+" · flux "+market.optLong("feedAgeSec",-1)+"s";
+            if(signal!=null)status+="\n"+signal.optString("side","")+" · "+signal.optInt("qty",signal.optInt("quantity",0))+" "+market.optString("asset","")
+                    +" · LIMIT "+formatPrice(number(signal,"entry"))+" · TP "+formatPrice(number(signal,"tp"))+" · SL "+formatPrice(number(signal,"sl"))
+                    +"\nqualité "+signal.optInt("score",0)+" · risque "+String.format(Locale.US,"%.2f USDT",market.optDouble("modeledRiskUsdt",0));
+            else status+=" · aucun plan actif";
+            views.status.setText(status);views.status.setTextColor(signal==null?MUTED:CYAN);
+        }
     }
+
+    private static final class MarketCardViews { TextView price,quotes,status; }
 
     private void renderMovement(JSONObject movement) {
         if (movement == null) {

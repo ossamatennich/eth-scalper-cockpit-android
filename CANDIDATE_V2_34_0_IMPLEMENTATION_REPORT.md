@@ -1,72 +1,57 @@
-# Candidate v2.34.0 — Implementation report
+# Candidate v2.34.0.1 — Implementation report
 
 ## Référence et portée
 
 - Dépôt : `ossamatennich/eth-scalper-cockpit-android`
 - Branche : `agent/v2.32.7-scalp-p01-candidate`
-- HEAD de départ verrouillé : `5e00f3f88bf2da5237ae7f8c0d851aa0fb4fe251`
+- HEAD de départ verrouillé : `04926018fb2260e5fee89bb6b2bdaf1acf652d4d`
 - Base PR : `agent/v2.32.6-candidate`
-- Version : `23400` / `2.34.0`
-- Nom : **ETH + SOL Scalper Cockpit v2.34.0 — Multi-Market Research**
+- Version : `23401` / `2.34.0.1`
+- Nom : **ETH + SOL Scalper Cockpit v2.34.0.1 — Hardened Multi-Market Research**
 - Mode : `RESEARCH_ONLY`, `realTradingAllowed=false`, exécution manuelle uniquement.
 
-## Golden master ETH
+## Routage extensible
 
-Une référence immuable, créée avant la généralisation, utilise la graine `23321042` et compare 20 000 snapshots. Le raccourci historique `evaluate(snapshot)` reste le chemin ETH ; `evaluate(snapshot, MarketProfile.eth())` lui délègue directement. Les factories et alias sans symbole restent ETHUSDT. Les décisions, reason codes/textes, scores, quantités, niveaux, signatures, métriques normalisées et tous les champs du plan dynamique sont comparés, avec `Double.doubleToLongBits` pour les doubles.
+`MarketDataRouter` résout chaque symbole tradable depuis `MarketRegistry` et route de façon générique bookTicker, kline, aggTrade, préchargement REST et fallback REST vers son `MarketRuntime`. BTC conserve une voie distincte parce qu'il est le contexte partagé non tradable. Le runtime ETH synchronise aussi le miroir historique ETH afin de préserver son pipeline et ses résultats.
 
-Les 210 tests v2.33.2.1 ont été conservés sans suppression ni affaiblissement.
+`MarketWatchService` ne contient plus de branche SOL dédiée dans les handlers, le préchargement ou les fallbacks. Le test avec un troisième profil prouve que le service route quotes, bougies et trades sans nouvelle condition propre au symbole.
 
-## Architecture multi-marchés
+## Interface extensible
 
-- `MarketProfile` centralise les constantes immuables et les politiques de scaling.
-- `MarketRegistry` expose une liste ordonnée ETHUSDT/SOLUSDT et rejette tout symbole inconnu.
-- `MarketRuntime` isole bougies, aggTrades, quotes, fraîcheur, compteurs, candidats, tombstones, tracker P02, signaux, plan et réarmement.
-- `SharedReferenceContext` contient BTCUSDT une seule fois ; BTC n’est jamais enregistré comme marché tradable.
-- `MultiMarketCoordinator` applique un verrou de plan et un réarmement indépendants par symbole.
-- `MarketPlanOrchestrator` exécute le lifecycle candidat/fill/plan/TP-SL sans dépendance Android.
-- `MarketSnapshotFactory` construit causalement un snapshot pour n’importe quel profil enregistré.
+`MainActivity` construit les cartes des marchés depuis `MarketUiCatalog` et le registre. Aucun champ `solPrice`, `solQuotes` ou `solSignalValue` ne subsiste. Chaque carte utilise les mêmes vues dynamiques pour symbole, actif, prix, bid/ask, fraîcheur, état, plan, quantité, LIMIT, TP, SL, qualité et risque. BTC reste une carte de contexte distincte.
 
-Un faux troisième profil de test est enregistré et évalué par le coordinateur sans champ ni branche spécifique dans le service.
+## Admission SOL complète
 
-## Profil ETH
+`MarketAdmissionPolicy` applique avant admission les protections structurelles partagées : validité du candidat et du plan, fraîcheur du marché et de BTC, verrou mono-plan par symbole, réarmement, mémoire opposée isolée, déduplication, tombstones, mouvement consommé et conflits momentum/flow. Les règles sont classées `STRUCTURAL_SHARED` ou `ETH_HISTORICAL_ONLY`.
 
-Le profil `ETH_V23321` reprend directement les constantes v2.33.2.1 : `A_min=0.35`, spread 0.55, SL 0.55–2.50, TP 2.80–5.50, coûts 1.43/2.35, budgets 10.00/14.55, tick 0.01 et uplift historique. Aucun ratio SOL n’est utilisé pour recalculer ETH.
+Le modèle historique replay ETH n'est pas présenté comme un veto SOL : son absence produit le diagnostic comparatif explicite `V23401_SOL_HISTORICAL_REPLAY_MODEL_UNAVAILABLE`. Le chemin ETH historique demeure inchangé.
 
-## Profil SOL
+## Timestamp P01
 
-Le profil `SOL_V1_20260727` utilise `referencePrice=75.80`, `A_min_reference=0.015`, tick 0.01, quantités entières 1–120 et les budgets de niveau exacts :
+`MarketPlanOrchestrator` ne met `lastP01ConfirmedAt` à jour que pour un sleeve réellement P01. Une confirmation P02 conserve la valeur antérieure, y compris dans l'état persistant.
 
-- qualité 3 : 10.00 USDT ;
-- qualité 4 : 11.14 USDT ;
-- qualité 5 : 12.28 USDT ;
-- qualité 6 : 13.41 USDT ;
-- qualité 7 : 14.55 USDT.
+## Golden master ETH indépendant
 
-Les minimums/coûts/réserves sont arrondis au tick supérieur, les plafonds au tick inférieur sans jamais passer sous leur minimum. Le sizing SOL est `floor(budget / (stop arrondi + allowance))`, au pas entier, sans uplift ETH et sans réduction silencieuse. Un résultat hors 1–120 ou au-dessus du budget est rejeté.
+La référence a été produite dans un worktree temporaire détaché au commit historique exact `5e00f3f88bf2da5237ae7f8c0d851aa0fb4fe251`, avec la graine `23321042`, sans modifier cet ancien commit. Elle couvre 20 000 snapshots SignalEngine, décisions, reason codes/textes, scores, quantités, entrée/TP/SL, métriques normalisées, P01 normal/anticipé, frontières 999/1 000 et 14 999/15 000 ms, P02, OLS60, tous les champs de `DynamicTradePlan`, signatures, terminaux TP/SL, réarmement et restauration ETH.
 
-## Flux, fraîcheur et lifecycle
+- Manifest attendu : `app/src/test/resources/eth_v23321_golden_manifest.properties`
+- SHA-256 du fichier : `cc443c78d8e1b6ff71920b57edb0cdddf329a83919a77957aca7adbbaee503bb`
+- Digest global attendu : `dd17b73ee7748179cac67f3b05592b4d53ce96e24f3766763054179c9a56b8d3`
 
-Le WebSocket combiné est généré depuis le registre et inclut kline/aggTrade/bookTicker pour ETH et SOL, plus kline/bookTicker pour BTC. Les préchargements REST demandent 180 bougies par symbole et les fallbacks/trade IDs sont isolés. Un feed tradé stale bloque uniquement le symbole concerné ; BTC stale bloque les nouvelles créations des deux marchés. Les plans actifs continuent toujours leur surveillance TP/SL.
+Le test courant charge ces valeurs immuables ; il ne calcule pas son expected avec une seconde méthode de la candidate.
 
-ETH et SOL peuvent porter simultanément un plan final. Un second plan du même symbole reste interdit. Chaque terminal ne libère et ne réarme que son symbole.
+## Validateur SOL durci
 
-## Persistance et migration
+`validate_quantity` rejette désormais réellement toute quantité hors 1..120. Aucun `min(q, 120)` ne subsiste. Le scan intégral comptabilise les plans explicitement rejetés afin de poursuivre les statistiques sans réduire silencieusement leur quantité. Le manifest officiel est versionné dans `SOL_PROFILE_V1_CORPUS_MANIFEST.json`.
 
-`ActivePlanState` format 2 porte symbole, actif, version de profil, coût/allowance par unité, budget et perte modélisée. Les plans sont stockés sous `plan.<SYMBOL>.*`. Le format historique sans symbole migre vers ETHUSDT et conserve les anciennes quantités 1 ou 2. Une corruption namespacée reste isolée. Les réarmements utilisent `lastTerminalAt.<SYMBOL>` ; l’ancien timestamp migre comme ETH.
+## Lifecycle et sécurité inchangés
 
-La restauration et le reset diagnostic sont silencieux et conservent tous les plans actifs. Seuls TP et SL effacent le plan du symbole concerné.
+- Un plan ETH et un plan SOL peuvent être actifs simultanément ; un seul plan par symbole.
+- Un terminal d'un symbole ne clôture, ne réarme et n'efface que ce symbole.
+- Après publication, seule une touche TP ou SL termine un plan.
+- Aucun timeout, trailing, break-even ou veto analytique post-publication.
+- RANGE_FADE reste diagnostic-only.
+- BTC reste contexte uniquement et ne publie aucun plan.
+- Aucun ordre automatique, aucune clé exchange, aucune API privée.
 
-## Notifications, interface et diagnostics
-
-Chaque nouvelle confirmation finale peut sonner une seule fois. Les signatures et IDs SOL incluent le symbole ; la signature historique ETH est conservée par les overloads historiques. Restauration et terminaux mettent à jour silencieusement le même ID.
-
-L’interface unique affiche ETH, SOL et le contexte BTC, sans sélection de profil. Le status JSON fournit `markets`, `activePlans`, `referenceMarket` et `aggregateRisk`, tout en conservant les alias top-level ETH. L’agrégat de risque est informatif et ne bloque jamais le deuxième symbole. Les ZIP utilisent le préfixe `ETH_SOL_Scalper_Diagnostic_v2_34_0_` et incluent les profils et plans.
-
-## Sécurité et limites
-
-- Aucun ordre automatique, aucune API privée, aucune clé exchange.
-- IA informative uniquement après publication.
-- RANGE_FADE reste diagnostic-only sur ETH et SOL.
-- Une fois publié, un plan est immuable et ne termine que par `TP_TOUCHED` ou `SL_TOUCHED`.
-- La validation officielle 1m contrôle prix, distances, volatilité et risque ; elle ne constitue pas un replay exact des flows sous-minute SOL.
-- Aucune rentabilité future n’est garantie.
+La candidate reste un logiciel de recherche. Aucun résultat historique ou contrôle de cohérence ne constitue une garantie de performance future.

@@ -18,6 +18,7 @@ public final class MarketRuntime {
     public double last = Double.NaN, bid = Double.NaN, ask = Double.NaN;
     public long lastTickerAt, lastKlineAt, lastAggTradeAt, lastRestTickerAt, lastRestKlineAt;
     public long bookTickerMessages, klineMessages, aggTradeMessages;
+    public long restKlineRefreshes, restTradeRefreshes;
     public long lastAggTradeId = -1L;
     public long lastP01ConfirmedAt, lastTerminalAt;
     public String lastTerminalStatus="";
@@ -51,6 +52,17 @@ public final class MarketRuntime {
         lastTerminalAt = now;
         lastTerminalStatus=status==null?"":status;
         p02SetupTracker.reset();
+    }
+
+    /** Clears diagnostics and pending state while preserving and re-inserting an active plan. */
+    public void resetDiagnosticsPreservingActivePlan() {
+        p02SetupTracker.reset();
+        signalEngine.clearDiagnostics();
+        observedSignals.clear();
+        pendingCandidates.clear();
+        candidateTombstones.clear();
+        marketFrames.clear();
+        if (hasActivePlan()) observedSignals.addLast(activePlan);
     }
 
     public static final class MarketBar {

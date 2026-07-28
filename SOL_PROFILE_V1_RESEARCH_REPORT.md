@@ -13,7 +13,7 @@ Validation reproductible du profil `SOL_V1_20260727` sur les archives publiques 
 - Doublons identiques: {'ETHUSDT': 0, 'SOLUSDT': 0, 'BTCUSDT': 0}
 - Doublons conflictuels: 0
 - Archives: 150
-- Manifest SHA-256: `72ae835456076e828ab7f2a60d24decf2ae40a92f2357bb1dc2323c02ef2b626`
+- Manifest SHA-256: `7f08e6a4f65a3aba56223e517d4166c35e03f472e683a1d7a760be9daf57a5fc`
 
 ## Ratio de volatilité relative SOL/ETH
 
@@ -57,6 +57,7 @@ Validation reproductible du profil `SOL_V1_20260727` sur les archives publiques 
 ## Contrôles du profil
 
 - 1,088,640 prix SOL contrôlés causalement
+- 15,496 calculs de quantité rejetés explicitement hors de la plage 1..120 (aucun clamp silencieux)
 - aucune formule `SL_min > SL_max`
 - aucune formule `TP_floor > TP_cap`
 - distances au tick 0,01
