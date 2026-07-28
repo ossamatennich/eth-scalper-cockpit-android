@@ -1,0 +1,11 @@
+<resources>
+    <color name="nmc_background">#050A11</color>
+    <color name="nmc_surface">#0E1724</color>
+    <color name="nmc_surface_secondary">#121D2D</color>
+    <color name="nmc_turquoise">#43E0C1</color>
+    <color name="nmc_amber">#FFA940</color>
+    <color name="nmc_risk">#FF4E70</color>
+    <color name="nmc_text">#EDF4FB</color>
+    <color name="nmc_text_secondary">#899BB1</color>
+    <color name="nmc_border">#26394E</color>
+</resources>

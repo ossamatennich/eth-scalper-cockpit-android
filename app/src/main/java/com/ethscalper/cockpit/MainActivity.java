@@ -16,1309 +16,241 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.PowerManager;
-import android.provider.Settings;
 import android.provider.MediaStore;
+import android.provider.Settings;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.webkit.WebChromeClient;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.EditText;
-import android.widget.Switch;
-import android.text.InputType;
 
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+/** Native-only NMC cockpit. Market cards are registry-driven and updated incrementally. */
 public class MainActivity extends Activity {
-    private static final int BG = Color.rgb(5, 10, 17);
-    private static final int CARD = Color.rgb(14, 23, 36);
-    private static final int CARD_ALT = Color.rgb(18, 29, 45);
-    private static final int BORDER = Color.rgb(38, 57, 78);
-    private static final int TEXT = Color.rgb(237, 244, 251);
-    private static final int MUTED = Color.rgb(137, 155, 177);
-    private static final int CYAN = Color.rgb(67, 224, 193);
-    private static final int ORANGE = Color.rgb(255, 169, 64);
-    private static final int RED = Color.rgb(255, 78, 112);
+    private static final int BG=Color.rgb(5,10,17),CARD=Color.rgb(14,23,36),CARD_ALT=Color.rgb(18,29,45);
+    private static final int BORDER=Color.rgb(38,57,78),TEXT=Color.rgb(237,244,251),MUTED=Color.rgb(137,155,177);
+    private static final int CYAN=Color.rgb(67,224,193),AMBER=Color.rgb(255,169,64),RED=Color.rgb(255,78,112);
+    private static final int COCKPIT=0,PLANS=1,DIAGNOSTIC=2,TOOLS=3;
 
-    private LinearLayout root;
-    private TextView statusPill, feedAge, decisionValue, decisionReason, actionValue, actionDetails;
-    private final Map<String, MarketCardViews> marketCards = new LinkedHashMap<>();
-    private TextView btcPrice, btcQuotes, movementValue, signalValue;
-    private TextView diagnosticValue, serviceInfo, aiInfo;
-    private boolean showingLegacyCockpit;
+    private LinearLayout shell,bottomNavigation;
+    private FrameLayout contentHost;
+    private final Map<Integer,ScrollView> screens=new LinkedHashMap<>();
+    private final Map<Integer,Integer> scrollPositions=new LinkedHashMap<>();
+    private final Map<String,MarketViews> marketViews=new LinkedHashMap<>();
+    private TextView connection,feedAge,generalState,btcContext,aggregateRisk,planList;
+    private TextView diagnosticHealth,diagnosticRecent,diagnosticDetails,exportProgress,aiInfo;
+    private Button exportButton;
+    private int selectedSection=COCKPIT;
+    private JSONObject latestState=new JSONObject();
+    private final ExecutorService exportExecutor=Executors.newSingleThreadExecutor();
+    private final AtomicBoolean exportRunning=new AtomicBoolean(false),exportCancelled=new AtomicBoolean(false);
+    private final AtomicBoolean resetAfterExport=new AtomicBoolean(false);
     private boolean receiverRegistered;
-    private WebView legacyWebView;
 
-    private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) {
-            String payload = intent.getStringExtra(MarketWatchService.EXTRA_PAYLOAD);
-            if (payload != null && !showingLegacyCockpit) render(payload);
-        }
-    };
+    private final BroadcastReceiver statusReceiver=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){
+        String payload=intent.getStringExtra(MarketWatchService.EXTRA_PAYLOAD);if(payload!=null)render(payload);}};
 
-    @Override protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(BG);
-        MarketWatchService.ensureChannels(this);
-        buildNativeScreen();
-        requestNotificationPermission();
-        sendServiceAction(MarketWatchService.ACTION_START, null);
-        askBatteryOptimizationOnce();
+    @Override protected void onCreate(Bundle savedInstanceState){
+        setTheme(R.style.AppTheme);super.onCreate(savedInstanceState);
+        getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
+        MarketWatchService.ensureChannels(this);buildNativeNavigation();requestNotificationPermission();
+        sendServiceAction(MarketWatchService.ACTION_START,null);askBatteryOptimizationOnce();
+        String state=MarketWatchService.getLastStatusJson(this);if(!state.isEmpty())render(state);
     }
 
-    private void buildNativeScreen() {
-        showingLegacyCockpit = false;
-        if (legacyWebView != null) {
-            legacyWebView.destroy();
-            legacyWebView = null;
-        }
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.setBackgroundColor(BG);
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(110));
-        scroll.addView(root, new ScrollView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(scroll);
-
-        buildHeader();
-        buildDecisionCard();
-        buildActionCard();
-        buildPriceCard();
-        buildMovementCard();
-        buildSignalCard();
-        buildDiagnosticCard();
-        buildQuickSettingsCard();
-        buildLegacyFooter();
-
-        String lastState = MarketWatchService.getLastStatusJson(this);
-        if (!lastState.isEmpty()) render(lastState);
+    private void buildNativeNavigation(){
+        shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(BG);
+        contentHost=new FrameLayout(this);shell.addView(contentHost,new LinearLayout.LayoutParams(-1,0,1));
+        bottomNavigation=new LinearLayout(this);bottomNavigation.setOrientation(LinearLayout.HORIZONTAL);
+        bottomNavigation.setPadding(dp(8),dp(6),dp(8),dp(6));bottomNavigation.setBackgroundColor(CARD);
+        shell.addView(bottomNavigation,new LinearLayout.LayoutParams(-1,dp(64)));
+        addNav("Cockpit",COCKPIT);addNav("Plans",PLANS);addNav("Diagnostic",DIAGNOSTIC);addNav("Outils",TOOLS);
+        screens.put(COCKPIT,buildCockpitScreen());screens.put(PLANS,buildPlansScreen());
+        screens.put(DIAGNOSTIC,buildDiagnosticScreen());screens.put(TOOLS,buildToolsScreen());
+        setContentView(shell);applySystemInsets(shell);showSection(COCKPIT);
     }
 
-    private void buildHeader() {
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(dp(4), dp(4), dp(4), dp(8));
-        root.addView(header);
-
-        TextView eyebrow = text("NATIVE MARKET INTELLIGENCE", 11, CYAN, true);
-        eyebrow.setLetterSpacing(0.12f);
-        header.addView(eyebrow);
-        header.addView(text("ETH + SOL SCALPER\nCOCKPIT", 27, TEXT, true));
-
-        LinearLayout statusRow = new LinearLayout(this);
-        statusRow.setOrientation(LinearLayout.HORIZONTAL);
-        statusRow.setGravity(Gravity.CENTER_VERTICAL);
-        statusRow.setPadding(0, dp(10), 0, 0);
-        header.addView(statusRow);
-
-        statusPill = text("RECONNEXION NATIVE", 12, ORANGE, true);
-        statusPill.setGravity(Gravity.CENTER);
-        statusPill.setPadding(dp(12), dp(7), dp(12), dp(7));
-        statusPill.setBackground(rounded(Color.rgb(39, 31, 23), ORANGE, 999, 1));
-        statusRow.addView(statusPill);
-
-        feedAge = text("flux —", 12, MUTED, false);
-        LinearLayout.LayoutParams ageParams = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        ageParams.setMargins(dp(10), 0, 0, 0);
-        feedAge.setLayoutParams(ageParams);
-        statusRow.addView(feedAge);
-
-        TextView version = text("v"+BuildConfig.VERSION_NAME+" · Complete Multi-Market Research", 12, MUTED, true);
-        version.setGravity(Gravity.END);
-        statusRow.addView(version);
+    private void applySystemInsets(View root){
+        ViewCompat.setOnApplyWindowInsetsListener(root,(view,insets)->{
+            Insets bars=insets.getInsets(WindowInsetsCompat.Type.systemBars()|WindowInsetsCompat.Type.displayCutout());
+            Insets ime=insets.getInsets(WindowInsetsCompat.Type.ime());
+            view.setPadding(bars.left,bars.top,bars.right,Math.max(bars.bottom,ime.bottom));return insets;});
+        ViewCompat.requestApplyInsets(root);
     }
 
-    private void buildDecisionCard() {
-        LinearLayout card = card("ÉTAT GÉNÉRAL MULTI-MARCHÉS", ORANGE);
-        decisionValue = text("ATTENDRE", 36, ORANGE, true);
-        decisionValue.setLetterSpacing(0.04f);
-        card.addView(decisionValue);
-        decisionReason = text("Initialisation du moteur natif", 14, MUTED, false);
-        decisionReason.setPadding(0, dp(7), 0, 0);
-        card.addView(decisionReason);
-    }
-
-    private void buildActionCard() {
-        LinearLayout card = card("ACTION IMMÉDIATE · EXÉCUTION MANUELLE", ORANGE);
-        actionValue = text("Analyse du marché en cours", 26, TEXT, true);
-        card.addView(actionValue);
-        actionDetails = text("Le moteur travaille silencieusement · aucun ordre automatique", 14, MUTED, false);
-        actionDetails.setPadding(0, dp(8), 0, 0);
-        card.addView(actionDetails);
-    }
-
-    private void buildPriceCard() {
-        LinearLayout card = card("PRIX FUTURES EN TEMPS RÉEL", CYAN);
-        marketCards.clear();
-        for(MarketUiCatalog.CardDescriptor descriptor:
-                MarketUiCatalog.cards(MarketRegistry.production())) {
-            MarketCardViews views=new MarketCardViews();
-            card.addView(marketLabel(descriptor.asset+" / USDT PERP · "+descriptor.symbol));
-            views.price=text("—",34,TEXT,true);card.addView(views.price);
-            views.quotes=text("BID —    ·    ASK —",14,MUTED,true);card.addView(views.quotes);
-            views.status=text(descriptor.symbol+" · initialisation",14,MUTED,false);
-            views.status.setPadding(0,dp(5),0,dp(14));card.addView(views.status);
-            marketCards.put(descriptor.symbol,views);
-        }
-        View separator = new View(this);
-        separator.setBackgroundColor(BORDER);
-        LinearLayout.LayoutParams separatorParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
-        separatorParams.setMargins(0, dp(15), 0, dp(14));
-        card.addView(separator, separatorParams);
-        card.addView(marketLabel("BTC / USDT PERP · CONTEXTE / VETO"));
-        btcPrice = text("—", 27, TEXT, true);
-        card.addView(btcPrice);
-        btcQuotes = text("BID —    ·    ASK —", 14, MUTED, true);
-        card.addView(btcQuotes);
-    }
-
-    private TextView marketLabel(String value) {
-        TextView label = text(value, 12, CYAN, true);
-        label.setLetterSpacing(0.08f);
-        return label;
-    }
-
-    private void buildMovementCard() {
-        LinearLayout card = card("ÉTAT DU MOUVEMENT", CYAN);
-        movementValue = text("Impulsion : NEUTRE\nReset : NON\nOrigine : — · Extrême : —\nDistance : —\nMouvement consommé : NON", 15, TEXT, false);
-        movementValue.setLineSpacing(dp(3), 1f);
-        card.addView(movementValue);
-    }
-
-    private void buildSignalCard() {
-        LinearLayout card = card("PLANS ETH + SOL", RED);
-        signalValue = text("Aucun signal natif pour le moment.", 16, TEXT, true);
-        signalValue.setLineSpacing(dp(3), 1f);
-        card.addView(signalValue);
-    }
-
-    private void buildDiagnosticCard() {
-        LinearLayout card = card("DIAGNOSTIC MOTEUR", ORANGE);
-        diagnosticValue = text("• NO_DATA · Initialisation", 12, TEXT, false);
-        diagnosticValue.setTypeface(Typeface.MONOSPACE);
-        diagnosticValue.setLineSpacing(dp(3), 1f);
-        card.addView(diagnosticValue);
-        serviceInfo = text("Source : MarketWatchService natif", 12, MUTED, false);
-        serviceInfo.setPadding(0, dp(12), 0, 0);
-        card.addView(serviceInfo);
-    }
-
-    private void buildQuickSettingsCard() {
-        LinearLayout card = card("PARAMÈTRES RAPIDES", CYAN);
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setOrientation(LinearLayout.VERTICAL);
-        card.addView(buttons);
-        aiInfo = text("IA OpenAI : " + (SecureAiStore.isEnabled(this) ? "ON · " + SecureAiStore.maskedKey(this) : "OFF"), 12, MUTED, false);
-        aiInfo.setPadding(0, 0, 0, dp(10));
-        card.addView(aiInfo);
-        buttons.addView(actionButton("Réglages IA OpenAI", CYAN,
-                this::showAiSettingsDialog));
-        buttons.addView(actionButton("Tester clé IA", ORANGE,
-                this::testAiKeyNow));
-        buttons.addView(actionButton("Tester alerte forte", RED,
-                () -> sendServiceAction(MarketWatchService.ACTION_TEST_ALERT, "Alerte forte envoyée")));
-        buttons.addView(actionButton("Tester vibration", CYAN,
-                () -> sendServiceAction(MarketWatchService.ACTION_TEST_VIBRATION, "Vibration testée")));
-        buttons.addView(actionButton("Réinitialiser diagnostic", ORANGE,
-                () -> sendServiceAction(MarketWatchService.ACTION_RESET_DIAGNOSTICS, "Diagnostic réinitialisé")));
-        buttons.addView(actionButton("Télécharger diagnostic ZIP", CYAN,
-                this::exportDiagnosticZip));
-    }
-
-    private void buildLegacyFooter() {
-        TextView legacy = text("Vue legacy · cockpit complet", 12, MUTED, true);
-        legacy.setGravity(Gravity.CENTER);
-        legacy.setPadding(dp(12), dp(12), dp(12), dp(12));
-        legacy.setBackground(rounded(Color.TRANSPARENT, BORDER, 12, 1));
-        legacy.setOnClickListener(view -> showLegacyCockpit());
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(18), 0, 0);
-        root.addView(legacy, params);
-        TextView note = text("La vue legacy est secondaire. La connexion et les signaux restent 100 % natifs.",
-                11, MUTED, false);
-        note.setGravity(Gravity.CENTER);
-        note.setPadding(dp(12), dp(8), dp(12), 0);
-        root.addView(note);
-    }
-
-    private LinearLayout card(String label, int accent) {
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(dp(18), dp(14), dp(18), dp(15));
-        container.setBackground(rounded(CARD, BORDER, 18, 1));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(11), 0, 0);
-        root.addView(container, params);
-        TextView title = text(label, 11, accent, true);
-        title.setLetterSpacing(0.12f);
-        title.setPadding(0, 0, 0, dp(10));
-        container.addView(title);
-        return container;
-    }
-
-    private Button actionButton(String label, int accent, Runnable action) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setTextSize(14);
-        button.setTextColor(TEXT);
-        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        button.setAllCaps(false);
-        button.setGravity(Gravity.CENTER);
-        button.setPadding(dp(12), dp(10), dp(12), dp(10));
-        button.setMinHeight(0);
-        button.setMinimumHeight(0);
-        button.setStateListAnimator(null);
-        button.setBackground(rounded(CARD_ALT, accent, 12, 1));
-        button.setOnClickListener(view -> action.run());
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
-        params.setMargins(0, 0, 0, dp(9));
-        button.setLayoutParams(params);
-        return button;
-    }
-
-    private void testAiKeyNow() {
-        if (!SecureAiStore.hasKey(this)) {
-            Toast.makeText(this, "Aucune clé IA enregistrée", Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        Toast.makeText(this, "Test IA en cours…", Toast.LENGTH_SHORT).show();
-
-        new AiAdvisor(this).testKeyAsync(result -> runOnUiThread(() -> {
-            if (result != null && result.approved && !result.fallback) {
-                Toast.makeText(this, "Clé IA OK", Toast.LENGTH_LONG).show();
-                if (aiInfo != null) aiInfo.setText("IA OpenAI : ON · TEST OK · " + SecureAiStore.maskedKey(this));
-            } else {
-                String reason = result == null ? "AI_EMPTY" : result.reason;
-                Toast.makeText(this, "Test IA échec : " + reason, Toast.LENGTH_LONG).show();
-                if (aiInfo != null) aiInfo.setText("IA OpenAI : problème · " + reason);
-            }
-        }));
-    }
-
-    private void showAiSettingsDialog() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(18), dp(8), dp(18), 0);
-
-        Switch enabled = new Switch(this);
-        enabled.setText("IA automatique OpenAI");
-        enabled.setTextColor(TEXT);
-        enabled.setTextSize(15);
-        enabled.setChecked(SecureAiStore.isEnabled(this));
-        box.addView(enabled);
-
-        EditText keyInput = new EditText(this);
-        keyInput.setHint(SecureAiStore.hasKey(this) ? SecureAiStore.maskedKey(this) + " · laisser vide pour conserver" : "Coller clé OpenAI ici");
-        keyInput.setSingleLine(true);
-        keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        keyInput.setTextColor(TEXT);
-        keyInput.setHintTextColor(MUTED);
-        box.addView(keyInput);
-
-        EditText modelInput = new EditText(this);
-        modelInput.setHint("Modèle OpenAI");
-        modelInput.setSingleLine(true);
-        modelInput.setText(SecureAiStore.getModel(this));
-        modelInput.setTextColor(TEXT);
-        modelInput.setHintTextColor(MUTED);
-        box.addView(modelInput);
-
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Réglages IA OpenAI")
-                .setMessage("La clé est stockée localement. Elle n’est pas envoyée dans GitHub.")
-                .setView(box)
-                .setPositiveButton("Enregistrer", null)
-                .setNegativeButton("Annuler", null)
-                .setNeutralButton("Effacer clé", null)
-                .create();
-
-        dialog.setOnShowListener(d -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                String key = keyInput.getText() == null ? "" : keyInput.getText().toString().trim();
-                String model = modelInput.getText() == null ? "" : modelInput.getText().toString().trim();
-
-                if (!key.isEmpty()) SecureAiStore.saveKey(this, key);
-                SecureAiStore.saveModel(this, model);
-                SecureAiStore.setEnabled(this, enabled.isChecked());
-
-                if (aiInfo != null) {
-                    aiInfo.setText("IA OpenAI : " + (SecureAiStore.isEnabled(this) ? "ON · " + SecureAiStore.maskedKey(this) : "OFF"));
-                }
-
-                sendServiceAction(MarketWatchService.ACTION_SYNC_NOW, "Réglages IA enregistrés");
-                dialog.dismiss();
-            });
-
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
-                SecureAiStore.clear(this);
-                if (aiInfo != null) aiInfo.setText("IA OpenAI : OFF");
-                sendServiceAction(MarketWatchService.ACTION_SYNC_NOW, "Clé IA effacée");
-                dialog.dismiss();
-            });
-        });
-
-        dialog.show();
-    }
-
-
-    private TextView text(String value, int size, int color, boolean bold) {
-        TextView view = new TextView(this);
-        view.setText(value);
-        view.setTextSize(size);
-        view.setTextColor(color);
-        view.setIncludeFontPadding(false);
-        if (bold) view.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        return view;
-    }
-
-    private GradientDrawable rounded(int fill, int stroke, int radiusDp, int strokeDp) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(fill);
-        drawable.setCornerRadius(dp(radiusDp));
-        if (strokeDp > 0) drawable.setStroke(dp(strokeDp), stroke);
-        return drawable;
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    private String formatPrice(double value) {
-        return Double.isFinite(value) && value > 0 ? String.format(Locale.US, "%.2f", value) : "—";
-    }
-
-    private double number(JSONObject object, String key) {
-        return object.isNull(key) ? Double.NaN : object.optDouble(key, Double.NaN);
-    }
-
-    private void render(String payload) {
-        try {
-            JSONObject state = new JSONObject(payload);
-            boolean connected = state.optBoolean("connected", false);
-            int ageSeconds = state.optInt("lastAgeSec", -1);
-            String decision = state.optString("decision", "ATTENDRE");
-            String reason = state.optString("decisionReason", "Moteur natif en attente");
-            String action = state.optString("action", "Analyse du marché en cours");
-            double eth = number(state, "eth"), bid = number(state, "bid"), ask = number(state, "ask");
-            double btc = number(state, "btc"), btcBid = number(state, "btcBid"), btcAsk = number(state, "btcAsk");
-            JSONObject markets=state.optJSONObject("markets");
-            JSONObject movement = state.optJSONObject("movement");
-            JSONObject lastSignal = state.optJSONObject("lastSignal");
-            JSONArray diagnostics = state.optJSONArray("diagnostics");
-            long signalAt = state.optLong("lastSignalAt", 0);
-            int ethCount = state.optInt("ethCandles", state.optInt("candles", 0));
-            int btcCount = state.optInt("btcCandles", 0);
-            final boolean warmingUp = ethCount < 30 || btcCount < 10;
-            final String visibleReason = warmingUp
-                    ? "Pré-chauffage moteur : ETH " + ethCount + "/30 · BTC " + btcCount + "/10"
-                    : reason;
-            final String visibleServiceInfo = warmingUp
-                    ? "Pré-chauffage moteur : ETH " + ethCount + "/30 · BTC " + btcCount + "/10\nSource : MarketWatchService natif · trading manuel uniquement"
-                    : "Moteur prêt · bougies ETH " + ethCount + " / BTC " + btcCount + "\nSource : MarketWatchService natif · trading manuel uniquement";
-
-            runOnUiThread(() -> {
-                if (statusPill == null) return;
-                renderConnection(connected, ageSeconds);
-                renderDecision(decision, visibleReason);
-                renderMarketCards(markets);
-                renderReferencePrice(btc,btcBid,btcAsk);
-                renderMovement(movement);
-                renderSignal(lastSignal, signalAt, decision, visibleReason, state.optBoolean("activeSignal", false), state.optString("activeSignalStatus", "NONE"));
-                renderAction(action, decision, lastSignal, eth, signalAt,
-                        state.optBoolean("activeSignal", false),
-                        state.optString("activeSignalStatus", "NONE"),
-                        state.optString("signalExecutionState", "ATTENDRE"));
-                renderDiagnostics(diagnostics, state.optString("engineReason", "NO_DATA"), reason);
-                if (aiInfo != null) aiInfo.setText("IA OpenAI : "
-                        + (state.optBoolean("aiEnabled", false)
-                        ? "avis informatif après signal" : "OFF · moteur complet")
-                        + " · hors chemin critique");
-                serviceInfo.setText(visibleServiceInfo);
-            });
-        } catch (Exception ignored) {}
-    }
-
-    private void renderConnection(boolean connected, int age) {
-        if (connected && age >= 0 && age <= 8) {
-            statusPill.setText("CONNECTÉ"); statusPill.setTextColor(CYAN);
-            statusPill.setBackground(rounded(Color.rgb(18, 45, 42), CYAN, 999, 1));
-        } else if (connected) {
-            statusPill.setText("FLUX RETARDÉ"); statusPill.setTextColor(ORANGE);
-            statusPill.setBackground(rounded(Color.rgb(48, 35, 20), ORANGE, 999, 1));
-        } else {
-            statusPill.setText("RECONNEXION NATIVE"); statusPill.setTextColor(ORANGE);
-            statusPill.setBackground(rounded(Color.rgb(48, 35, 20), ORANGE, 999, 1));
-        }
-        feedAge.setText(age >= 0 ? "âge du flux : " + age + "s" : "âge du flux : —");
-    }
-
-    private void renderDecision(String decision, String reason) {
-        int color = "ENTRER".equals(decision) ? CYAN
-                : ("GARDER".equals(decision) || "GÉRER".equals(decision)) ? CYAN
-                : "FERMER".equals(decision) ? RED : ORANGE;
-        decisionValue.setText(decision);
-        decisionValue.setTextColor(color);
-        decisionReason.setText(reason);
-    }
-
-    private void renderReferencePrice(double btc,double btcBid,double btcAsk) {
-        btcPrice.setText(formatPrice(btc));
-        btcQuotes.setText("BID " + formatPrice(btcBid) + "    ·    ASK " + formatPrice(btcAsk));
-    }
-
-    private void renderMarketCards(JSONObject markets){
-        for(Map.Entry<String,MarketCardViews> entry:marketCards.entrySet()) {
-            MarketCardViews views=entry.getValue();
-            JSONObject market=markets==null?null:markets.optJSONObject(entry.getKey());
-            if(market==null){views.price.setText("—");views.quotes.setText("BID —    ·    ASK —");
-                views.status.setText(entry.getKey()+" · initialisation");continue;}
-            views.price.setText(formatPrice(number(market,"last")));
-            views.quotes.setText("BID "+formatPrice(number(market,"bid"))+"    ·    ASK "+formatPrice(number(market,"ask")));
-            JSONObject signal=market.optJSONObject("signal");
-            String status=market.optString("state","ANALYSE")+" · flux "+market.optLong("feedAgeSec",-1)+"s";
-            if(signal!=null)status+="\n"+signal.optString("side","")+" · "+signal.optInt("qty",signal.optInt("quantity",0))+" "+market.optString("asset","")
-                    +" · LIMIT "+formatPrice(number(signal,"entry"))+" · TP "+formatPrice(number(signal,"tp"))+" · SL "+formatPrice(number(signal,"sl"))
-                    +"\nqualité "+signal.optInt("score",0)+" · risque "+String.format(Locale.US,"%.2f USDT",market.optDouble("modeledRiskUsdt",0));
-            else status+=" · aucun plan actif";
-            views.status.setText(status);views.status.setTextColor(signal==null?MUTED:CYAN);
-        }
-    }
-
-    private static final class MarketCardViews { TextView price,quotes,status; }
-
-    private void renderMovement(JSONObject movement) {
-        if (movement == null) {
-            movementValue.setText("Impulsion : NEUTRE\nReset : NON\nOrigine : — · Extrême : —\nDistance : —\nMouvement consommé : NON");
-            return;
-        }
-        movementValue.setText("Impulsion : " + movement.optString("impulse", "NEUTRE")
-                + "\nReset : " + (movement.optBoolean("reset", false) ? "OK" : "NON")
-                + "\nOrigine : " + formatPrice(number(movement, "origin"))
-                + " · Extrême : " + formatPrice(number(movement, "extreme"))
-                + "\nDistance parcourue : " + formatPrice(number(movement, "distance")) + " $"
-                + "\nMouvement consommé : " + (movement.optBoolean("consumed", false) ? "OUI" : "NON"));
-    }
-
-    private void renderSignal(JSONObject signal, long signalAt, String currentDecision, String currentReason,
-                              boolean activeSignal, String activeStatus) {
-        if (signal == null) {
-            signalValue.setText("Aucun signal natif pour le moment.\nMoteur actif · attendre un setup confirmé.");
-            signalValue.setTextColor(TEXT);
-            return;
-        }
-
-        long ageMs = signalAt > 0 ? System.currentTimeMillis() - signalAt : -1;
-        long ageSec = ageMs >= 0 ? Math.max(0, ageMs / 1000) : -1;
-
-        String ageText = ageSec >= 0 ? "Signal reçu il y a " + formatDuration(ageSec) : "Âge du signal : —";
-        String plan = signal.optString("side", "—")
-                + " · score " + signal.optInt("score", 0) + "/100"
-                + "\n" + signal.optString("family", "Signal natif")
-                + "\nLIMIT " + formatPrice(number(signal, "entry"))
-                + " · TP " + formatPrice(number(signal, "tp"))
-                + " · SL " + formatPrice(number(signal, "sl"))
-                + " · " + signal.optInt("qty", 0) + " ETH";
-
-        if (activeSignal) {
-            String quality = signal.optString("family", "").contains("P01_PREMIUM_15M")
-                    ? "Qualité premium 15 min" : "Qualité normale";
-            signalValue.setText("PLAN ACTIF"
-                    + "\n" + ageText
-                    + "\n" + quality
-                    + "\n" + plan);
-            signalValue.setTextColor(CYAN);
-        } else if ("TP_TOUCHED".equals(activeStatus)) {
-            signalValue.setText("TP ATTEINT — PLAN TERMINÉ"
-                    + "\n" + ageText
-                    + "\n" + plan);
-            signalValue.setTextColor(CYAN);
-        } else if ("SL_TOUCHED".equals(activeStatus)) {
-            signalValue.setText("SL ATTEINT — PLAN TERMINÉ"
-                    + "\n" + ageText
-                    + "\n" + plan);
-            signalValue.setTextColor(RED);
-        } else {
-            signalValue.setText("PLAN ACTIF"
-                    + "\n" + ageText
-                    + "\n" + plan);
-            signalValue.setTextColor(CYAN);
-        }
-    }
-
-    private String humanSignalStatus(String status) {
-        if ("TP_TOUCHED".equals(status)) return "objectif touché";
-        if ("SL_TOUCHED".equals(status)) return "stop touché";
-        if ("ENTRY_TOO_FAR".equals(status)) return "entrée trop tardive / scénario suivi";
-        if ("SCENARIO_MEMORY_VETO".equals(status)) return "signal inverse bloqué par mémoire scénario";
-        if ("BTC_VETO".equals(status)) return "BTC opposé";
-        if ("REVERSAL_FLOW".equals(status)) return "flow opposé";
-        if ("REVERSAL_MOVE".equals(status)) return "mouvement inversé";
-        if ("NO_PRICE".equals(status)) return "prix indisponible";
-        if ("NONE".equals(status)) return "aucun signal actif";
-        return status == null || status.trim().isEmpty() ? "raison inconnue" : status;
-    }
-
-    private String formatDuration(long seconds) {
-        if (seconds < 60) return seconds + "s";
-        long minutes = seconds / 60;
-        long rest = seconds % 60;
-        if (minutes < 60) return minutes + "min " + rest + "s";
-        long hours = minutes / 60;
-        long remMin = minutes % 60;
-        return hours + "h " + remMin + "min";
-    }
-
-    private void renderAction(String action, String decision, JSONObject signal, double eth, long signalAt,
-                              boolean activeSignal, String activeStatus, String executionState) {
-        if (signal != null && activeSignal
-                && ("À EXÉCUTER MAINTENANT".equals(action)
-                || "GÉRER LE PLAN ACTIF".equals(action))) {
-            String side = signal.optString("side", "");
-            int qty = signal.optInt("qty", 0);
-            int score = signal.optInt("score", 0);
-            double entry = number(signal, "entry");
-            double tp = number(signal, "tp");
-            double sl = number(signal, "sl");
-            boolean premium = signal.optString("family", "").contains("P01_PREMIUM_15M");
-
-            actionValue.setText(action);
-            actionValue.setTextColor(CYAN);
-            actionDetails.setText(side + " · LIMIT " + formatPrice(entry)
-                    + "\nTP " + formatPrice(tp) + " · SL " + formatPrice(sl)
-                    + "\nQuantité : " + qty + " ETH · score " + score + "/100"
-                    + "\nQualité : " + (premium ? "premium 15 min" : "normale")
-                    + "\nExécution exclusivement manuelle · aucun ordre envoyé par l’application.");
-            return;
-        }
-
-        if ("NON_EXECUTE".equals(executionState) || "MISSED_NO_FILL".equals(activeStatus)) {
-            actionValue.setText("ORDRE NON EXÉCUTÉ — PRIX PARTI SANS FILL");
-            actionValue.setTextColor(ORANGE);
-            actionDetails.setText("Le prix est parti jusqu’au TP sans retoucher ton prix LIMIT après le délai manuel. Ne pas compter ce signal comme exécuté.");
-            return;
-        }
-
-        if ("TP_TOUCHED".equals(activeStatus)) {
-            actionValue.setText("TP ATTEINT — PLAN TERMINÉ");
-            actionValue.setTextColor(CYAN);
-            actionDetails.setText("Le plan est terminé au take profit. Le moteur recherche silencieusement le suivant.");
-            return;
-        }
-
-        if ("SL_TOUCHED".equals(activeStatus)) {
-            actionValue.setText("SL ATTEINT — PLAN TERMINÉ");
-            actionValue.setTextColor(RED);
-            actionDetails.setText("Le plan est terminé au stop loss. Le moteur recherche silencieusement le suivant.");
-            return;
-        }
-
-        actionValue.setText("Analyse du marché en cours");
-        actionValue.setTextColor(TEXT);
-        actionDetails.setText("Le moteur travaille silencieusement · aucun ordre automatique.");
-    }
-
-    private void renderDiagnostics(JSONArray diagnostics, String fallbackCode, String fallbackReason) {
-        if (diagnostics == null || diagnostics.length() == 0) {
-            diagnosticValue.setText("• " + fallbackCode + " · " + fallbackReason);
-            return;
-        }
-        SimpleDateFormat clock = new SimpleDateFormat("HH:mm:ss", Locale.FRANCE);
-        StringBuilder lines = new StringBuilder();
-        int shown = 0;
-        for (int i=diagnostics.length()-1; i>=0 && shown<5; i--, shown++) {
-            JSONObject item = diagnostics.optJSONObject(i);
-            if (item == null) continue;
-            if (lines.length() > 0) lines.append('\n');
-            lines.append("• ").append(clock.format(new Date(item.optLong("at", 0))))
-                    .append(" · ").append(item.optString("code", "—"))
-                    .append(" · ").append(item.optString("message", ""));
-        }
-        diagnosticValue.setText(lines.toString());
-    }
-
-    private void sendServiceAction(String action, String toast) {
-        Intent intent = new Intent(this, MarketWatchService.class).setAction(action);
-        startForegroundService(intent);
-        if (toast != null) Toast.makeText(this, toast, Toast.LENGTH_SHORT).show();
-    }
-
-
-    private void exportDiagnosticZip() {
-        try {
-            String raw = MarketWatchService.getLastStatusJson(this);
-            if (raw == null || raw.trim().isEmpty()) {
-                Toast.makeText(this, "Diagnostic vide : laisse le moteur tourner quelques secondes.", Toast.LENGTH_LONG).show();
-                return;
-            }
-
-            JSONObject state = new JSONObject(raw);
-            String fileName = DiagnosticExportContract.zipPrefix(BuildConfig.VERSION_NAME) +
-                    new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(new Date()) + ".zip";
-
-            ByteArrayOutputStream memory = new ByteArrayOutputStream();
-            try (ZipOutputStream zip = new ZipOutputStream(memory)) {
-                JSONObject metrics = state.optJSONObject("engineMetrics");
-                String marketFramesRaw = MarketWatchService.getLastMarketFramesJson();
-                String marketSummaryRaw = MarketWatchService.getLastMarketSummaryJson();
-                JSONArray marketFrames = new JSONArray(marketFramesRaw == null || marketFramesRaw.trim().isEmpty() ? "[]" : marketFramesRaw);
-                JSONObject marketSummary = new JSONObject(marketSummaryRaw == null || marketSummaryRaw.trim().isEmpty() ? "{}" : marketSummaryRaw);
-
-                String persistentObservedRaw = MarketWatchService.getPersistentObservationJournalJson(this);
-                String persistentObservedJsonl = MarketWatchService.getPersistentObservationJournalJsonl(this);
-                String persistentFramesRaw = MarketWatchService.getPersistentMarketFramesJson(this);
-                String persistentFramesJsonl = MarketWatchService.getPersistentMarketFramesJsonl(this);
-                String overnightSummaryRaw = MarketWatchService.getOvernightRecorderSummaryJson(this);
-
-                JSONArray persistentObserved = new JSONArray(persistentObservedRaw == null || persistentObservedRaw.trim().isEmpty() ? "[]" : persistentObservedRaw);
-                JSONArray persistentFrames = new JSONArray(persistentFramesRaw == null || persistentFramesRaw.trim().isEmpty() ? "[]" : persistentFramesRaw);
-                JSONObject overnightSummary = new JSONObject(overnightSummaryRaw == null || overnightSummaryRaw.trim().isEmpty() ? "{}" : overnightSummaryRaw);
-                DiagnosticExportContract.ExportData rebuilt=DiagnosticExportContract.rebuild(
-                        jsonArrayMaps(persistentObserved),jsonArrayMaps(persistentFrames));
-                JSONArray marketDiagnostics=mapsJsonArray(rebuilt.diagnostics);
-                JSONArray marketCandidates=mapsJsonArray(rebuilt.candidates);
-                JSONArray marketPlanHistory=mapsJsonArray(rebuilt.plans);
-                JSONArray multiMarketFrames=mapsJsonArray(rebuilt.frames);
-                JSONObject multiMarketSummary=new JSONObject();
-                for(java.util.Map.Entry<String,java.util.Map<String,Object>> item:rebuilt.summary.entrySet())
-                    multiMarketSummary.put(item.getKey(),new JSONObject(item.getValue()));
-                JSONArray observed=persistentObserved;
-                addZipText(zip, "status.json", state.toString(2));
-                addZipText(zip, "markets.json", state.optJSONObject("markets") == null ? "{}" : state.optJSONObject("markets").toString(2));
-                addZipText(zip, "active_plans.json", state.optJSONArray("activePlans") == null ? "[]" : state.optJSONArray("activePlans").toString(2));
-                addZipText(zip, "profiles_manifest.json", buildProfilesManifest().toString(2));
-                addZipText(zip,"market_diagnostics.json",marketDiagnostics.toString(2));
-                addZipText(zip,"market_diagnostics.csv",buildMultiMarketCsv(marketDiagnostics));
-                addZipText(zip,"market_candidates.json",marketCandidates.toString(2));
-                addZipText(zip,"market_candidates.csv",buildMultiMarketCsv(marketCandidates));
-                addZipText(zip,"market_plan_history.json",marketPlanHistory.toString(2));
-                addZipText(zip,"market_frames.json",multiMarketFrames.toString(2));
-                addZipText(zip,"market_frames.csv",buildMultiMarketCsv(multiMarketFrames));
-                addZipText(zip,"persistent_market_events.json",persistentObserved.toString(2));
-                addZipText(zip,"persistent_market_events.jsonl",persistentObservedJsonl==null?"":persistentObservedJsonl);
-                addZipText(zip,"persistent_market_frames.json",persistentFrames.toString(2));
-                addZipText(zip,"persistent_market_frames.jsonl",persistentFramesJsonl==null?"":persistentFramesJsonl);
-                addZipText(zip,"market_summary.json",multiMarketSummary.toString(2));
-                addZipText(zip,"market_summary.txt",buildMultiMarketSummaryText(multiMarketSummary));
-                addZipText(zip, "engine_metrics.json", metrics == null ? "{}" : metrics.toString(2));
-                addZipText(zip, "engine_metrics.txt", buildEngineMetricsText(state));
-                addZipText(zip, "observation_journal.json", observed == null ? "[]" : observed.toString(2));
-                addZipText(zip, "observation_journal.csv", buildObservationJournalCsv(observed));
-                addZipText(zip, "observation_summary.txt", buildObservationSummaryText(state));
-                addZipText(zip, "legacy_eth_market_frames.json", marketFrames.toString(2));
-                addZipText(zip, "legacy_eth_market_frames.csv", buildMarketFramesCsv(marketFrames));
-                addZipText(zip, "legacy_eth_market_summary.json", marketSummary.toString(2));
-                addZipText(zip, "legacy_eth_market_summary.txt", buildMarketSummaryText(marketSummary));
-
-                addZipText(zip, "persistent_observation_journal.json", persistentObserved.toString(2));
-                addZipText(zip, "persistent_observation_journal.jsonl", persistentObservedJsonl == null ? "" : persistentObservedJsonl);
-                addZipText(zip, "overnight_recorder_summary.json", overnightSummary.toString(2));
-                addZipText(zip, "overnight_recorder_summary.txt",
-                        "OVERNIGHT RECORDER v"+BuildConfig.VERSION_NAME+"\n\n" +
-                        "observationEvents=" + overnightSummary.optInt("observationEvents", 0) + "\n" +
-                        "marketFrames=" + overnightSummary.optInt("marketFrames", 0) + "\n" +
-                        "durationSec=" + overnightSummary.optLong("durationSec", 0) + "\n" +
-                        "resetByButton=" + overnightSummary.optString("resetByButton", "—") + "\n");
-                addZipText(zip, "summary.txt", buildDiagnosticSummary(state));
-                addZipText(zip, "health_check.txt", buildHealthCheck(state));
-                addZipText(zip, "diagnostics.csv", buildDiagnosticsCsv(state.optJSONArray("diagnostics")));
-                addZipText(zip, "instructions.txt",DiagnosticExportContract.instructions(BuildConfig.VERSION_NAME));
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ContentValues values = new ContentValues();
-                values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
-                values.put(MediaStore.Downloads.MIME_TYPE, "application/zip");
-                values.put(MediaStore.Downloads.IS_PENDING, 1);
-
-                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                if (uri == null) throw new Exception("Impossible de créer le fichier dans Téléchargements");
-
-                try (OutputStream out = getContentResolver().openOutputStream(uri)) {
-                    if (out == null) throw new Exception("Impossible d’écrire le fichier");
-                    memory.writeTo(out);
-                }
-
-                values.clear();
-                values.put(MediaStore.Downloads.IS_PENDING, 0);
-                getContentResolver().update(uri, values, null, null);
-                Toast.makeText(this, "Diagnostic téléchargé dans Téléchargements : " + fileName,
-                        Toast.LENGTH_LONG).show();
-            } else {
-                File directory = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
-                if (directory == null) directory = getFilesDir();
-                File destination = new File(directory, fileName);
-                try (OutputStream out = new FileOutputStream(destination)) {
-                    memory.writeTo(out);
-                }
-                Toast.makeText(this, "Diagnostic enregistré : " + destination.getAbsolutePath(),
-                        Toast.LENGTH_LONG).show();
-            }
-        } catch (Exception error) {
-            Toast.makeText(this, "Téléchargement impossible : " + error.getMessage(), Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private String buildDiagnosticSummary(JSONObject s) {
-        StringBuilder b = new StringBuilder();
-        b.append("ETH + SOL SCALPER COCKPIT — DIAGNOSTIC\n");
-        b.append("Version app: v").append(BuildConfig.VERSION_NAME).append(" Android natif · Complete Multi-Market Research\n");
-        b.append("Version service: ").append(s.optString("version", "—")).append("\n");
-        b.append("Mode: V230_HYBRID_AI_SCALP_ENGINE — recherche uniquement, aucun trade réel\n\n");
-
-        b.append("STATUT\n");
-        b.append("- connected: ").append(s.optBoolean("connected", false)).append("\n");
-        b.append("- nativeActive: ").append(s.optBoolean("nativeActive", false)).append("\n");
-        b.append("- lastAgeSec: ").append(s.optInt("lastAgeSec", -1)).append("\n");
-        b.append("- type: ").append(s.optString("type", "—")).append("\n");
-        b.append("- message: ").append(s.optString("message", "—")).append("\n\n");
-
-        b.append("MARCHÉ\n");
-        b.append("- ETH: ").append(s.optString("eth", "—")).append("\n");
-        b.append("- ETH bid/ask: ").append(s.optString("bid", "—")).append(" / ").append(s.optString("ask", "—")).append("\n");
-        b.append("- BTC: ").append(s.optString("btc", "—")).append("\n");
-        b.append("- BTC bid/ask: ").append(s.optString("btcBid", "—")).append(" / ").append(s.optString("btcAsk", "—")).append("\n");
-        b.append("- ethCandles: ").append(s.optInt("ethCandles", 0)).append("\n");
-        b.append("- btcCandles: ").append(s.optInt("btcCandles", 0)).append("\n");
-        b.append("- bookTickerMessages: ").append(s.optLong("bookTickerMessages", 0)).append("\n");
-        b.append("- klineMessages: ").append(s.optLong("klineMessages", 0)).append("\n");
-        b.append("- aggTradeMessages: ").append(s.optLong("aggTradeMessages", 0)).append("\n");
-        b.append("- restKlineRefreshes: ").append(s.optLong("restKlineRefreshes", 0)).append("\n");
-        b.append("- restTradeRefreshes: ").append(s.optLong("restTradeRefreshes", 0)).append("\n");
-        b.append("- tradeFlowSamples: ").append(s.optInt("tradeFlowSamples", 0)).append("\n");
-        b.append("- lastAggTradeAgeSec: ").append(s.optInt("lastAggTradeAgeSec", -1)).append("\n");
-        b.append("- lastRestKlineAgeSec: ").append(s.optInt("lastRestKlineAgeSec", -1)).append("\n");
-        b.append("- lastRestTradeAgeSec: ").append(s.optInt("lastRestTradeAgeSec", -1)).append("\n\n");
-
-        b.append("MOTEUR\n");
-        b.append("- decision: ").append(s.optString("decision", "—")).append("\n");
-        b.append("- action: ").append(s.optString("action", "—")).append("\n");
-        b.append("- engineReason: ").append(s.optString("engineReason", "—")).append("\n");
-        b.append("- decisionReason: ").append(s.optString("decisionReason", "—")).append("\n");
-        b.append("- score: ").append(s.optInt("score", 0)).append("\n\n");
-
-        JSONObject metrics = s.optJSONObject("engineMetrics");
-        if (metrics != null) {
-            b.append("MÉTRIQUES MOTEUR EXPERTES\n");
-            b.append("- setupCandidate: ").append(metrics.optString("setupCandidate", "—")).append("\n");
-            b.append("- threshold: ").append(metrics.optString("threshold", "—")).append("\n");
-            b.append("- move1: ").append(metrics.optString("move1", "—")).append("\n");
-            b.append("- move3: ").append(metrics.optString("move3", "—")).append("\n");
-            b.append("- move8: ").append(metrics.optString("move8", "—")).append("\n");
-            b.append("- avgRange20: ").append(metrics.optString("avgRange20", "—")).append("\n");
-            b.append("- volumeRatio: ").append(metrics.optString("volumeRatio", "—")).append("\n");
-            b.append("- flowNorm: ").append(metrics.optString("flowNorm", "—")).append("\n");
-            b.append("- btcMove5: ").append(metrics.optString("btcMove5", "—")).append("\n");
-            b.append("- spread: ").append(metrics.optString("spread", "—")).append("\n\n");
-        }
-
-        JSONObject movement = s.optJSONObject("movement");
-        if (movement != null) {
-            b.append("MOUVEMENT\n");
-            b.append("- impulse: ").append(movement.optString("impulse", "—")).append("\n");
-            b.append("- reset: ").append(movement.optBoolean("reset", false)).append("\n");
-            b.append("- origin: ").append(movement.optString("origin", "—")).append("\n");
-            b.append("- extreme: ").append(movement.optString("extreme", "—")).append("\n");
-            b.append("- distance: ").append(movement.optString("distance", "—")).append("\n");
-            b.append("- consumed: ").append(movement.optBoolean("consumed", false)).append("\n\n");
-        }
-
-        b.append("RÈGLES PROJET\n");
-        b.append("- Une seule décision à la fois.\n");
-        b.append("- BTC = contexte/veto, jamais déclencheur autonome.\n");
-        b.append("- Aucun ordre automatique.\n");
-        b.append("- Ne jamais poursuivre un mouvement consommé.\n");
-
-        return b.toString();
-    }
-
-    private String buildHealthCheck(JSONObject s) {
-        StringBuilder b = new StringBuilder();
-        boolean connected = s.optBoolean("connected", false);
-        int age = s.optInt("lastAgeSec", -1);
-        int ethCandles = s.optInt("ethCandles", s.optInt("candles", 0));
-        int btcCandles = s.optInt("btcCandles", 0);
-        boolean ethOk = !s.isNull("eth") && s.optDouble("eth", 0) > 0;
-        boolean btcOk = !s.isNull("btc") && s.optDouble("btc", 0) > 0;
-        boolean bidAskOk = !s.isNull("bid") && !s.isNull("ask") && s.optDouble("bid", 0) > 0 && s.optDouble("ask", 0) > 0;
-        boolean btcBidAskOk = !s.isNull("btcBid") && !s.isNull("btcAsk") && s.optDouble("btcBid", 0) > 0 && s.optDouble("btcAsk", 0) > 0;
-        boolean candlesOk = ethCandles >= 30 && btcCandles >= 10;
-        String reason = s.optString("engineReason", "—");
-
-        b.append("AUTO-CHECK ETH SCALPER\n\n");
-        b.append(line(connected, "Service natif connecté"));
-        b.append(line(age >= 0 && age <= 8, "Flux récent <= 8s, âge actuel " + age + "s"));
-        b.append(line(ethOk, "Prix ETH reçu"));
-        b.append(line(bidAskOk, "BID/ASK ETH reçus"));
-        b.append(line(btcOk, "Prix BTC reçu"));
-        b.append(line(btcBidAskOk, "BID/ASK BTC reçus"));
-        JSONObject metrics = s.optJSONObject("engineMetrics");
-        int evalAge = s.optInt("lastEvaluationAgeSec", -1);
-        int tradeFlowSamples = s.optInt("tradeFlowSamples", -1);
-        long aggTradeMessages = s.optLong("aggTradeMessages", -1);
-        long restTradeRefreshes = s.optLong("restTradeRefreshes", 0);
-        int aggTradeAge = s.optInt("lastAggTradeAgeSec", -1);
-        int restTradeAge = s.optInt("lastRestTradeAgeSec", -1);
-        boolean metricsOk = metrics != null;
-        boolean evalOk = evalAge >= 0 && evalAge <= 5;
-        boolean wsTradesOk = tradeFlowSamples > 0 && aggTradeMessages > 0 && aggTradeAge >= 0 && aggTradeAge <= 120;
-        boolean restTradesOk = tradeFlowSamples > 0 && restTradeRefreshes > 0 && restTradeAge >= 0 && restTradeAge <= 120;
-        boolean metricFlowOk = metrics != null && metrics.optBoolean("flowDataOk", false);
-        boolean tradesOk = wsTradesOk || restTradesOk || metricFlowOk;
-
-        b.append(line(candlesOk, "Bougies suffisantes ETH " + ethCandles + "/30 · BTC " + btcCandles + "/10"));
-        b.append(line(!"NO_DATA".equals(reason), "Moteur sorti de NO_DATA, raison actuelle " + reason));
-        b.append(line(evalOk, "Dernière évaluation moteur récente : " + evalAge + "s"));
-        b.append(line(tradesOk, "Trades/flow ETH reçus : samples=" + tradeFlowSamples + ", wsMessages=" + aggTradeMessages + ", restRefreshes=" + restTradeRefreshes + ", wsAge=" + aggTradeAge + "s, restAge=" + restTradeAge + "s"));
-        b.append(line(metricsOk, "Métriques expertes incluses dans le ZIP"));
-        if (metrics != null) {
-            b.append(line(metrics.optBoolean("volumeDataOk", false), "Volume moyen disponible"));
-            b.append(line(metrics.optBoolean("rangeOk", false), "Range suffisant pour scalp"));
-            b.append("INFO setupCandidate: ").append(metrics.optString("setupCandidate", "—")).append("\n");
-            b.append("INFO threshold/move1/move3: ")
-                    .append(metrics.optString("threshold", "—")).append(" / ")
-                    .append(metrics.optString("move1", "—")).append(" / ")
-                    .append(metrics.optString("move3", "—")).append("\n");
-        }
-        b.append("\nConclusion automatique: ");
-        if (connected && age >= 0 && age <= 8 && ethOk && btcOk && candlesOk && tradesOk) {
-            b.append("OK — moteur alimenté. Si aucun signal, c'est un refus logique du moteur.\n");
-        } else {
-            b.append("À vérifier — une donnée moteur manque ou le flux est retardé.\n");
-        }
-        return b.toString();
-    }
-
-    private String line(boolean ok, String text) {
-        return (ok ? "OK  " : "ERR ") + text + "\n";
-    }
-
-
-    private String buildEngineMetricsText(JSONObject s) {
-        JSONObject m = s.optJSONObject("engineMetrics");
-        if (m == null) return "Aucune métrique experte disponible.\n";
-
-        StringBuilder b = new StringBuilder();
-        b.append("ENGINE METRICS — ETH SCALPER v2.33.2.1\n\n");
-        b.append("setupCandidate=").append(m.optString("setupCandidate", "—")).append("\n");
-        b.append("decisionCode=").append(m.optString("decisionCode", "—")).append("\n");
-        b.append("decisionText=").append(m.optString("decisionText", "—")).append("\n\n");
-
-        b.append("MOUVEMENT\n");
-        b.append("threshold=").append(m.optString("threshold", "—")).append("\n");
-        b.append("move1=").append(m.optString("move1", "—")).append("\n");
-        b.append("move3=").append(m.optString("move3", "—")).append("\n");
-        b.append("move8=").append(m.optString("move8", "—")).append("\n");
-        b.append("recentRange=").append(m.optString("recentRange", "—")).append("\n\n");
-
-        b.append("VOLUME / FLOW / BTC\n");
-        b.append("avgRange20=").append(m.optString("avgRange20", "—")).append("\n");
-        b.append("avgVolume20=").append(m.optString("avgVolume20", "—")).append("\n");
-        b.append("lastVolume=").append(m.optString("lastVolume", "—")).append("\n");
-        b.append("volumeRatio=").append(m.optString("volumeRatio", "—")).append("\n");
-        b.append("flowNorm=").append(m.optString("flowNorm", "—")).append("\n");
-        b.append("btcMove5=").append(m.optString("btcMove5", "—")).append("\n");
-        b.append("spread=").append(m.optString("spread", "—")).append("\n\n");
-
-        b.append("FLUX REÇUS\n");
-        b.append("bookTickerMessages=").append(m.optString("bookTickerMessages", "—")).append("\n");
-        b.append("klineMessages=").append(m.optString("klineMessages", "—")).append("\n");
-        b.append("aggTradeMessages=").append(m.optString("aggTradeMessages", "—")).append("\n");
-        b.append("restKlineRefreshes=").append(m.optString("restKlineRefreshes", "—")).append("\n");
-        b.append("restTradeRefreshes=").append(m.optString("restTradeRefreshes", "—")).append("\n");
-        b.append("flowSamples=").append(m.optString("flowSamples", "—")).append("\n");
-        b.append("lastAggTradeAgeSec=").append(m.optString("lastAggTradeAgeSec", "—")).append("\n");
-        b.append("lastRestKlineAgeSec=").append(m.optString("lastRestKlineAgeSec", "—")).append("\n");
-        b.append("lastRestTradeAgeSec=").append(m.optString("lastRestTradeAgeSec", "—")).append("\n");
-        b.append("flowDataOk=").append(m.optBoolean("flowDataOk", false)).append("\n");
-        b.append("flowSource=").append(m.optString("flowSource", "—")).append("\n");
-        b.append("klineSource=").append(m.optString("klineSource", "—")).append("\n\n");
-
-        b.append("FLAGS\n");
-        b.append("c1Long=").append(m.optBoolean("c1Long", false)).append("\n");
-        b.append("c1Short=").append(m.optBoolean("c1Short", false)).append("\n");
-        b.append("c2Long=").append(m.optBoolean("c2Long", false)).append("\n");
-        b.append("c2Short=").append(m.optBoolean("c2Short", false)).append("\n");
-        b.append("btcLongVeto=").append(m.optBoolean("btcLongVeto", false)).append("\n");
-        b.append("btcShortVeto=").append(m.optBoolean("btcShortVeto", false)).append("\n");
-        b.append("flowLongOk=").append(m.optBoolean("flowLongOk", false)).append("\n");
-        b.append("flowShortOk=").append(m.optBoolean("flowShortOk", false)).append("\n");
-
-        return b.toString();
-    }
-
-
-    private String buildObservationSummaryText(JSONObject s) {
-        JSONObject summary = s.optJSONObject("observationSummary");
-        JSONArray observed = s.optJSONArray("observedSignals");
-        StringBuilder b = new StringBuilder();
-        b.append("PRO LABEL LAB — ETH SCALPER v2.33.2.1\n\n");
-        if (summary != null) {
-            b.append("totalSignalsObserved=").append(summary.optInt("totalSignalsObserved", 0)).append("\n");
-            b.append("active=").append(summary.optInt("active", 0)).append("\n");
-            b.append("tpTouched=").append(summary.optInt("tpTouched", 0)).append("\n");
-            b.append("slTouched=").append(summary.optInt("slTouched", 0)).append("\n");
-            b.append("invalidated=").append(summary.optInt("invalidated", 0)).append("\n\n");
-        }
-        if (observed == null || observed.length() == 0) {
-            b.append("Aucun signal observé dans ce lancement.\n");
-            return b.toString();
-        }
-        for (int i = 0; i < observed.length(); i++) {
-            JSONObject o = observed.optJSONObject(i);
-            if (o == null) continue;
-            b.append("#").append(o.optLong("id", i + 1))
-                    .append(" ").append(o.optString("side", "—"))
-                    .append(" ").append(o.optString("family", "—"))
-                    .append(" status=").append(o.optString("status", "—"))
-                    .append(" score=").append(o.optInt("score", 0))
-                    .append(" entry=").append(o.optString("entry", "—"))
-                    .append(" tp=").append(o.optString("tp", "—"))
-                    .append(" sl=").append(o.optString("sl", "—"))
-                    .append(" mfe=").append(o.optString("mfe", "—"))
-                    .append(" mae=").append(o.optString("mae", "—"))
-                    .append("\n");
-        }
-        return b.toString();
-    }
-
-    private String buildMarketSummaryText(JSONObject s) {
-        StringBuilder b = new StringBuilder("PRO LABEL LAB — MARKET RECORDER v2.33.2.1\n\n");
-        b.append("mode=").append(s.optString("mode", "—")).append("\n");
-        b.append("frames=").append(s.optInt("frames", 0)).append("\n");
-        b.append("durationSec=").append(s.optInt("durationSec", 0)).append("\n");
-        b.append("signals=").append(s.optInt("signals", 0)).append("\n");
-        b.append("c1LongCandidates=").append(s.optInt("c1LongCandidates", 0)).append("\n");
-        b.append("c1ShortCandidates=").append(s.optInt("c1ShortCandidates", 0)).append("\n");
-        b.append("c2LongCandidates=").append(s.optInt("c2LongCandidates", 0)).append("\n");
-        b.append("c2ShortCandidates=").append(s.optInt("c2ShortCandidates", 0)).append("\n\n");
-        b.append("But : analyser les endroits où il fallait entrer LONG/SHORT, les entrées ratées et les faux signaux.\n");
-        return b.toString();
-    }
-
-    private String buildMarketFramesCsv(JSONArray arr) {
-        StringBuilder b = new StringBuilder("at,eth,bid,ask,spread,btc,avgRange20,avgVolume20,lastVolume,volumeRatio,flowNorm,btcMove5,move1,move3,move8,recentHigh,recentLow,recentRange,move1Norm,move3Norm,move8Norm,moveAccel13,moveAccel38,rangePosition,distanceToHigh,distanceToLow,roomLong,roomShort,pullbackFromHigh,pullbackFromLow,flow15,flow30,flow60,flow120,deltaFlow15_60,deltaFlow30_120,flowAccel,btcMove1,btcMove3,btcMove8,btcAccel1_5,btcAccel3_8,breakoutHighDistance,breakoutLowDistance,antiBurstScore,longMfe5,shortMfe5,longMfe10,shortMfe10,longMfe15,shortMfe15,bestSide5,bestSide10,bestSide15,longHit2Sec,longHit22Sec,longHit28Sec,longHit35Sec,shortHit2Sec,shortHit22Sec,shortHit28Sec,shortHit35Sec,longAdverseBefore2,longAdverseBefore22,longAdverseBefore28,longAdverseBefore35,shortAdverseBefore2,shortAdverseBefore22,shortAdverseBefore28,shortAdverseBefore35,oracleLongClean28,oracleShortClean28,learnedCandidateSide,learnedCandidateType,learnedCandidateScore,learnedOppositeMove8,learnedDirectionalMove3,learnedBtcDir,learnedRecentRangeRatio,hypothesisPrimarySide,hypothesisPrimaryType,hypothesisPrimaryScore,hypEngineInverseSide,hypEngineInverseScore,hypC1InverseSide,hypC1InverseScore,hypC2InverseSide,hypC2InverseScore,hypRangeFadeSide,hypRangeFadeScore,hypMove1ReversalSide,hypMove1ReversalScore,hypContinuationSide,hypContinuationScore,setupCandidate,decision,decisionCode,isSignal,side,family,score,qty,entry,tp,sl,targetMove,stopDistance\n");
-        if (arr == null) return b.toString();
-        for (int i = 0; i < arr.length(); i++) {
-            JSONObject o = arr.optJSONObject(i);
-            if (o == null) continue;
-            b.append(o.optLong("at", 0)).append(',')
-                    .append(o.optString("eth", "")).append(',')
-                    .append(o.optString("bid", "")).append(',')
-                    .append(o.optString("ask", "")).append(',')
-                    .append(o.optString("spread", "")).append(',')
-                    .append(o.optString("btc", "")).append(',')
-                    .append(o.optString("avgRange20", "")).append(',')
-                    .append(o.optString("avgVolume20", "")).append(',')
-                    .append(o.optString("lastVolume", "")).append(',')
-                    .append(o.optString("volumeRatio", "")).append(',')
-                    .append(o.optString("flowNorm", "")).append(',')
-                    .append(o.optString("btcMove5", "")).append(',')
-                    .append(o.optString("move1", "")).append(',')
-                    .append(o.optString("move3", "")).append(',')
-                    .append(o.optString("move8", "")).append(',')
-                    .append(o.optString("recentHigh", "")).append(',')
-                    .append(o.optString("recentLow", "")).append(',')
-                    .append(o.optString("recentRange", "")).append(',')
-                    .append(o.optString("move1Norm", "")).append(',')
-                    .append(o.optString("move3Norm", "")).append(',')
-                    .append(o.optString("move8Norm", "")).append(',')
-                    .append(o.optString("moveAccel13", "")).append(',')
-                    .append(o.optString("moveAccel38", "")).append(',')
-                    .append(o.optString("rangePosition", "")).append(',')
-                    .append(o.optString("distanceToHigh", "")).append(',')
-                    .append(o.optString("distanceToLow", "")).append(',')
-                    .append(o.optString("roomLong", "")).append(',')
-                    .append(o.optString("roomShort", "")).append(',')
-                    .append(o.optString("pullbackFromHigh", "")).append(',')
-                    .append(o.optString("pullbackFromLow", "")).append(',')
-                    .append(o.optString("flow15", "")).append(',')
-                    .append(o.optString("flow30", "")).append(',')
-                    .append(o.optString("flow60", "")).append(',')
-                    .append(o.optString("flow120", "")).append(',')
-                    .append(o.optString("deltaFlow15_60", "")).append(',')
-                    .append(o.optString("deltaFlow30_120", "")).append(',')
-                    .append(o.optString("flowAccel", "")).append(',')
-                    .append(o.optString("btcMove1", "")).append(',')
-                    .append(o.optString("btcMove3", "")).append(',')
-                    .append(o.optString("btcMove8", "")).append(',')
-                    .append(o.optString("btcAccel1_5", "")).append(',')
-                    .append(o.optString("btcAccel3_8", "")).append(',')
-                    .append(o.optString("breakoutHighDistance", "")).append(',')
-                    .append(o.optString("breakoutLowDistance", "")).append(',')
-                    .append(o.optString("antiBurstScore", "")).append(',')
-                    .append(o.optString("longMfe5", "")).append(',')
-                    .append(o.optString("shortMfe5", "")).append(',')
-                    .append(o.optString("longMfe10", "")).append(',')
-                    .append(o.optString("shortMfe10", "")).append(',')
-                    .append(o.optString("longMfe15", "")).append(',')
-                    .append(o.optString("shortMfe15", "")).append(',')
-                    .append(csv(o.optString("bestSide5", ""))).append(',')
-                    .append(csv(o.optString("bestSide10", ""))).append(',')
-                    .append(csv(o.optString("bestSide15", ""))).append(',')
-                    .append(o.optLong("longHit2Sec", -1)).append(',')
-                    .append(o.optLong("longHit22Sec", -1)).append(',')
-                    .append(o.optLong("longHit28Sec", -1)).append(',')
-                    .append(o.optLong("longHit35Sec", -1)).append(',')
-                    .append(o.optLong("shortHit2Sec", -1)).append(',')
-                    .append(o.optLong("shortHit22Sec", -1)).append(',')
-                    .append(o.optLong("shortHit28Sec", -1)).append(',')
-                    .append(o.optLong("shortHit35Sec", -1)).append(',')
-                    .append(o.optString("longAdverseBefore2", "")).append(',')
-                    .append(o.optString("longAdverseBefore22", "")).append(',')
-                    .append(o.optString("longAdverseBefore28", "")).append(',')
-                    .append(o.optString("longAdverseBefore35", "")).append(',')
-                    .append(o.optString("shortAdverseBefore2", "")).append(',')
-                    .append(o.optString("shortAdverseBefore22", "")).append(',')
-                    .append(o.optString("shortAdverseBefore28", "")).append(',')
-                    .append(o.optString("shortAdverseBefore35", "")).append(',')
-                    .append(o.optBoolean("oracleLongClean28", false)).append(',')
-                    .append(o.optBoolean("oracleShortClean28", false)).append(',')
-                    .append(csv(o.optString("learnedCandidateSide", ""))).append(',')
-                    .append(csv(o.optString("learnedCandidateType", ""))).append(',')
-                    .append(o.optInt("learnedCandidateScore", 0)).append(',')
-                    .append(o.optString("learnedOppositeMove8", "")).append(',')
-                    .append(o.optString("learnedDirectionalMove3", "")).append(',')
-                    .append(o.optString("learnedBtcDir", "")).append(',')
-                    .append(o.optString("learnedRecentRangeRatio", "")).append(',')
-                    .append(csv(o.optString("hypothesisPrimarySide", ""))).append(',')
-                    .append(csv(o.optString("hypothesisPrimaryType", ""))).append(',')
-                    .append(o.optInt("hypothesisPrimaryScore", 0)).append(',')
-                    .append(csv(o.optString("hypEngineInverseSide", ""))).append(',')
-                    .append(o.optInt("hypEngineInverseScore", 0)).append(',')
-                    .append(csv(o.optString("hypC1InverseSide", ""))).append(',')
-                    .append(o.optInt("hypC1InverseScore", 0)).append(',')
-                    .append(csv(o.optString("hypC2InverseSide", ""))).append(',')
-                    .append(o.optInt("hypC2InverseScore", 0)).append(',')
-                    .append(csv(o.optString("hypRangeFadeSide", ""))).append(',')
-                    .append(o.optInt("hypRangeFadeScore", 0)).append(',')
-                    .append(csv(o.optString("hypMove1ReversalSide", ""))).append(',')
-                    .append(o.optInt("hypMove1ReversalScore", 0)).append(',')
-                    .append(csv(o.optString("hypContinuationSide", ""))).append(',')
-                    .append(o.optInt("hypContinuationScore", 0)).append(',')
-                    .append(csv(o.optString("setupCandidate", ""))).append(',')
-                    .append(csv(o.optString("decision", ""))).append(',')
-                    .append(csv(o.optString("decisionCode", ""))).append(',')
-                    .append(o.optBoolean("isSignal", false)).append(',')
-                    .append(csv(o.optString("side", ""))).append(',')
-                    .append(csv(o.optString("family", ""))).append(',')
-                    .append(o.optInt("score", 0)).append(',')
-                    .append(o.optInt("qty", 0)).append(',')
-                    .append(o.optString("entry", "")).append(',')
-                    .append(o.optString("tp", "")).append(',')
-                    .append(o.optString("sl", "")).append(',')
-                    .append(o.optString("targetMove", "")).append(',')
-                    .append(o.optString("stopDistance", "")).append('\n');
-        }
-        return b.toString();
-    }
-
-    private String buildObservationJournalCsv(JSONArray arr) {
-        StringBuilder b = new StringBuilder("id,side,family,status,score,qty,entry,tp,sl,lastPrice,maxPrice,minPrice,mfe,mae,unrealizedMove,ageSec,updates\n");
-        if (arr == null) return b.toString();
-        for (int i = 0; i < arr.length(); i++) {
-            JSONObject o = arr.optJSONObject(i);
-            if (o == null) continue;
-            b.append(o.optLong("id", 0)).append(',')
-                    .append(csv(o.optString("side", ""))).append(',')
-                    .append(csv(o.optString("family", ""))).append(',')
-                    .append(csv(o.optString("status", ""))).append(',')
-                    .append(o.optInt("score", 0)).append(',')
-                    .append(o.optInt("qty", 0)).append(',')
-                    .append(o.optString("entry", "")).append(',')
-                    .append(o.optString("tp", "")).append(',')
-                    .append(o.optString("sl", "")).append(',')
-                    .append(o.optString("lastPrice", "")).append(',')
-                    .append(o.optString("maxPrice", "")).append(',')
-                    .append(o.optString("minPrice", "")).append(',')
-                    .append(o.optString("mfe", "")).append(',')
-                    .append(o.optString("mae", "")).append(',')
-                    .append(o.optString("unrealizedMove", "")).append(',')
-                    .append(o.optLong("ageSec", 0)).append(',')
-                    .append(o.optInt("updates", 0)).append('\n');
-        }
-        return b.toString();
-    }
-
-    private String buildDiagnosticsCsv(JSONArray arr) {
-        StringBuilder b = new StringBuilder("time,code,message\n");
-        if (arr == null) return b.toString();
-        SimpleDateFormat clock = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.FRANCE);
-        for (int i = 0; i < arr.length(); i++) {
-            JSONObject item = arr.optJSONObject(i);
-            if (item == null) continue;
-            b.append(csv(clock.format(new Date(item.optLong("at", 0))))).append(',')
-                    .append(csv(item.optString("code", ""))).append(',')
-                    .append(csv(item.optString("message", ""))).append('\n');
-        }
-        return b.toString();
-    }
-
-    private JSONObject buildProfilesManifest() throws Exception {
-        JSONObject out=new JSONObject();out.put("version",BuildConfig.VERSION_NAME);
-        out.put("versionCode",BuildConfig.VERSION_CODE);JSONArray profiles=new JSONArray();
-        for(MarketProfile profile:MarketRegistry.production().tradedMarkets()) {
-            JSONObject item=new JSONObject();item.put("symbol",profile.symbol);
-            item.put("asset",profile.asset);item.put("profileVersion",profile.profileVersion);
-            profiles.put(item);
-        }
-        out.put("profiles",profiles);JSONObject reference=new JSONObject();
-        reference.put("symbol",MarketProfile.BTC_SYMBOL);reference.put("asset","BTC");
-        reference.put("tradable",false);out.put("referenceMarket",reference);return out;
-    }
-
-    private java.util.List<java.util.Map<String,Object>> jsonArrayMaps(JSONArray source)throws Exception {
-        java.util.List<java.util.Map<String,Object>> out=new java.util.ArrayList<>();
-        if(source==null)return out;for(int i=0;i<source.length();i++){
-            JSONObject value=source.optJSONObject(i);if(value==null)continue;
-            java.util.Map<String,Object> map=new java.util.LinkedHashMap<>();
-            java.util.Iterator<String> keys=value.keys();while(keys.hasNext()){
-                String key=keys.next();Object item=value.opt(key);map.put(key,item==JSONObject.NULL?null:item);}
-            out.add(map);
-        }return out;
-    }
-
-    private JSONArray mapsJsonArray(java.util.List<java.util.Map<String,Object>> source) {
-        JSONArray out=new JSONArray();if(source!=null)for(java.util.Map<String,Object> value:source)
-            out.put(new JSONObject(value));return out;
-    }
-
-    private String buildMultiMarketCsv(JSONArray arr) {
-        String[] fields={"symbol","asset","profileVersion","eventAt","eventType","reasonCode",
-                "reasonText","classification","historicalDiagnosticCode","sleeve","side","family",
-                "candidateAgeMs","marketFeedFresh","btcFeedFresh","last","bid","ask","entry","tp",
-                "sl","quantity","score","A","E60","R","m1","m3","m8","f15","f30","f60",
-                "f120","volumeRatio","rangePosition","room","earlyP01Mode","earlyP01StabilityMs",
-                "earlyP01ReasonCode","p02Mode","olsCount","olsSlope","olsT60","p02ReasonCode",
-                "riskBudgetUsdt","resultCostPerUnit","riskAllowancePerUnit",
-                "theoreticalMaximumLoss","terminalStatus"};
-        StringBuilder out=new StringBuilder(String.join(",",fields)).append('\n');
-        if(arr==null)return out.toString();for(int i=0;i<arr.length();i++){
-            JSONObject value=arr.optJSONObject(i);if(value==null)continue;
-            for(int j=0;j<fields.length;j++){if(j>0)out.append(',');
-                out.append(csv(value.isNull(fields[j])?"":String.valueOf(value.opt(fields[j]))));}
-            out.append('\n');
-        }return out.toString();
-    }
-
-    private String buildMultiMarketSummaryText(JSONObject summary) {
-        return "ETH + SOL multi-market recorder v"+BuildConfig.VERSION_NAME+"\n"
-                +(summary==null?"{}":summary.toString())+"\n";
-    }
-
-    private String csv(String value) {
-        if (value == null) value = "";
-        return "\"" + value.replace("\"", "\"\"") + "\"";
-    }
-
-    private void addZipText(ZipOutputStream zip, String name, String text) throws Exception {
-        zip.putNextEntry(new ZipEntry(name));
-        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
-        zip.write(bytes, 0, bytes.length);
-        zip.closeEntry();
-    }
-
-    private void showLegacyCockpit() {
-        showingLegacyCockpit = true;
-        legacyWebView = new WebView(this);
-        legacyWebView.setBackgroundColor(BG);
-        WebSettings settings = legacyWebView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
-        settings.setAllowFileAccess(true);
-        settings.setAllowContentAccess(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-        legacyWebView.setWebViewClient(new WebViewClient());
-        legacyWebView.setWebChromeClient(new WebChromeClient());
-        setContentView(legacyWebView);
-        legacyWebView.loadUrl("file:///android_asset/www/index.html?v=2220");
-    }
-
-    private void requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= 33
-                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != getPackageManager().PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2220);
-        }
-    }
-
-    private void askBatteryOptimizationOnce() {
-        PowerManager manager = (PowerManager) getSystemService(POWER_SERVICE);
-        if (manager != null && manager.isIgnoringBatteryOptimizations(getPackageName())) return;
-        if (getPreferences(MODE_PRIVATE).getBoolean("batteryAsked2210", false)) return;
-        getPreferences(MODE_PRIVATE).edit().putBoolean("batteryAsked2210", true).apply();
-        new AlertDialog.Builder(this)
-                .setTitle("Surveillance permanente")
-                .setMessage("Autorise le moteur natif à rester actif lorsque l’écran est verrouillé.")
-                .setPositiveButton("Ouvrir", (dialog, which) -> {
-                    try {
-                        Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                                .setData(Uri.parse("package:" + getPackageName()));
-                        startActivity(intent);
-                    } catch (Exception error) {
-                        startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
-                    }
-                })
-                .setNegativeButton("Plus tard", null)
-                .show();
-    }
-
-    @Override protected void onResume() {
-        super.onResume();
-        if (!receiverRegistered) {
-            ContextCompat.registerReceiver(this, statusReceiver,
-                    new IntentFilter(MarketWatchService.BROADCAST_STATUS), ContextCompat.RECEIVER_NOT_EXPORTED);
-            receiverRegistered = true;
-        }
-        sendServiceAction(MarketWatchService.ACTION_START, null);
-        if (!showingLegacyCockpit) {
-            String lastState = MarketWatchService.getLastStatusJson(this);
-            if (!lastState.isEmpty()) render(lastState);
-        }
-    }
-
-    @Override protected void onPause() {
-        if (receiverRegistered) {
-            try { unregisterReceiver(statusReceiver); } catch (Exception ignored) {}
-            receiverRegistered = false;
-        }
-        super.onPause();
-    }
-
-    @Override public void onBackPressed() {
-        if (showingLegacyCockpit) buildNativeScreen();
-        else super.onBackPressed();
-    }
+    private void addNav(String label,int section){Button button=new Button(this);button.setText(label);button.setAllCaps(false);
+        button.setTextColor(TEXT);button.setTextSize(12);button.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+        button.setMinHeight(dp(48));button.setMinimumHeight(dp(48));button.setStateListAnimator(null);
+        button.setBackground(rounded(CARD_ALT,BORDER,12,1));button.setOnClickListener(v->showSection(section));
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(48),1);p.setMargins(dp(3),0,dp(3),0);bottomNavigation.addView(button,p);}
+
+    private void showSection(int section){ScrollView current=screens.get(selectedSection);if(current!=null)scrollPositions.put(selectedSection,current.getScrollY());
+        selectedSection=section;contentHost.removeAllViews();ScrollView target=screens.get(section);contentHost.addView(target,new FrameLayout.LayoutParams(-1,-1));
+        target.post(()->target.scrollTo(0,scrollPositions.getOrDefault(section,0)));for(int i=0;i<bottomNavigation.getChildCount();i++){
+            View child=bottomNavigation.getChildAt(i);child.setAlpha(i==section?1f:.62f);}}
+
+    private ScrollView buildCockpitScreen(){LinearLayout root=screenRoot();
+        LinearLayout header=new LinearLayout(this);header.setOrientation(LinearLayout.VERTICAL);header.setPadding(dp(2),dp(4),dp(2),dp(8));root.addView(header);
+        LinearLayout brand=new LinearLayout(this);brand.setOrientation(LinearLayout.HORIZONTAL);brand.setGravity(Gravity.CENTER_VERTICAL);header.addView(brand);
+        ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.nmc_logo);brand.addView(logo,new LinearLayout.LayoutParams(dp(54),dp(54)));
+        LinearLayout names=new LinearLayout(this);names.setOrientation(LinearLayout.VERTICAL);names.setPadding(dp(12),0,0,0);brand.addView(names,new LinearLayout.LayoutParams(0,-2,1));
+        names.addView(text("NMC",28,TEXT,true));names.addView(text("Native Market Cockpit",14,CYAN,true));
+        names.addView(text("Multi-Market Research Engine",11,MUTED,false));
+        connection=text("RECONNEXION",12,AMBER,true);connection.setPadding(dp(12),dp(7),dp(12),dp(7));connection.setBackground(rounded(CARD_ALT,AMBER,999,1));
+        LinearLayout.LayoutParams connectionParams=new LinearLayout.LayoutParams(-2,-2);connectionParams.setMargins(0,dp(12),0,0);header.addView(connection,connectionParams);
+        header.addView(text("Version "+BuildConfig.VERSION_NAME,12,MUTED,false));
+        feedAge=text("Âge du flux : —",12,MUTED,false);feedAge.setPadding(0,dp(3),0,0);header.addView(feedAge);
+        LinearLayout stateCard=card(root,"ÉTAT GÉNÉRAL",AMBER);generalState=text("ANALYSE",30,AMBER,true);stateCard.addView(generalState);
+        generalState.setContentDescription("État général du moteur");
+        marketViews.clear();for(MarketUiCatalog.CardDescriptor descriptor:MarketUiCatalog.cards(MarketRegistry.production())){
+            MarketViews views=new MarketViews();LinearLayout market=card(root,descriptor.symbol+" · "+descriptor.asset,CYAN);
+            views.price=mono("—",30,TEXT,true);market.addView(views.price);views.quotes=mono("BID —   ASK —",14,MUTED,false);market.addView(views.quotes);
+            views.feed=text("Flux : initialisation",12,MUTED,false);market.addView(views.feed);views.state=text("ANALYSE",15,CYAN,true);market.addView(views.state);
+            views.plan=mono("Aucun plan actif",14,TEXT,false);views.plan.setPadding(0,dp(8),0,0);market.addView(views.plan);marketViews.put(descriptor.symbol,views);}
+        LinearLayout btc=card(root,"BTCUSDT · CONTEXTE",CYAN);btcContext=mono("Prix —\nBID —   ASK —\nÉtat : initialisation",14,TEXT,false);btc.addView(btcContext);
+        LinearLayout risk=card(root,"RISQUE ACTIF · INFORMATIF",RED);aggregateRisk=mono("Aucun risque actif",14,TEXT,false);risk.addView(aggregateRisk);risk.setTag("riskCard");
+        return wrap(root);}
+
+    private ScrollView buildPlansScreen(){LinearLayout root=screenRoot();addSectionHeader(root,"Plans","Plans manuels actifs et historique récent");
+        LinearLayout card=card(root,"PLANS ACTIFS",RED);planList=mono("Aucun plan actif",15,TEXT,false);card.addView(planList);
+        LinearLayout history=card(root,"HISTORIQUE RÉCENT",CYAN);TextView info=text("PLAN_CONFIRMED · PLAN_RESTORED · TP_TOUCHED · SL_TOUCHED\nUne restauration n’est jamais comptée comme un nouveau trade.",13,MUTED,false);history.addView(info);
+        return wrap(root);}
+
+    private ScrollView buildDiagnosticScreen(){LinearLayout root=screenRoot();addSectionHeader(root,"Diagnostic","Santé des flux et recorder multi-marchés");
+        LinearLayout health=card(root,"ÉTAT DE SANTÉ",CYAN);diagnosticHealth=mono("ETH —\nSOL —\nBTC —",14,TEXT,false);health.addView(diagnosticHealth);
+        LinearLayout recent=card(root,"5 DERNIERS ÉVÉNEMENTS",AMBER);diagnosticRecent=mono("Aucun événement",12,TEXT,false);recent.addView(diagnosticRecent);
+        LinearLayout details=card(root,"DÉTAILS TECHNIQUES",MUTED);diagnosticDetails=mono("Repliés",11,MUTED,false);diagnosticDetails.setVisibility(View.GONE);details.addView(diagnosticDetails);
+        Button toggle=actionButton("Afficher / masquer les détails",MUTED,()->diagnosticDetails.setVisibility(diagnosticDetails.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE));details.addView(toggle);
+        exportProgress=text("Prêt",12,MUTED,false);root.addView(exportProgress);
+        exportButton=actionButton("Télécharger diagnostic ZIP",CYAN,this::exportDiagnosticZip);root.addView(exportButton);
+        return wrap(root);}
+
+    private ScrollView buildToolsScreen(){LinearLayout root=screenRoot();addSectionHeader(root,"Outils","Tests et réglages non décisionnels");
+        LinearLayout ai=card(root,"IA INFORMATIVE",CYAN);aiInfo=text(aiStatusText(),12,MUTED,false);ai.addView(aiInfo);
+        ai.addView(actionButton("Réglages IA OpenAI",CYAN,this::showAiSettingsDialog));ai.addView(actionButton("Tester clé IA",AMBER,this::testAiKeyNow));
+        LinearLayout tests=card(root,"TESTS LOCAUX",AMBER);tests.addView(actionButton("Tester alerte forte",RED,()->sendServiceAction(MarketWatchService.ACTION_TEST_ALERT,"Alerte forte envoyée")));
+        tests.addView(actionButton("Tester vibration",CYAN,()->sendServiceAction(MarketWatchService.ACTION_TEST_VIBRATION,"Vibration testée")));
+        LinearLayout reset=card(root,"RECORDER",RED);reset.addView(actionButton("Réinitialiser diagnostic",RED,this::confirmDiagnosticReset));return wrap(root);}
+
+    private void render(String payload){try{latestState=new JSONObject(payload);UiState state=UiState.from(latestState);
+        setChanged(connection,state.connection);connection.setTextColor(state.connected?CYAN:AMBER);
+        setChanged(feedAge,"Âge du flux : "+state.feedAge);setChanged(generalState,state.generalState);
+        JSONObject markets=latestState.optJSONObject("markets");if(markets!=null)for(Map.Entry<String,MarketViews> entry:marketViews.entrySet()){
+            JSONObject market=markets.optJSONObject(entry.getKey());if(market==null)continue;MarketViews views=entry.getValue();
+            setChanged(views.price,price(market.optDouble("last",Double.NaN)));setChanged(views.quotes,"BID "+price(market.optDouble("bid",Double.NaN))+"   ASK "+price(market.optDouble("ask",Double.NaN)));
+            long age=market.optLong("feedAgeSec",-1);setChanged(views.feed,"Âge du feed : "+(age<0?"—":age+" s"));
+            setChanged(views.state,market.optString("state",market.optString("status",market.optBoolean("activePlan",false)?"PLAN ACTIF":"ANALYSE")));
+            setChanged(views.plan,marketPlanText(market));}
+        JSONObject btc=latestState.optJSONObject("referenceMarket");if(btc!=null)setChanged(btcContext,"Prix "+price(btc.optDouble("last",Double.NaN))+"\nBID "+price(btc.optDouble("bid",Double.NaN))+"   ASK "+price(btc.optDouble("ask",Double.NaN))+"\nFraîcheur : "+age(btc.optLong("feedAgeSec",-1)));
+        JSONArray plans=latestState.optJSONArray("activePlans");setChanged(planList,plansText(plans));setChanged(aggregateRisk,riskText(latestState.optJSONObject("aggregateRisk")));
+        JSONObject recorder=latestState.optJSONObject("overnightRecorder");setChanged(diagnosticHealth,healthText(markets,btc,recorder));
+        setChanged(diagnosticRecent,recentEvents(latestState.optJSONArray("diagnostics"),5));setChanged(diagnosticDetails,recorder==null?"Index indisponible":recorder.toString(2));
+    }catch(Exception ignored){}}
+
+    private static final class UiState{final boolean connected;final String connection,feedAge,generalState;
+        UiState(boolean connected,String connection,String feedAge,String generalState){this.connected=connected;this.connection=connection;this.feedAge=feedAge;this.generalState=generalState;}
+        static UiState from(JSONObject state){boolean connected=state.optBoolean("connected");long age=state.optLong("lastAgeSec",-1);JSONArray plans=state.optJSONArray("activePlans");int count=plans==null?0:plans.length();
+            String connection=connected?"CONNECTÉ":age>=0?"FLUX RETARDÉ":"RECONNEXION";String general=count==2?"DEUX PLANS ACTIFS":count==1?"PLAN ACTIF":connected?"ANALYSE":"FLUX RETARDÉ";
+            return new UiState(connected,connection,age<0?"—":age+" s",general);}}
+
+    private void exportDiagnosticZip(){if(!exportRunning.compareAndSet(false,true))return;exportCancelled.set(false);exportButton.setEnabled(false);setChanged(exportProgress,"Préparation…");
+        sendServiceAction(MarketWatchService.ACTION_FLUSH_DIAGNOSTICS,null);final JSONObject snapshot=latestState;
+        exportExecutor.execute(()->{Uri uri=null;String name=DiagnosticExportContract.zipPrefix(BuildConfig.VERSION_NAME)+new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.FRANCE).format(new Date())+".zip";
+            try{Thread.sleep(150);try(OutputTarget target=openExportTarget(name)){uri=target.uri;
+                Map<String,String> small=smallExportEntries(snapshot);DiagnosticStreamingExporter.export(target.output,
+                        MarketWatchService.persistentEventsFile(this),MarketWatchService.persistentFramesFile(this),small,
+                        BuildConfig.VERSION_NAME,System.currentTimeMillis(),(percent,stage)->runOnUiThread(()->setChanged(exportProgress,stage+" · "+percent+" %")),exportCancelled::get);
+                }runOnUiThread(()->{setChanged(exportProgress,"Export terminé");Toast.makeText(this,"Diagnostic exporté : "+name,Toast.LENGTH_LONG).show();
+                    if(resetAfterExport.getAndSet(false))sendServiceAction(MarketWatchService.ACTION_RESET_DIAGNOSTICS,"Diagnostic réinitialisé — plans actifs conservés");});
+            }catch(Exception error){if(uri!=null)try{getContentResolver().delete(uri,null,null);}catch(Exception ignored){}resetAfterExport.set(false);
+                runOnUiThread(()->{setChanged(exportProgress,"Erreur d’export : "+error.getClass().getSimpleName());Toast.makeText(this,"Export impossible",Toast.LENGTH_LONG).show();});}
+            finally{exportRunning.set(false);runOnUiThread(()->exportButton.setEnabled(true));}});}
+
+    private Map<String,String> smallExportEntries(JSONObject state)throws Exception{LinkedHashMap<String,String> out=new LinkedHashMap<>();
+        out.put("status.json",state.toString(2));out.put("markets.json",json(state.optJSONObject("markets"),"{}"));out.put("active_plans.json",json(state.optJSONArray("activePlans"),"[]"));
+        out.put("profiles_manifest.json",profilesManifest().toString(2));JSONObject summary=state.optJSONObject("overnightRecorder");out.put("market_summary.json",json(summary,"{}"));
+        out.put("market_summary.txt",summaryText(summary));out.put("feed_health.json",feedHealth(state).toString(2));out.put("health_check.txt",healthCheck(state));
+        out.put("instructions.txt",DiagnosticExportContract.instructions(BuildConfig.VERSION_NAME));return out;}
+
+    private OutputTarget openExportTarget(String name)throws Exception{if(Build.VERSION.SDK_INT>=29){ContentValues values=new ContentValues();values.put(MediaStore.Downloads.DISPLAY_NAME,name);values.put(MediaStore.Downloads.MIME_TYPE,"application/zip");values.put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS);
+            Uri uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);if(uri==null)throw new IllegalStateException("MediaStore");OutputStream out=getContentResolver().openOutputStream(uri);if(out==null)throw new IllegalStateException("output");return new OutputTarget(uri,out);}
+        File dir=Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);if(!dir.exists()&&!dir.mkdirs())throw new IllegalStateException("Downloads");return new OutputTarget(Uri.fromFile(new File(dir,name)),new FileOutputStream(new File(dir,name),false));}
+
+    private void confirmDiagnosticReset(){new AlertDialog.Builder(this).setTitle("Réinitialiser le diagnostic ?").setMessage("Les plans actifs, leurs niveaux et notifications seront conservés.")
+        .setNegativeButton("Annuler",null).setNeutralButton("Exporter puis réinitialiser",(d,w)->{resetAfterExport.set(true);exportDiagnosticZip();})
+        .setPositiveButton("Réinitialiser quand même",(d,w)->sendServiceAction(MarketWatchService.ACTION_RESET_DIAGNOSTICS,"Diagnostic réinitialisé — plans actifs conservés")).show();}
+
+    private void testAiKeyNow(){if(!SecureAiStore.hasKey(this)){Toast.makeText(this,"Aucune clé IA enregistrée",Toast.LENGTH_LONG).show();return;}
+        Toast.makeText(this,"Test IA en cours…",Toast.LENGTH_SHORT).show();new AiAdvisor(this).testKeyAsync(result->runOnUiThread(()->{
+            String value=result!=null&&result.approved&&!result.fallback?"Clé IA OK":"Test IA échec : "+(result==null?"AI_EMPTY":result.reason);Toast.makeText(this,value,Toast.LENGTH_LONG).show();setChanged(aiInfo,aiStatusText());}));}
+
+    private void showAiSettingsDialog(){LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(18),dp(8),dp(18),0);
+        Switch enabled=new Switch(this);enabled.setText("IA informative après publication");enabled.setTextColor(TEXT);enabled.setChecked(SecureAiStore.isEnabled(this));box.addView(enabled);
+        EditText key=new EditText(this);key.setHint("Clé OpenAI");key.setTextColor(TEXT);key.setHintTextColor(MUTED);key.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);box.addView(key);
+        new AlertDialog.Builder(this).setTitle("IA OpenAI · informative uniquement").setView(box).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{
+            String value=key.getText().toString().trim();if(!value.isEmpty())SecureAiStore.saveKey(this,value);SecureAiStore.setEnabled(this,enabled.isChecked());setChanged(aiInfo,aiStatusText());}).show();}
+
+    private String aiStatusText(){return "IA OpenAI : "+(SecureAiStore.isEnabled(this)?"ON · "+SecureAiStore.maskedKey(this):"OFF")+"\nAvis asynchrone, jamais décisionnel.";}
+    private void sendServiceAction(String action,String toast){Intent intent=new Intent(this,MarketWatchService.class);intent.setAction(action);ContextCompat.startForegroundService(this,intent);if(toast!=null)Toast.makeText(this,toast,Toast.LENGTH_SHORT).show();}
+    private void requestNotificationPermission(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=getPackageManager().PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},1001);}
+    private void askBatteryOptimizationOnce(){if(Build.VERSION.SDK_INT<23)return;PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);if(power==null||power.isIgnoringBatteryOptimizations(getPackageName()))return;
+        try{Intent intent=new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:"+getPackageName()));startActivity(intent);}catch(Exception ignored){}}
+
+    @Override protected void onStart(){super.onStart();if(!receiverRegistered){IntentFilter filter=new IntentFilter(MarketWatchService.BROADCAST_STATUS);ContextCompat.registerReceiver(this,statusReceiver,filter,ContextCompat.RECEIVER_NOT_EXPORTED);receiverRegistered=true;}sendServiceAction(MarketWatchService.ACTION_SYNC_NOW,null);}
+    @Override protected void onStop(){if(receiverRegistered){unregisterReceiver(statusReceiver);receiverRegistered=false;}super.onStop();}
+    @Override protected void onDestroy(){exportCancelled.set(true);exportExecutor.shutdownNow();super.onDestroy();}
+
+    private LinearLayout screenRoot(){LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(14),dp(16),dp(28));root.setBackgroundColor(BG);return root;}
+    private ScrollView wrap(LinearLayout root){ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.addView(root,new ScrollView.LayoutParams(-1,-2));return scroll;}
+    private void addSectionHeader(LinearLayout root,String title,String subtitle){root.addView(text(title,28,TEXT,true));TextView sub=text(subtitle,13,MUTED,false);sub.setPadding(0,dp(4),0,dp(6));root.addView(sub);}
+    private LinearLayout card(LinearLayout root,String label,int accent){LinearLayout value=new LinearLayout(this);value.setOrientation(LinearLayout.VERTICAL);value.setPadding(dp(16),dp(14),dp(16),dp(16));value.setBackground(rounded(CARD,BORDER,16,1));
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(10),0,0);root.addView(value,p);TextView title=text(label,11,accent,true);title.setLetterSpacing(.1f);title.setPadding(0,0,0,dp(9));value.addView(title);return value;}
+    private TextView text(String value,int size,int color,boolean bold){TextView out=new TextView(this);out.setText(value);out.setTextSize(size);out.setTextColor(color);out.setTypeface(Typeface.DEFAULT,bold?Typeface.BOLD:Typeface.NORMAL);out.setLineSpacing(dp(2),1f);return out;}
+    private TextView mono(String value,int size,int color,boolean bold){TextView out=text(value,size,color,bold);out.setTypeface(Typeface.MONOSPACE,bold?Typeface.BOLD:Typeface.NORMAL);return out;}
+    private Button actionButton(String label,int accent,Runnable action){Button button=new Button(this);button.setText(label);button.setAllCaps(false);button.setTextSize(14);button.setTextColor(TEXT);button.setTypeface(Typeface.DEFAULT,Typeface.BOLD);button.setMinHeight(dp(48));button.setMinimumHeight(dp(48));button.setStateListAnimator(null);button.setBackground(rounded(CARD_ALT,accent,12,1));button.setOnClickListener(v->action.run());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(48));p.setMargins(0,dp(8),0,0);button.setLayoutParams(p);return button;}
+    private GradientDrawable rounded(int fill,int stroke,int radius,int width){GradientDrawable d=new GradientDrawable();d.setColor(fill);d.setCornerRadius(dp(radius));d.setStroke(dp(width),stroke);return d;}
+    private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
+    private static void setChanged(TextView view,String value){if(view!=null&&!String.valueOf(view.getText()).equals(value))view.setText(value);}
+    private static String price(double value){return Double.isFinite(value)&&value>0?String.format(Locale.FRANCE,"%.2f",value):"—";}
+    private static String age(long seconds){return seconds<0?"—":seconds+" s";}
+    private static String marketPlanText(JSONObject market){JSONObject plan=market.optJSONObject("signal");if(plan==null&&!market.optBoolean("active",market.optBoolean("activePlan",false)))return "Aucun plan actif";
+        if(plan==null)return "PLAN ACTIF";String asset=market.optString("asset",market.optString("symbol","").replace("USDT",""));return plan.optString("side","PLAN ACTIF")+" · "+plan.optInt("quantity",0)+" "+asset+"\nLIMIT "+price(plan.optDouble("entry",Double.NaN))+"   TP "+price(plan.optDouble("takeProfit",plan.optDouble("tp",Double.NaN)))+"   SL "+price(plan.optDouble("stopLoss",plan.optDouble("sl",Double.NaN)))+"\nScore "+plan.optInt("score",0)+" · "+plan.optString("sleeve",plan.optString("family","—"));}
+    private static String plansText(JSONArray plans){if(plans==null||plans.length()==0)return "Aucun plan actif";StringBuilder out=new StringBuilder();for(int i=0;i<plans.length();i++){JSONObject p=plans.optJSONObject(i);if(p==null)continue;if(out.length()>0)out.append("\n\n");String symbol=p.optString("symbol","ETHUSDT"),asset=p.optString("asset",symbol.replace("USDT",""));out.append(symbol).append(" · ").append(p.optString("side","PLAN ACTIF")).append(" · ").append(p.optInt("quantity",0)).append(' ').append(asset).append("\nLIMIT ").append(price(p.optDouble("entry",Double.NaN))).append("  TP ").append(price(p.optDouble("takeProfit",p.optDouble("tp",Double.NaN)))).append("  SL ").append(price(p.optDouble("stopLoss",p.optDouble("sl",Double.NaN)))).append("\nScore ").append(p.optInt("score",0)).append(" · risque ").append(price(p.optDouble("theoreticalMaximumLoss",Double.NaN))).append(" USDT");}return out.toString();}
+    private static String riskText(JSONObject aggregate){if(aggregate==null||aggregate.optDouble("totalActiveRiskUsdt",0)<=0)return "Aucun risque actif";StringBuilder out=new StringBuilder();JSONObject by=aggregate.optJSONObject("riskBySymbol");if(by!=null){for(String symbol:new String[]{"ETHUSDT","SOLUSDT"})if(by.has(symbol))out.append("Risque ").append(symbol.replace("USDT","")).append(" actif : ").append(price(by.optDouble(symbol,0))).append(" USDT\n");}out.append("Risque total actif : ").append(price(aggregate.optDouble("totalActiveRiskUsdt",0))).append(" USDT");return out.toString();}
+    private static String healthText(JSONObject markets,JSONObject btc,JSONObject recorder){StringBuilder out=new StringBuilder();if(markets!=null)for(String symbol:new String[]{"ETHUSDT","SOLUSDT"}){JSONObject m=markets.optJSONObject(symbol);out.append(symbol).append(" : ").append(m==null?"—":age(m.optLong("feedAgeSec",-1))).append('\n');}out.append("BTCUSDT : ").append(btc==null?"—":age(btc.optLong("feedAgeSec",-1))).append('\n');if(recorder!=null)out.append("Événements : ").append(recorder.optLong("eventCount",recorder.optLong("observationEvents",0))).append(" · Frames : ").append(recorder.optLong("frameCount",recorder.optLong("marketFrames",0))).append("\nDurée : ").append(recorder.optLong("durationSec",0)).append(" s\nFichiers : ").append(recorder.optLong("eventFileBytes",0)+recorder.optLong("frameFileBytes",0)).append(" octets");return out.toString();}
+    private static String recentEvents(JSONArray events,int maximum){if(events==null||events.length()==0)return "Aucun événement";StringBuilder out=new StringBuilder();int start=Math.max(0,events.length()-maximum);for(int i=start;i<events.length();i++){JSONObject e=events.optJSONObject(i);if(e==null)continue;if(out.length()>0)out.append('\n');out.append(e.optString("symbol","—")).append(" · ").append(e.optString("eventType",e.optString("code","EVENT"))).append(" · ").append(e.optString("reasonCode",e.optString("message","")));}return out.toString();}
+    private static String json(Object value,String fallback){return value==null?fallback:String.valueOf(value);}
+    private static String summaryText(JSONObject summary){return summary==null?"Recorder indisponible":"Événements : "+summary.optLong("eventCount",0)+"\nFrames : "+summary.optLong("frameCount",0)+"\nTrades confirmés : "+summary.optLong("confirmedTrades",0)+"\nPlans restaurés : "+summary.optLong("restoredActivePlans",0);}
+    private static JSONObject feedHealth(JSONObject state)throws Exception{JSONObject out=new JSONObject();out.put("version",BuildConfig.VERSION_NAME);out.put("markets",state.optJSONObject("markets"));out.put("referenceMarket",state.optJSONObject("referenceMarket"));out.put("connected",state.optBoolean("connected"));out.put("lastAgeSec",state.optLong("lastAgeSec",-1));return out;}
+    private static String healthCheck(JSONObject state){return "NMC v"+BuildConfig.VERSION_NAME+"\nConnecté: "+state.optBoolean("connected")+"\nMode: RESEARCH_ONLY\nrealTradingAllowed=false\nLifecycle: TP/SL uniquement\n";}
+    private static JSONObject profilesManifest()throws Exception{JSONObject out=new JSONObject();out.put("product","Native Market Cockpit");out.put("versionName",BuildConfig.VERSION_NAME);out.put("versionCode",BuildConfig.VERSION_CODE);JSONArray profiles=new JSONArray();for(MarketProfile profile:MarketRegistry.production().tradedMarkets()){JSONObject p=new JSONObject();p.put("symbol",profile.symbol);p.put("asset",profile.asset);p.put("profileVersion",profile.profileVersion);profiles.put(p);}out.put("profiles",profiles);return out;}
+    private static final class MarketViews{TextView price,quotes,feed,state,plan;}
+    private static final class OutputTarget implements AutoCloseable{final Uri uri;final OutputStream output;OutputTarget(Uri uri,OutputStream output){this.uri=uri;this.output=output;}public void close()throws Exception{output.flush();output.close();}}
 }

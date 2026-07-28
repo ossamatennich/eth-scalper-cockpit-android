@@ -135,9 +135,11 @@ public final class DiagnosticBoundsTest {
         for(String key:StatusPayloadPolicy.FORBIDDEN_COLLECTIONS)
             assertFalse(service.contains("state.put(\""+key+"\""));
         assertTrue(service.contains("StatusPayloadPolicy.compact(state"));
-        assertTrue(activity.contains("DiagnosticExportContract.rebuild("));
-        assertTrue(activity.contains("getPersistentObservationJournalJson(this)"));
-        assertTrue(activity.contains("getPersistentMarketFramesJson(this)"));
+        assertTrue(activity.contains("DiagnosticStreamingExporter.export("));
+        assertTrue(activity.contains("persistentEventsFile(this)"));
+        assertTrue(activity.contains("persistentFramesFile(this)"));
+        assertFalse(activity.contains("getPersistentObservationJournalJson(this)"));
+        assertFalse(activity.contains("getPersistentMarketFramesJson(this)"));
     }
 
     private static Map<String,Object> event(String type,String symbol){Map<String,Object> out=new LinkedHashMap<>();

@@ -101,21 +101,22 @@ public final class MultiMarketDiagnosticsTest {
     }
 
     @Test public void completeZipContractUsesOnlyCurrentVersion() {
-        assertEquals(19,DiagnosticExportContract.REQUIRED_FILES.size());
-        assertTrue(DiagnosticExportContract.REQUIRED_FILES.contains("market_diagnostics.json"));
-        assertTrue(DiagnosticExportContract.REQUIRED_FILES.contains("persistent_market_events.jsonl"));
-        assertEquals("ETH_SOL_Scalper_Diagnostic_v2_34_0_3_",
-                DiagnosticExportContract.zipPrefix("2.34.0.3"));
-        assertFalse(DiagnosticExportContract.instructions("2.34.0.3").contains("v2.34.0\n"));
+        assertEquals(16,DiagnosticExportContract.REQUIRED_FILES.size());
+        assertTrue(DiagnosticExportContract.REQUIRED_FILES.contains("market_events.jsonl"));
+        assertTrue(DiagnosticExportContract.REQUIRED_FILES.contains("market_frames.jsonl"));
+        assertEquals("NMC_Diagnostic_v2_34_1_0_",
+                DiagnosticExportContract.zipPrefix("2.34.1.0"));
+        assertFalse(DiagnosticExportContract.instructions("2.34.1.0").contains("Scalper Cockpit"));
     }
 
     @Test public void applicationExporterContainsEveryRequiredZipEntry() throws Exception {
-        String source=new String(Files.readAllBytes(Path.of("src/main/java/com/ethscalper/cockpit/MainActivity.java")),StandardCharsets.UTF_8);
+        String source=new String(Files.readAllBytes(Path.of("src/main/java/com/ethscalper/cockpit/DiagnosticStreamingExporter.java")),StandardCharsets.UTF_8);
         for(String file:DiagnosticExportContract.REQUIRED_FILES)
             assertTrue("missing "+file,source.contains("\""+file+"\""));
-        assertTrue(source.contains("BuildConfig.VERSION_NAME"));
-        assertTrue(source.contains("DiagnosticExportContract.rebuild("));
-        assertFalse(source.contains("state.optJSONArray(\"marketDiagnostics\")"));
+        String activity=new String(Files.readAllBytes(Path.of("src/main/java/com/ethscalper/cockpit/MainActivity.java")),StandardCharsets.UTF_8);
+        assertTrue(activity.contains("BuildConfig.VERSION_NAME"));
+        assertTrue(activity.contains("DiagnosticStreamingExporter.export("));
+        assertFalse(activity.contains("state.optJSONArray(\"marketDiagnostics\")"));
     }
 
     @Test public void publishedLifecycleStillHasOnlyTpAndSlTerminals() throws Exception {

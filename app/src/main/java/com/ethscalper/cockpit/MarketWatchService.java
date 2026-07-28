@@ -6,10 +6,14 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioAttributes;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -56,6 +60,7 @@ public class MarketWatchService extends Service {
     public static final String ACTION_TEST_ALERT = "com.ethscalper.cockpit.TEST_ALERT";
     public static final String ACTION_TEST_VIBRATION = "com.ethscalper.cockpit.TEST_VIBRATION";
     public static final String ACTION_RESET_DIAGNOSTICS = "com.ethscalper.cockpit.RESET_DIAGNOSTICS";
+    public static final String ACTION_FLUSH_DIAGNOSTICS = "com.ethscalper.cockpit.FLUSH_DIAGNOSTICS";
     public static final String BROADCAST_STATUS = "com.ethscalper.cockpit.STATUS";
     public static final String EXTRA_PAYLOAD = "payload";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
@@ -75,6 +80,7 @@ public class MarketWatchService extends Service {
     private static final String PERSISTENT_DIR = "eth_scalper_overnight_recorder";
     private static final String PERSISTENT_OBSERVATIONS_FILE = "persistent_market_events.jsonl";
     private static final String PERSISTENT_MARKET_FRAMES_FILE = "persistent_market_frames.jsonl";
+    private static final String PERSISTENT_RECORDER_INDEX_FILE = "persistent_recorder_index.properties";
     private static final long PERSISTENT_MARKET_FRAME_INTERVAL_MS = PersistentMarketLog.FRAME_INTERVAL_MS;
     private static final String ALERT_DEDUPE_PREFERENCES = "confirmed_signal_alerts_v2330";
     private static final String BINANCE_STREAM = buildBinanceStream();
@@ -99,6 +105,9 @@ public class MarketWatchService extends Service {
     private final CandidateTombstones candidateTombstones = new CandidateTombstones();
     private ActivePlanPersistence activePlanPersistence;
     private TerminalRearmPersistence terminalRearmPersistence;
+    private PersistentRecorderIndex recorderIndex;
+    private final DiagnosticEventCoalescer diagnosticCoalescer=new DiagnosticEventCoalescer();
+    private final FeedObservabilityTracker feedObservabilityTracker=new FeedObservabilityTracker();
     private final P02SleeveFilter.SetupTracker p02SetupTracker =
             new P02SleeveFilter.SetupTracker();
     private final Deque<MarketFrame> marketFrames = new ArrayDeque<>();
@@ -230,6 +239,9 @@ public class MarketWatchService extends Service {
         return new File(persistentDir(context), name);
     }
 
+    public static File persistentEventsFile(Context context){return persistentFile(context,PERSISTENT_OBSERVATIONS_FILE);}
+    public static File persistentFramesFile(Context context){return persistentFile(context,PERSISTENT_MARKET_FRAMES_FILE);}
+
     private static String readTextFile(File file) {
         if (file == null || !file.exists()) return "";
         StringBuilder out = new StringBuilder();
@@ -258,6 +270,17 @@ public class MarketWatchService extends Service {
     }
 
     private static JSONObject persistentRecorderSummaryJson(Context context) throws Exception {
+        if(context!=null){
+            File indexedEvents=persistentFile(context,PERSISTENT_OBSERVATIONS_FILE);
+            File indexedFrames=persistentFile(context,PERSISTENT_MARKET_FRAMES_FILE);
+            PersistentRecorderIndex index=PersistentRecorderIndex.loadOrRebuild(
+                    persistentFile(context,PERSISTENT_RECORDER_INDEX_FILE),indexedEvents,indexedFrames);
+            JSONObject indexed=new JSONObject(index.snapshot());indexed.put("version",BuildConfig.VERSION_NAME);
+            indexed.put("description","Index incrémental borné du recorder NMC.");
+            indexed.put("resetByButton","ACTION_RESET_DIAGNOSTICS");
+            indexed.put("marketSampleIntervalSec",PERSISTENT_MARKET_FRAME_INTERVAL_MS/1000);
+            return indexed;
+        }
         JSONObject o = new JSONObject();
         File obs = persistentFile(context, PERSISTENT_OBSERVATIONS_FILE);
         File frames = persistentFile(context, PERSISTENT_MARKET_FRAMES_FILE);
@@ -359,6 +382,10 @@ public class MarketWatchService extends Service {
         });
         marketDataRouter=new MarketDataRouter(marketRegistry,marketCoordinator,legacyMirrors);
         migratePersistentFramesToSymbolAwareFormat();
+        recorderIndex=PersistentRecorderIndex.loadOrRebuild(
+                persistentFile(PERSISTENT_RECORDER_INDEX_FILE),
+                persistentFile(PERSISTENT_OBSERVATIONS_FILE),
+                persistentFile(PERSISTENT_MARKET_FRAMES_FILE));
         ensureChannels(this);
         activePlanPersistence = new ActivePlanPersistence(
                 new SharedPreferencesActivePlanBackend(this));
@@ -439,6 +466,9 @@ public class MarketWatchService extends Service {
                         secondaryActive?"Diagnostic réinitialisé — plan actif conservé jusqu’au TP ou au SL."
                                 :"Diagnostic moteur + recorder persistant réinitialisés");
             }
+        } else if (ACTION_FLUSH_DIAGNOSTICS.equals(action)) {
+            flushCoalescedDiagnostics();
+            broadcastStatus("diagnostics_flushed", "Diagnostic prêt pour export");
         } else if (ACTION_SYNC_NOW.equals(action)) {
             broadcastStatus("sync", "État du service natif resynchronisé");
         }
@@ -612,13 +642,13 @@ public class MarketWatchService extends Service {
         NotificationManager manager = (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
         if (manager == null) return;
 
-        NotificationChannel watch = new NotificationChannel(CH_WATCH, "Moteur ETH + SOL permanent",
+        NotificationChannel watch = new NotificationChannel(CH_WATCH, "NMC · moteur multi-marchés",
                 NotificationManager.IMPORTANCE_LOW);
         watch.setDescription("Maintient la surveillance ETH/BTC native en arrière-plan.");
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "Signaux ETH + SOL confirmés — v"+BuildConfig.VERSION_NAME,
+        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "NMC · signaux finaux confirmés — v"+BuildConfig.VERSION_NAME,
                 NotificationManager.IMPORTANCE_HIGH);
         signals.setDescription("Un son signifie exclusivement qu'un signal final manuel est confirmé.");
         signals.enableVibration(true);
@@ -1767,17 +1797,96 @@ public class MarketWatchService extends Service {
                 &&"MARKET_FRAME".equals(object.optString("eventType","")))return;
         try {
             File file = persistentFile(fileName);
-            if(PERSISTENT_OBSERVATIONS_FILE.equals(fileName))PersistentMarketLog.appendEvent(file,
-                    object.optString("eventType",""),object.toString());
-            else PersistentMarketLog.appendFrame(file,object.toString());
+            if(PERSISTENT_OBSERVATIONS_FILE.equals(fileName)) {
+                Map<String,Object> map=jsonObjectMap(object);
+                for(Map<String,Object> emitted:diagnosticCoalescer.accept(map,
+                        object.optLong("eventAt",System.currentTimeMillis())))writePersistentEvent(emitted);
+            } else {
+                PersistentMarketLog.appendFrame(file,object.toString());
+                if(recorderIndex!=null){recorderIndex.recordFrame(jsonObjectMap(object),
+                        PersistentMarketLog.combinedBytes(persistentFile(PERSISTENT_OBSERVATIONS_FILE)),
+                        PersistentMarketLog.combinedBytes(file));saveRecorderIndex();}
+            }
         } catch (Exception ignored) {}
     }
 
+    private void writePersistentEvent(Map<String,Object> value)throws Exception {
+        JSONObject object=new JSONObject(value);File events=persistentFile(PERSISTENT_OBSERVATIONS_FILE);
+        PersistentMarketLog.appendEvent(events,object.optString("eventType",""),object.toString());
+        if(recorderIndex!=null){recorderIndex.recordEvent(value,PersistentMarketLog.combinedBytes(events),
+                PersistentMarketLog.combinedBytes(persistentFile(PERSISTENT_MARKET_FRAMES_FILE)));saveRecorderIndex();}
+    }
+
+    private void flushCoalescedDiagnostics() {
+        for(Map<String,Object> value:diagnosticCoalescer.flush(System.currentTimeMillis()))
+            try{writePersistentEvent(value);}catch(Exception ignored){}
+    }
+
+    private void saveRecorderIndex(){if(recorderIndex==null)return;
+        try{recorderIndex.saveAtomic(persistentFile(PERSISTENT_RECORDER_INDEX_FILE));}catch(Exception ignored){}}
+
+    private static Map<String,Object> jsonObjectMap(JSONObject object)throws Exception {
+        LinkedHashMap<String,Object> out=new LinkedHashMap<>();Iterator<String> keys=object.keys();
+        while(keys.hasNext()){String key=keys.next();Object value=object.opt(key);
+            if(value==JSONObject.NULL)value=null;out.put(key,value);}return out;
+    }
+
+    private void recordFeedTransitions(long now) {
+        boolean websocketConnected=socket!=null&&lastMessageAt>0&&now-lastMessageAt<70_000L;
+        boolean btcFresh=sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS);
+        for(MarketRuntime runtime:marketCoordinator.runtimes().values()){
+            boolean fresh=runtime.bid>0&&runtime.ask>0&&runtime.last>0&&runtime.lastTickerAt>0
+                    &&now-runtime.lastTickerAt<=ETH_BOOK_MAX_AGE_MS;
+            String source=websocketConnected&&runtime.lastTickerAt>0&&now-runtime.lastTickerAt<=ETH_BOOK_MAX_AGE_MS
+                    ?"WEBSOCKET":runtime.restKlineRefreshes>0?"REST_FALLBACK":"PREFILL_ONLY";
+            Map<String,Object> event=feedObservabilityTracker.observe(runtime.profile.symbol,
+                    runtime.profile.asset,runtime.profile.profileVersion,now,fresh,source,
+                    feedDetails(runtime,now,websocketConnected,btcFresh));
+            if(!event.isEmpty())try{appendPersistentJsonLine(PERSISTENT_OBSERVATIONS_FILE,new JSONObject(event));}catch(Exception ignored){}
+        }
+        LinkedHashMap<String,Object> btcDetails=new LinkedHashMap<>();
+        btcDetails.put("btcTickerAgeMs",elapsed(now,sharedBtc.lastTickerAt));
+        btcDetails.put("btcKlineAgeMs",elapsed(now,sharedBtc.lastKlineAt));
+        btcDetails.put("websocketConnected",websocketConnected);btcDetails.put("bookTickerMessages",sharedBtc.bookTickerMessages);
+        btcDetails.put("klineMessages",sharedBtc.klineMessages);btcDetails.put("networkType",networkType());
+        btcDetails.put("appForeground",appForeground());btcDetails.put("batteryOptimizationExempt",batteryOptimizationExempt());
+        String btcSource=websocketConnected?"WEBSOCKET":"REST_FALLBACK";
+        Map<String,Object> btcEvent=feedObservabilityTracker.observe(MarketProfile.BTC_SYMBOL,"BTC","BTC_SHARED_CONTEXT",
+                now,btcFresh,btcSource,btcDetails);
+        if(!btcEvent.isEmpty())try{appendPersistentJsonLine(PERSISTENT_OBSERVATIONS_FILE,new JSONObject(btcEvent));}catch(Exception ignored){}
+    }
+
+    private Map<String,Object> feedDetails(MarketRuntime runtime,long now,boolean websocketConnected,boolean btcFresh){
+        LinkedHashMap<String,Object> out=new LinkedHashMap<>();out.put("lastTickerAgeMs",elapsed(now,runtime.lastTickerAt));
+        out.put("lastKlineAgeMs",elapsed(now,runtime.lastKlineAt));out.put("lastAggTradeAgeMs",elapsed(now,runtime.lastAggTradeAt));
+        out.put("lastRestKlineAgeMs",elapsed(now,runtime.lastRestKlineAt));out.put("lastRestTradeAgeMs",elapsed(now,runtime.lastRestTickerAt));
+        out.put("btcTickerAgeMs",elapsed(now,sharedBtc.lastTickerAt));out.put("btcKlineAgeMs",elapsed(now,sharedBtc.lastKlineAt));
+        out.put("btcFeedFresh",btcFresh);out.put("websocketConnected",websocketConnected);
+        out.put("bookTickerMessages",runtime.bookTickerMessages);out.put("klineMessages",runtime.klineMessages);
+        out.put("aggTradeMessages",runtime.aggTradeMessages);out.put("restKlineRefreshes",runtime.restKlineRefreshes);
+        out.put("restTradeRefreshes",runtime.restTradeRefreshes);out.put("networkType",networkType());
+        out.put("appForeground",appForeground());out.put("batteryOptimizationExempt",batteryOptimizationExempt());return out;}
+
+    private static long elapsed(long now,long at){return at<=0?-1:Math.max(0,now-at);}
+    private String networkType(){try{ConnectivityManager manager=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
+        Network network=manager==null?null:manager.getActiveNetwork();NetworkCapabilities value=network==null?null:manager.getNetworkCapabilities(network);
+        if(value==null)return "NONE";if(value.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))return "WIFI";
+        if(value.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR))return "CELLULAR";
+        if(value.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))return "ETHERNET";return "OTHER";}catch(Exception ignored){return "UNKNOWN";}}
+    private boolean appForeground(){ActivityManager.RunningAppProcessInfo info=new ActivityManager.RunningAppProcessInfo();
+        ActivityManager.getMyMemoryState(info);return info.importance<=ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND;}
+    private boolean batteryOptimizationExempt(){if(Build.VERSION.SDK_INT<23)return true;PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);
+        return power!=null&&power.isIgnoringBatteryOptimizations(getPackageName());}
+
     private void resetPersistentRecorder() {
+        diagnosticCoalescer.reset();
+        feedObservabilityTracker.reset();
         try { PersistentMarketLog.reset(persistentFile(PERSISTENT_OBSERVATIONS_FILE)); }
         catch (Exception ignored) {}
         try { PersistentMarketLog.reset(persistentFile(PERSISTENT_MARKET_FRAMES_FILE)); }
         catch (Exception ignored) {}
+        if(recorderIndex==null)recorderIndex=new PersistentRecorderIndex();else recorderIndex.reset();
+        saveRecorderIndex();
         LAST_PERSISTENT_OBSERVATIONS_JSON = "[]";
         LAST_PERSISTENT_MARKET_FRAMES_JSON = "[]";
         LAST_OVERNIGHT_RECORDER_SUMMARY_JSON = "{}";
@@ -1950,8 +2059,10 @@ public class MarketWatchService extends Service {
 
         MarketFrame frame = new MarketFrame(now, snapshot, decision, setupCandidateFor(snapshot));
         marketFrames.addLast(frame);
-        marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.frame(now,decision,snapshot,
+        MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+        ethRuntime.recorder.frame(now,decision,snapshot,
                 ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
+        flushRuntimeRecorder(ethRuntime,now,false);
         updateMarketFrameFutureLabels(snapshot.ethLast, now);
 
         while (marketFrames.size() > 7200) marketFrames.removeFirst();
@@ -3835,7 +3946,7 @@ public class MarketWatchService extends Service {
     private void notifyTestAlert() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "TEST NOTIFICATION ETH + SOL", "Test silencieux v"+BuildConfig.VERSION_NAME+" · aucun ordre n’est envoyé", false));
+                "NMC · TEST NOTIFICATION", "Test silencieux v"+BuildConfig.VERSION_NAME+" · aucun ordre n’est envoyé", false));
     }
 
     private Notification buildSignalNotification(String title, String body, boolean audible) {
@@ -3847,7 +3958,7 @@ public class MarketWatchService extends Service {
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
         Notification.Builder builder = new Notification.Builder(
                 this, audible ? CH_SIGNAL : CH_SIGNAL_SILENT)
-                .setSmallIcon(R.drawable.ic_stat_eth)
+                .setSmallIcon(R.drawable.ic_stat_nmc)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new Notification.BigTextStyle().bigText(body))
@@ -3885,8 +3996,8 @@ public class MarketWatchService extends Service {
         PendingIntent pending = PendingIntent.getActivity(this, 0, open,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return new Notification.Builder(this, CH_WATCH)
-                .setSmallIcon(R.drawable.ic_stat_eth)
-                .setContentTitle("ETH + SOL Scalper · moteur natif actif")
+                .setSmallIcon(R.drawable.ic_stat_nmc)
+                .setContentTitle("NMC · moteur multi-marchés actif")
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setOngoing(true)
@@ -3906,6 +4017,7 @@ public class MarketWatchService extends Service {
     private void broadcastStatus(String type, String message) {
         try {
             long now = System.currentTimeMillis();
+            recordFeedTransitions(now);
             long age = lastMessageAt == 0 ? -1 : Math.max(0, (now - lastMessageAt) / 1000);
             boolean connected = socket != null && age >= 0 && age < 70;
             SignalDecision decision = lastDecision;
@@ -3993,7 +4105,11 @@ public class MarketWatchService extends Service {
             state.put("aiStatus", aiStatus);
             try { state.put("aiLastDecision", new JSONObject(lastAiDecisionJson)); } catch (Exception ignored) { state.put("aiLastDecision", JSONObject.NULL); }
             state.put("marketFramesInMemory", marketFrames.size());
-            state.put("overnightRecorder", persistentRecorderSummaryJson(this));
+            JSONObject recorderSummary=new JSONObject(recorderIndex==null
+                    ?Collections.emptyMap():recorderIndex.snapshot());
+            recorderSummary.put("version",BuildConfig.VERSION_NAME);
+            recorderSummary.put("marketSampleIntervalSec",PERSISTENT_MARKET_FRAME_INTERVAL_MS/1000);
+            state.put("overnightRecorder",recorderSummary);
             state.put("marketRecorderSummary", marketRecorderSummaryJson());
             state.put("observationSummary", observationSummaryJson());
             state.put("calibrationSummary", calibrationSummaryJson());
@@ -4175,7 +4291,7 @@ public class MarketWatchService extends Service {
         m.put("klineSource", klineMessages > 0 ? "WEBSOCKET" : restKlineRefreshes > 0 ? "REST_FALLBACK" : "PREFILL_ONLY");
         m.put("decisionCode", decision == null ? "NO_DECISION" : decision.reasonCode);
         m.put("decisionText", decision == null ? "Initialisation" : decision.reasonText);
-        m.put("rulesProfile", "ETH + SOL Scalper Cockpit v"+BuildConfig.VERSION_NAME+" — Complete Multi-Market Research");
+        m.put("rulesProfile", "Native Market Cockpit v"+BuildConfig.VERSION_NAME+" — Multi-Market Research Engine");
         m.put("aiEnabled", AiAdvisor.isEnabled(this));
         m.put("aiStatus", aiStatus);
 

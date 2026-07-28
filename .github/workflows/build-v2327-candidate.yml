@@ -1,4 +1,4 @@
-name: Version candidate de l'APK v2.34.0.3 stable multi-market research
+name: NMC v2.34.1.0 professional UX and optimized diagnostics
 
 on:
   push:
@@ -39,5 +39,5 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ETH-SOL-Scalper-Cockpit-v2.34.0.3-debug-apk
+          name: NMC-v2.34.1.0-debug-apk
           path: app/build/outputs/apk/debug/*.apk
