@@ -1,16 +1,24 @@
-# Candidate NMC v2.34.1.0 — Implementation Report
+# Candidate NMC v2.34.1.1 — Implementation Report
 
 ## Référence et périmètre
 
 - Dépôt : `ossamatennich/eth-scalper-cockpit-android`
 - Branche : `agent/v2.32.7-scalp-p01-candidate`
-- HEAD de départ : `e4449e940eb8c03be8f020438bce6e5bc692140f`
-- Version Android : `versionCode 23410`, `versionName 2.34.1.0`
+- HEAD de départ du correctif : `4d4bea30ddb446112ded4daaa7cdb17d9be6c9f6`
+- Version Android : `versionCode 23411`, `versionName 2.34.1.1`
 - Produit : **NMC — Native Market Cockpit**
 - Sous-titre : **Multi-Market Research Engine**
 - Mode : `RESEARCH_ONLY`, `realTradingAllowed=false`
 
 Cette intervention ne modifie aucune calibration, formule, constante, décision, entrée, TP, SL, quantité, budget, P01, P02, OLS60, persistance de plan ou réarmement ETH/SOL. Le manifest golden ETH reste byte-identique.
+
+## Alertes finales audibles fiables
+
+Le canal sonore neuf `nmc_final_signal_loud_v1` évite de réutiliser les réglages Android persistants du canal historique. Il est configuré en importance haute avec `R.raw.eth_alert_loud`, usage audio `USAGE_ALARM`, contenu `SONIFICATION`, vibration forte, lumières, visibilité publique et catégorie alarme.
+
+Le bouton **Tester alerte forte**, le signal final ETH et les signaux finaux issus des runtimes génériques (SOL et futurs marchés) utilisent tous `postAudibleFinalSignalAlert(...)`. Le test ne touche jamais aux préférences de déduplication métier. Pour un vrai plan, la signature n’est enregistrée qu’après construction et envoi réussi de la notification. Une exception enregistre `SIGNAL_AUDIBLE_ALERT_FAILED`, conserve le plan intact et laisse la signature disponible pour une nouvelle tentative.
+
+Les restaurations, TP, SL et mises à jour lifecycle continuent d’utiliser le canal silencieux historique. Le test de vibration reste indépendant et ne joue aucun son. L’état du canal est classé de façon pure parmi `CHANNEL_READY`, `NOTIFICATIONS_DISABLED`, `CHANNEL_DISABLED`, `CHANNEL_LOW_IMPORTANCE` et `CHANNEL_SOUND_MISSING`, puis exporté avec les métadonnées d’envoi.
 
 ## Identité NMC et interface native
 

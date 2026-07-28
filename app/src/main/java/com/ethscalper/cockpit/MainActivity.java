@@ -155,7 +155,7 @@ public class MainActivity extends Activity {
     private ScrollView buildToolsScreen(){LinearLayout root=screenRoot();addSectionHeader(root,"Outils","Tests et réglages non décisionnels");
         LinearLayout ai=card(root,"IA INFORMATIVE",CYAN);aiInfo=text(aiStatusText(),12,MUTED,false);ai.addView(aiInfo);
         ai.addView(actionButton("Réglages IA OpenAI",CYAN,this::showAiSettingsDialog));ai.addView(actionButton("Tester clé IA",AMBER,this::testAiKeyNow));
-        LinearLayout tests=card(root,"TESTS LOCAUX",AMBER);tests.addView(actionButton("Tester alerte forte",RED,()->sendServiceAction(MarketWatchService.ACTION_TEST_ALERT,"Alerte forte envoyée")));
+        LinearLayout tests=card(root,"TESTS LOCAUX",AMBER);tests.addView(actionButton("Tester alerte forte",RED,()->sendServiceAction(MarketWatchService.ACTION_TEST_ALERT,"ALERTE SONORE DE TEST ENVOYÉE")));
         tests.addView(actionButton("Tester vibration",CYAN,()->sendServiceAction(MarketWatchService.ACTION_TEST_VIBRATION,"Vibration testée")));
         LinearLayout reset=card(root,"RECORDER",RED);reset.addView(actionButton("Réinitialiser diagnostic",RED,this::confirmDiagnosticReset));return wrap(root);}
 

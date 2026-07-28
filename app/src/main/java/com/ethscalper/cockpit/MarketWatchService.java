@@ -23,6 +23,7 @@ import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -66,11 +67,12 @@ public class MarketWatchService extends Service {
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
     private static final String CH_WATCH = "eth_scalper_watch_v22801";
-    private static final String CH_SIGNAL = "eth_scalper_signal_final_v2330";
+    static final String FINAL_SIGNAL_LOUD_CHANNEL_ID = "nmc_final_signal_loud_v1";
     private static final String CH_SIGNAL_SILENT = "eth_scalper_signal_updates_v2330";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
     private static final int NOTIF_WATCH_ID = 22801;
+    static final int NOTIF_TEST_AUDIBLE_ID = 23_411_001;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final long OBSERVATION_MAX_AGE_MS = 15 * 60 * 1000L;
     private static final long LIMIT_ORDER_MAX_AGE_MS = 45 * 60 * 1000L;
@@ -144,8 +146,6 @@ public class MarketWatchService extends Service {
     private long lastRestAggTradeId = -1;
     private int reconnectAttempt;
     private boolean historyPrefillRequested;
-    private int signalNotificationId = 3000;
-
     private double ethBid, ethAsk, ethLast;
     private double btcBid, btcAsk, btcLast;
     private SignalDecision lastDecision;
@@ -419,8 +419,10 @@ public class MarketWatchService extends Service {
         running = true;
         startForeground(NOTIF_WATCH_ID, buildWatchNotification("Initialisation du moteur natif…"));
         if (ACTION_TEST_ALERT.equals(action)) {
-            notifyTestAlert();
-            broadcastStatus("test_alert", "Alerte forte de test envoyée");
+            boolean posted = notifyTestAlert();
+            broadcastStatus(posted ? "test_alert" : "test_alert_failed",
+                    posted ? "ALERTE SONORE DE TEST ENVOYÉE"
+                            : "ÉCHEC DE L’ALERTE SONORE DE TEST");
         } else if (ACTION_TEST_VIBRATION.equals(action)) {
             vibrateAlert();
             broadcastStatus("test_vibration", "Vibration longue testée");
@@ -648,9 +650,10 @@ public class MarketWatchService extends Service {
         watch.setShowBadge(false);
         manager.createNotificationChannel(watch);
 
-        NotificationChannel signals = new NotificationChannel(CH_SIGNAL, "NMC · signaux finaux confirmés — v"+BuildConfig.VERSION_NAME,
+        NotificationChannel signals = new NotificationChannel(FINAL_SIGNAL_LOUD_CHANNEL_ID,
+                "NMC · Alertes de signaux confirmés",
                 NotificationManager.IMPORTANCE_HIGH);
-        signals.setDescription("Un son signifie exclusivement qu'un signal final manuel est confirmé.");
+        signals.setDescription("Alerte sonore forte uniquement lors d’un nouveau signal final confirmé.");
         signals.enableVibration(true);
         signals.setVibrationPattern(ALERT_VIBRATION);
         signals.enableLights(true);
@@ -3867,41 +3870,32 @@ public class MarketWatchService extends Service {
         if (item == null || item.signal == null || item.finalConfirmedAt <= 0) return;
         SignalDecision decision = item.signal;
         ConfirmedSignalPayload payload = ConfirmedSignalPayload.from(decision);
-        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        String title = "🚨 SIGNAL ETH CONFIRMÉ — " + decision.side;
+        String title = "ETHUSDT · SIGNAL CONFIRMÉ — " + decision.side;
         String body = payload.notificationBody(item.premium15m);
 
-        if (manager != null) {
-            String signature = item.notificationSignature;
-            String key = "signature_" + signature;
-            boolean alreadyAlerted = getSharedPreferences(ALERT_DEDUPE_PREFERENCES, MODE_PRIVATE)
-                    .getBoolean(key, false);
-            int id = confirmedNotificationId(signature);
-            item.notificationId = id;
-            item.alertSent = SignalSafetyPolicies.finalSignalIsAudible(alreadyAlerted);
-            if (!alreadyAlerted) {
-                getSharedPreferences(ALERT_DEDUPE_PREFERENCES, MODE_PRIVATE)
-                        .edit().putBoolean(key, true).apply();
-            }
-            manager.notify(id, buildSignalNotification(title, body,
-                    SignalSafetyPolicies.finalSignalIsAudible(alreadyAlerted)));
-        }
+        String signature = item.notificationSignature;
+        int id = confirmedNotificationId(signature);
+        item.notificationId = id;
+        AudiblePostResult result = postAudibleFinalSignalAlert(
+                title, body, id, MarketProfile.ETH_SYMBOL, false, signature);
+        item.alertSent = result.posted;
+        if (result.alreadyAlerted) postSilentSignalNotification(id, title, body);
 
         updateWatch("Signal final confirmé : " + decision.side + " · ordre manuel uniquement", true);
     }
 
     private void notifyMarketPlan(ActivePlanState plan, boolean audible) {
         if (plan == null) return;
-        NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
-        if(manager==null)return;
-        String key="signature_"+plan.notificationSignature;
-        boolean sent=getSharedPreferences(ALERT_DEDUPE_PREFERENCES,MODE_PRIVATE).getBoolean(key,false);
-        boolean sound=audible&&!sent;
-        if(sound)getSharedPreferences(ALERT_DEDUPE_PREFERENCES,MODE_PRIVATE).edit().putBoolean(key,true).apply();
         String title=plan.symbol+" · SIGNAL CONFIRMÉ — "+plan.side;
         String body=String.format(Locale.US,"LIMIT %.2f · TP %.2f · SL %.2f · %d %s",
                 plan.entry,plan.takeProfit,plan.stopLoss,plan.quantity,plan.asset);
-        manager.notify(plan.notificationId,buildSignalNotification(title,body,sound));
+        if (!audible) {
+            postSilentSignalNotification(plan.notificationId,title,body);
+            return;
+        }
+        AudiblePostResult result=postAudibleFinalSignalAlert(title,body,plan.notificationId,
+                plan.symbol,false,plan.notificationSignature);
+        if(result.alreadyAlerted)postSilentSignalNotification(plan.notificationId,title,body);
     }
 
     private void notifyRestoredMarketPlan(MarketRuntime runtime) {
@@ -3943,10 +3937,115 @@ public class MarketWatchService extends Service {
         return SignalSafetyPolicies.confirmedNotificationId(signature);
     }
 
-    private void notifyTestAlert() {
-        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (manager != null) manager.notify(signalNotificationId++, buildSignalNotification(
-                "NMC · TEST NOTIFICATION", "Test silencieux v"+BuildConfig.VERSION_NAME+" · aucun ordre n’est envoyé", false));
+    private boolean notifyTestAlert() {
+        return postAudibleFinalSignalAlert(
+                "NMC · TEST ALERTE SONORE",
+                "Tu dois entendre exactement l’alerte d’un futur signal confirmé. Aucun ordre n’est envoyé.",
+                NOTIF_TEST_AUDIBLE_ID,"",true,"").posted;
+    }
+
+    private AudiblePostResult postAudibleFinalSignalAlert(String title,String body,
+                                                            int notificationId,String symbol,
+                                                            boolean test,String signature) {
+        ensureChannels(this);
+        String key=test?"":"signature_"+(signature==null?"":signature);
+        boolean signatureAlreadyAlerted=!test&&getSharedPreferences(
+                ALERT_DEDUPE_PREFERENCES,MODE_PRIVATE).getBoolean(key,false);
+        if(!FinalSignalAlertPolicy.shouldAttempt(test,signatureAlreadyAlerted)) {
+            recordAudibleAlertDiagnostic(test,symbol,notificationId,false,true,false,null);
+            return AudiblePostResult.alreadyAlerted();
+        }
+        NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        if(manager==null) {
+            recordAudibleAlertDiagnostic(test,symbol,notificationId,false,false,false,
+                    "NotificationManager indisponible");
+            return AudiblePostResult.failed();
+        }
+        try {
+            Notification notification=buildSignalNotification(title,body,true);
+            manager.notify(notificationId,notification);
+            boolean dedupeWritten=false;
+            if(FinalSignalAlertPolicy.shouldWriteBusinessDedupe(test,true)) {
+                dedupeWritten=getSharedPreferences(ALERT_DEDUPE_PREFERENCES,MODE_PRIVATE)
+                        .edit().putBoolean(key,true).commit();
+            }
+            recordAudibleAlertDiagnostic(test,symbol,notificationId,true,false,dedupeWritten,null);
+            return AudiblePostResult.posted();
+        } catch(RuntimeException error) {
+            recordAudibleAlertDiagnostic(test,symbol,notificationId,false,false,false,
+                    error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage()));
+            return AudiblePostResult.failed();
+        }
+    }
+
+    private void postSilentSignalNotification(int notificationId,String title,String body) {
+        try {
+            NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+            if(manager!=null)manager.notify(notificationId,buildSignalNotification(title,body,false));
+        } catch(RuntimeException ignored) {}
+    }
+
+    private FinalSignalAlertChannelStatus.State audibleChannelState() {
+        NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        if(manager==null)return FinalSignalAlertChannelStatus.State.CHANNEL_DISABLED;
+        NotificationChannel channel=manager.getNotificationChannel(FINAL_SIGNAL_LOUD_CHANNEL_ID);
+        Uri sound=channel==null?null:channel.getSound();
+        return FinalSignalAlertChannelStatus.evaluate(manager.areNotificationsEnabled(),
+                channel!=null,channel==null?0:channel.getImportance(),
+                NotificationManager.IMPORTANCE_HIGH,sound==null?null:sound.toString());
+    }
+
+    private void recordAudibleAlertDiagnostic(boolean test,String symbol,int notificationId,
+                                               boolean success,boolean alreadyAlerted,
+                                               boolean dedupeWritten,String error) {
+        NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        NotificationChannel channel=manager==null?null:
+                manager.getNotificationChannel(FINAL_SIGNAL_LOUD_CHANNEL_ID);
+        Uri sound=channel==null?null:channel.getSound();
+        FinalSignalAlertChannelStatus.State state=audibleChannelState();
+        String eventType=success?(test?"TEST_AUDIBLE_ALERT_POSTED":"SIGNAL_AUDIBLE_ALERT_POSTED")
+                :(alreadyAlerted?"SIGNAL_AUDIBLE_ALERT_DEDUPED":"SIGNAL_AUDIBLE_ALERT_FAILED");
+        try {
+            JSONObject event=new JSONObject();
+            event.put("symbol",test?"":symbol);event.put("asset",test?"":assetForSymbol(symbol));
+            event.put("profileVersion",test?"":profileVersionForSymbol(symbol));
+            event.put("eventAt",System.currentTimeMillis());event.put("eventType",eventType);
+            event.put("reasonCode",success?state.name():eventType);
+            event.put("reasonText",error==null?state.name():error);
+            event.put("classification","NOTIFICATION_OBSERVABILITY");
+            event.put("channelId",FINAL_SIGNAL_LOUD_CHANNEL_ID);
+            event.put("channelImportance",channel==null?0:channel.getImportance());
+            event.put("channelSoundUri",sound==null?JSONObject.NULL:sound.toString());
+            event.put("notificationsEnabled",manager!=null&&manager.areNotificationsEnabled());
+            event.put("alertKind",test?"TEST":"FINAL_SIGNAL");
+            event.put("notificationId",notificationId);event.put("audible",true);
+            event.put("vibrationRequested",true);event.put("posted",success);
+            event.put("dedupeWritten",dedupeWritten);event.put("alreadyAlerted",alreadyAlerted);
+            appendPersistentJsonLine(PERSISTENT_OBSERVATIONS_FILE,event);
+        } catch(Exception ignored) {}
+        Log.i("NMC_ALERT","channel="+FINAL_SIGNAL_LOUD_CHANNEL_ID+" state="+state
+                +" audible=true soundUri="+(sound==null?"null":sound)
+                +" notificationId="+notificationId+" symbol="+(test?"TEST":symbol)
+                +" posted="+success+" vibrationRequested=true dedupeWritten="+dedupeWritten);
+    }
+
+    private String assetForSymbol(String symbol) {
+        try{return marketRegistry.require(symbol).asset;}catch(Exception ignored){return "";}
+    }
+
+    private String profileVersionForSymbol(String symbol) {
+        try{return marketRegistry.require(symbol).profileVersion;}catch(Exception ignored){return "";}
+    }
+
+    private static final class AudiblePostResult {
+        final boolean posted;
+        final boolean alreadyAlerted;
+        private AudiblePostResult(boolean posted,boolean alreadyAlerted) {
+            this.posted=posted;this.alreadyAlerted=alreadyAlerted;
+        }
+        static AudiblePostResult posted(){return new AudiblePostResult(true,false);}
+        static AudiblePostResult failed(){return new AudiblePostResult(false,false);}
+        static AudiblePostResult alreadyAlerted(){return new AudiblePostResult(false,true);}
     }
 
     private Notification buildSignalNotification(String title, String body, boolean audible) {
@@ -3957,7 +4056,7 @@ public class MarketWatchService extends Service {
         AudioAttributes audio = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
         Notification.Builder builder = new Notification.Builder(
-                this, audible ? CH_SIGNAL : CH_SIGNAL_SILENT)
+                this, audible ? FINAL_SIGNAL_LOUD_CHANNEL_ID : CH_SIGNAL_SILENT)
                 .setSmallIcon(R.drawable.ic_stat_nmc)
                 .setContentTitle(title)
                 .setContentText(body)
@@ -3967,7 +4066,7 @@ public class MarketWatchService extends Service {
                 .setContentIntent(pending)
                 .setCategory(Notification.CATEGORY_ALARM)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
-                .setOnlyAlertOnce(true)
+                .setOnlyAlertOnce(!audible)
                 .setAutoCancel(true);
         if (audible) {
             builder.setSound(sound, audio).setVibrate(ALERT_VIBRATION);

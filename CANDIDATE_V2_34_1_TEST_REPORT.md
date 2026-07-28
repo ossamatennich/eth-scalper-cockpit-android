@@ -1,4 +1,4 @@
-# Candidate NMC v2.34.1.0 — Test Report
+# Candidate NMC v2.34.1.1 — Test Report
 
 ## Résultat local
 
@@ -6,14 +6,24 @@ Toutes les validations demandées sont réussies, sans échec ni test ignoré.
 
 | Commande | Résultat |
 |---|---|
-| `gradle testDebugUnitTest --rerun-tasks` | PASS — 291/291 |
-| `gradle test --rerun-tasks` | PASS — debug + release, 582 exécutions |
+| `gradle testDebugUnitTest --rerun-tasks` | PASS — 309/309 |
+| `gradle test --rerun-tasks` | PASS — debug + release, 618 exécutions |
 | `python3 -m unittest tools/test_validate_sol_profile.py` | PASS — 9/9 |
 | `gradle assembleDebug` | PASS |
 | `gradle assembleRelease` | PASS |
 | `gradle lintRelease` | PASS — zéro erreur lint |
 
-Les 280 tests JVM historiques sont conservés. Onze tests NMC distincts ont été ajoutés, pour un total de 291 tests par variante.
+Les 291 tests JVM de NMC v2.34.1.0 sont conservés. Dix-huit tests ciblés d’alerte sonore sont ajoutés, pour un total de 309 tests distincts par variante et 618 exécutions debug/release.
+
+## Correctif d’alerte sonore
+
+- `notifyTestAlert()` utilise le même `postAudibleFinalSignalAlert(...)` que les signaux finaux ETH et SOL.
+- canal sonore : `nmc_final_signal_loud_v1` ; ancien canal v2.33.0 absent du chemin audible ;
+- test répété : toujours éligible, ID réservé, aucune écriture dans la déduplication métier ;
+- premier plan final : audible ; répétition d’une même signature : silencieuse ;
+- déduplication réelle écrite uniquement après `NotificationManager.notify(...)` ;
+- échec : `SIGNAL_AUDIBLE_ALERT_FAILED`, aucune signature consommée et aucun champ du plan muté ;
+- restaurations, TP, SL et test vibration : silencieux.
 
 ## Golden master ETH
 
@@ -43,13 +53,17 @@ Le test ouvre le ZIP, vérifie les 16 noms canoniques, l’absence de nom dupliq
 ## APK locales
 
 - Debug : `app/build/outputs/apk/debug/app-debug.apk`
-  - taille : **4 077 486 octets**
-  - SHA-256 : `4a926b6274f5c7ec1192ff77e5beb53d8c6f18ffe75d92565e893a3056272ce3`
+  - taille : **4 280 927 octets**
+  - SHA-256 : `ca459b38dedb118f8a061d77eba3d82698912ad839dc52887d08e6fa0ba3a0bf`
 - Release non signée : `app/build/outputs/apk/release/app-release-unsigned.apk`
-  - taille : **3 218 558 octets**
-  - SHA-256 : `ccf4febda70e1438a5fb2b01ff0782b8d23603225ff713f25d7bccb16ae372b2`
+  - taille : **3 220 674 octets**
+  - SHA-256 : `cfe14f378b258f8461dd19d6d00044e6ecff9953bac7a6e4c585f586035f0e78`
 
-Le manifeste APK debug confirme : package `com.ethscalper.cockpit.debug`, versionCode `23410`, versionName `2.34.1.0`, minSdk 26, targetSdk 35 et label `NMC`.
+Le manifeste APK debug confirme : package `com.ethscalper.cockpit.debug`, versionCode `23411`, versionName `2.34.1.1`, minSdk 26, targetSdk 35 et label `NMC`.
+
+## Test Android
+
+L’AVD Android 35 installé localement a été lancé avec et sans accélération matérielle, mais il s’est arrêté avant d’apparaître dans `adb devices` ; aucune cible Android opérationnelle n’était donc disponible pour installer l’APK et déclencher `ACTION_TEST_ALERT`. Les tests JVM vérifient le canal, `audible=true`, le son, la vibration, la séquence de déduplication et les chemins silencieux. Aucun son n’est déclaré « entendu » sans matériel audio Android réel.
 
 ## GitHub Actions
 
