@@ -101,6 +101,19 @@ public final class PersistentRecorderIndex {
         return value;
     }
 
+    /**
+     * Startup-safe loader: never scans JSONL. Existing journals remain untouched and are still
+     * exported in full. If the small index is absent or corrupt, recording resumes with a fresh
+     * summary rather than delaying the Android foreground-service deadline.
+     */
+    public static PersistentRecorderIndex loadFast(File index,File events,File frames) {
+        PersistentRecorderIndex value=new PersistentRecorderIndex();
+        value.load(index);
+        value.eventBytes=PersistentMarketLog.combinedBytes(events);
+        value.frameBytes=PersistentMarketLog.combinedBytes(frames);
+        return value;
+    }
+
     private boolean load(File file) {
         if(file==null||!file.exists())return false;Properties p=new Properties();
         try(FileInputStream input=new FileInputStream(file)){p.load(input);

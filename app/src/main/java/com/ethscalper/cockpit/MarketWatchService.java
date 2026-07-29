@@ -348,6 +348,11 @@ public class MarketWatchService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        // Android requires a foreground service to publish its notification immediately.
+        // Never place recorder scans, migrations, REST calls or plan restoration before this.
+        ensureChannels(this);
+        startForeground(NOTIF_WATCH_ID,
+                buildWatchNotification("Démarrage immédiat du moteur multi-marchés…"));
         p02SetupTracker.reset();
         LinkedHashMap<String, MarketDataRouter.LegacyMirror> legacyMirrors =
                 new LinkedHashMap<>();
@@ -378,12 +383,10 @@ public class MarketWatchService extends Service {
             }
         });
         marketDataRouter=new MarketDataRouter(marketRegistry,marketCoordinator,legacyMirrors);
-        migratePersistentFramesToSymbolAwareFormat();
-        recorderIndex=PersistentRecorderIndex.loadOrRebuild(
+        recorderIndex=PersistentRecorderIndex.loadFast(
                 persistentFile(PERSISTENT_RECORDER_INDEX_FILE),
                 persistentFile(PERSISTENT_OBSERVATIONS_FILE),
                 persistentFile(PERSISTENT_MARKET_FRAMES_FILE));
-        ensureChannels(this);
         activePlanPersistence = new ActivePlanPersistence(
                 new SharedPreferencesActivePlanBackend(this));
         terminalRearmPersistence = new TerminalRearmPersistence(
@@ -420,6 +423,7 @@ public class MarketWatchService extends Service {
 
         explicitStopRequested = false;
         running = true;
+        broadcastStatus("service_started", "Service actif — connexion Binance Futures en cours");
         startForeground(NOTIF_WATCH_ID, buildWatchNotification("Initialisation du moteur natif…"));
         if (ACTION_TEST_ALERT.equals(action)) {
             boolean posted = notifyTestAlert();

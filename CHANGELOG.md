@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.3.3 — démarrage Android non bloquant
+
+- service foreground activé avant toute initialisation potentiellement lente ;
+- suppression du scan et de la migration complète des journaux dans le chemin de démarrage ;
+- chargement rapide de l'index recorder sans lecture des JSONL ;
+- conservation intégrale des journaux et des plans existants ;
+- Binance Futures reste la source principale et prioritaire.
+
 ## 2.34.3.2 — flux publics résilients
 
 - rotation automatique entre plusieurs routes publiques de données de marché ;

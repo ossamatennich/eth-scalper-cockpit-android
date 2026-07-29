@@ -2,7 +2,7 @@
 
 Application Android de recherche qui analyse en continu **ETHUSDT** et **SOLUSDT**. **BTCUSDT** sert uniquement de contexte partagé.
 
-La version courante est **2.34.3.2** (`versionCode 23432`). L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
+La version courante est **2.34.3.3** (`versionCode 23433`). L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
 
 ## Principes essentiels
 
