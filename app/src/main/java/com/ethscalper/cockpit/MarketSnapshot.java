@@ -1,6 +1,12 @@
 package com.ethscalper.cockpit;
 
 public final class MarketSnapshot {
+    public final String symbol;
+    public final String asset;
+    public final String profileVersion;
+    public final double marketLast;
+    public final double marketBid;
+    public final double marketAsk;
     public final long now;
     public final long lastSignalAt;
     public final double ethLast;
@@ -19,6 +25,7 @@ public final class MarketSnapshot {
     public final double move1;
     public final double move3;
     public final double move8;
+    public final double move15;
     public final double flowNorm;
     public final double btcMove5;
     public final double recentHigh;
@@ -60,6 +67,13 @@ public final class MarketSnapshot {
     public final double antiBurstScore;
 
     private MarketSnapshot(Builder b) {
+        MarketProfile profile = b.profile == null ? MarketProfile.eth() : b.profile;
+        symbol = profile.symbol;
+        asset = profile.asset;
+        profileVersion = profile.profileVersion;
+        marketLast = b.ethLast;
+        marketBid = b.ethBid;
+        marketAsk = b.ethAsk;
         now = b.now;
         lastSignalAt = b.lastSignalAt;
         ethLast = b.ethLast;
@@ -78,6 +92,7 @@ public final class MarketSnapshot {
         move1 = b.move1;
         move3 = b.move3;
         move8 = b.move8;
+        move15 = b.move15;
         flowNorm = b.flowNorm;
         btcMove5 = b.btcMove5;
         recentHigh = b.recentHigh;
@@ -122,10 +137,11 @@ public final class MarketSnapshot {
 
     public static final class Builder {
         private final long now;
+        private MarketProfile profile = MarketProfile.eth();
         private long lastSignalAt;
         private double ethLast, ethBid, ethAsk, btcLast, btcBid, btcAsk;
         private int ethCandles, btcCandles;
-        private double avgRange20, avgVolume20, lastVolume, move1, move3, move8;
+        private double avgRange20, avgVolume20, lastVolume, move1, move3, move8, move15;
         private double flowNorm, btcMove5, recentHigh, recentLow;
 
         private double recentRange, volumeRatio, rangePosition, distanceToHigh, distanceToLow;
@@ -138,13 +154,24 @@ public final class MarketSnapshot {
         private Builder(long now) { this.now = now; }
 
         public Builder lastSignalAt(long v) { lastSignalAt = v; return this; }
-        public Builder eth(double last, double bid, double ask) { ethLast=last; ethBid=bid; ethAsk=ask; return this; }
+        /** Historical alias: always creates an ETHUSDT snapshot. */
+        public Builder eth(double last, double bid, double ask) {
+            profile=MarketProfile.eth(); ethLast=last; ethBid=bid; ethAsk=ask; return this;
+        }
+        public Builder market(MarketProfile marketProfile, double last, double bid, double ask) {
+            if (marketProfile == null) throw new IllegalArgumentException("marketProfile");
+            profile=marketProfile; ethLast=last; ethBid=bid; ethAsk=ask; return this;
+        }
         public Builder btc(double last, double bid, double ask) { btcLast=last; btcBid=bid; btcAsk=ask; return this; }
         public Builder candleCounts(int ethCount, int btcCount) { ethCandles=ethCount; btcCandles=btcCount; return this; }
         public Builder averages(double range, double volume) { avgRange20=range; avgVolume20=volume; return this; }
 
         public Builder movement(double one, double three, double eight, double high, double low) {
             move1=one; move3=three; move8=eight; recentHigh=high; recentLow=low; return this;
+        }
+
+        public Builder move15(double fifteen) {
+            move15=fifteen; return this;
         }
 
         public Builder flow(double normalized, double volume) {

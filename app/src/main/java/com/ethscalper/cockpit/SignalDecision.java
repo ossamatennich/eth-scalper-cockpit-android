@@ -1,6 +1,10 @@
 package com.ethscalper.cockpit;
 
 public final class SignalDecision {
+    private final MarketProfile marketProfile;
+    public final String symbol;
+    public final String asset;
+    public final String profileVersion;
     public final String decision;
     public final String reasonCode;
     public final String reasonText;
@@ -20,11 +24,18 @@ public final class SignalDecision {
     public final double movementDistance;
     public final boolean movementConsumed;
 
-    private SignalDecision(String decision, String reasonCode, String reasonText, String side,
-                           String family, int score, int quantity, double entry, double takeProfit,
-                           double stopLoss, double targetMove, double stopDistance, String impulse,
-                           boolean resetConfirmed, double movementOrigin, double movementExtreme,
-                           double movementDistance, boolean movementConsumed) {
+    private SignalDecision(MarketProfile profile, String decision, String reasonCode,
+                           String reasonText, String side, String family, int score,
+                           int quantity, double entry, double takeProfit, double stopLoss,
+                           double targetMove, double stopDistance, String impulse,
+                           boolean resetConfirmed, double movementOrigin,
+                           double movementExtreme, double movementDistance,
+                           boolean movementConsumed) {
+        MarketProfile resolved = profile == null ? MarketProfile.eth() : profile;
+        this.marketProfile = resolved;
+        this.symbol = resolved.symbol;
+        this.asset = resolved.asset;
+        this.profileVersion = resolved.profileVersion;
         this.decision = decision;
         this.reasonCode = reasonCode;
         this.reasonText = reasonText;
@@ -48,7 +59,15 @@ public final class SignalDecision {
     public static SignalDecision waiting(String code, String text, int score, String impulse,
                                          boolean reset, double origin, double extreme,
                                          double distance, boolean consumed) {
-        return new SignalDecision("ATTENDRE", code, text, "", "", score, 0,
+        return waiting(MarketProfile.eth(), code, text, score, impulse, reset, origin, extreme,
+                distance, consumed);
+    }
+
+    public static SignalDecision waiting(MarketProfile profile, String code, String text,
+                                         int score, String impulse, boolean reset,
+                                         double origin, double extreme, double distance,
+                                         boolean consumed) {
+        return new SignalDecision(profile, "ATTENDRE", code, text, "", "", score, 0,
                 Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
                 impulse, reset, origin, extreme, distance, consumed);
     }
@@ -58,10 +77,49 @@ public final class SignalDecision {
                                         double targetMove, double stopDistance, String impulse,
                                         boolean reset, double origin, double extreme,
                                         double distance) {
+        return signal(MarketProfile.eth(), side, family, score, quantity, entry, takeProfit,
+                stopLoss, targetMove, stopDistance, impulse, reset, origin, extreme, distance);
+    }
+
+    public static SignalDecision signal(MarketProfile profile, String side, String family,
+                                        int score, int quantity, double entry, double takeProfit,
+                                        double stopLoss, double targetMove, double stopDistance,
+                                        String impulse, boolean reset, double origin,
+                                        double extreme, double distance) {
         String code = "OK_SIGNAL_" + side;
-        return new SignalDecision("ENTRER", code, family + " confirmée", side, family, score,
+        return new SignalDecision(profile, "ENTRER", code, family + " confirmée", side, family,
+                score, quantity, entry, takeProfit, stopLoss, targetMove, stopDistance,
+                impulse, reset, origin, extreme, distance, false);
+    }
+
+    public static SignalDecision confirmed(String side, String family, String reasonCode,
+                                           String reasonText, int score, int quantity,
+                                           double entry, double takeProfit, double stopLoss,
+                                           double targetMove, double stopDistance, String impulse,
+                                           boolean reset, double origin, double extreme,
+                                           double distance) {
+        return confirmed(MarketProfile.eth(), side, family, reasonCode, reasonText, score,
+                quantity, entry, takeProfit, stopLoss, targetMove, stopDistance, impulse,
+                reset, origin, extreme, distance);
+    }
+
+    public static SignalDecision confirmed(MarketProfile profile, String side, String family,
+                                           String reasonCode, String reasonText, int score,
+                                           int quantity, double entry, double takeProfit,
+                                           double stopLoss, double targetMove,
+                                           double stopDistance, String impulse, boolean reset,
+                                           double origin, double extreme, double distance) {
+        return new SignalDecision(profile, "ENTRER", reasonCode, reasonText, side, family, score,
                 quantity, entry, takeProfit, stopLoss, targetMove, stopDistance,
                 impulse, reset, origin, extreme, distance, false);
+    }
+
+    public SignalDecision withQuantityAndFamily(int finalQuantity, String finalFamily,
+                                                String finalReasonCode,
+                                                String finalReasonText) {
+        return confirmed(marketProfile, side, finalFamily, finalReasonCode, finalReasonText, score,
+                finalQuantity, entry, takeProfit, stopLoss, targetMove, stopDistance, impulse,
+                resetConfirmed, movementOrigin, movementExtreme, movementDistance);
     }
 
     public boolean isSignal() { return "ENTRER".equals(decision); }

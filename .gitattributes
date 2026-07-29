@@ -1,0 +1,6 @@
+* text=auto
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.csv text eol=lf
+app/src/test/resources/eth_v23321_golden_manifest.properties text eol=lf
