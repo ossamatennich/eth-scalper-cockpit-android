@@ -76,13 +76,13 @@ public final class ActivePlanCardView extends LinearLayout {
         boolean sizingData=positive(value.riskBudgetUsdt)&&positive(value.riskPerUnit)
                 &&value.riskQuantity>0&&value.qualityCap>0&&!value.selectedBudgetReason.isEmpty();
         changed(sizingWhy,sizingData?String.format(Locale.FRANCE,
-                "SIZING\nBudget %.2f · %s\nRisque/unité %.2f · quantité risque %d · plafond qualité %d · finale %d\nPerte brute %.2f · frais %.2f · perte nette %.2f · réserve %.2f · risque max %.2f USDT",
+                "SIZING\nBudget brut hors frais %.2f · %s\nRisque brut/unité %.2f · quantité risque %d · plafond qualité %d · finale %d\nPerte brute SL %.2f · frais estimés %.2f · perte totale estimée %.2f USDT",
                 value.riskBudgetUsdt,value.selectedBudgetReason,value.riskPerUnit,
                 value.riskQuantity,value.qualityCap,value.quantity,m.grossLoss,m.estimatedFees,
-                m.netLoss,value.riskPerUnit-finalStopDistance,m.theoreticalMaximumLoss)
+                m.netLoss)
                 :"SIZING\nDONNÉE INDISPONIBLE");
         changed(risk,String.format(Locale.FRANCE,
-                "Perte maximale modélisée %.2f / budget %.2f USDT · R/R brut %.2f",
+                "Perte brute maximale %.2f / %.2f USDT hors frais · R/R brut %.2f",
                 m.theoreticalMaximumLoss,value.riskBudgetUsdt,m.rewardRisk));
         changed(execution,String.format(Locale.FRANCE,
                 "Levier visuel x%d · notionnel %.2f · marge estimée %.2f USDT\nLIMIT %s maintenant",

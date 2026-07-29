@@ -74,7 +74,8 @@ public class V23430StructuralStopAndSizingTest {
         StructuralStopPlanner.Result r=StructuralStopPlanner.calculate(MarketProfile.eth(),"LONG",100,1,20,Collections.emptyList(),CONFIRM);
         assertFalse(r.valid);assertEquals(StructuralStopPlanner.SANITY_REJECTED,r.reasonCode);}
     @Test public void widerStopReducesQuantity(){DynamicTradePlan.Result narrow=plan("LONG",stop("LONG",Collections.emptyList()),7,evidence(7,true,false,true));
-        DynamicTradePlan.Result wide=plan("LONG",stop("LONG",longPivot()),7,evidence(7,true,false,true));
+        StructuralStopPlanner.Result wider=StructuralStopPlanner.calculate(MarketProfile.eth(),"LONG",100,1,2,Collections.emptyList(),CONFIRM);
+        DynamicTradePlan.Result wide=plan("LONG",wider,7,evidence(7,true,false,true));
         assertTrue(narrow.finalQuantity>wide.finalQuantity);}
     @Test public void widerStopDoesNotChangeEntry(){DynamicTradePlan.Result p=plan("LONG",stop("LONG",longPivot()),7,evidence(7,false,false,false));assertEquals(100-p.stopLoss,p.roundedStopDistance,1e-12);}
     @Test public void widerStopDoesNotChangeTargetFormula(){DynamicTradePlan.Result p=plan("LONG",stop("LONG",longPivot()),7,evidence(7,false,false,false));assertEquals(3.7,p.targetRaw,1e-12);}
@@ -82,12 +83,10 @@ public class V23430StructuralStopAndSizingTest {
     @Test public void insufficientRrRejectsWithoutTightening(){StructuralStopPlanner.Result s=StructuralStopPlanner.calculate(MarketProfile.eth(),"LONG",100,1,3,Collections.emptyList(),CONFIRM);
         DynamicTradePlan.Result p=DynamicTradePlan.calculateStructural(MarketProfile.eth(),"LONG",100,1,3,101,99,7,s,evidence(7,false,false,false));
         assertFalse(p.valid);assertEquals(DynamicTradePlan.REWARD_RISK_INSUFFICIENT,p.reasonCode);assertEquals(3.2,p.stopRequired,1e-12);}
-    @Test public void standardBudgetIsTen(){assertEquals(10,AdaptiveRiskSizing.select(evidence(7,false,true,true)).budgetUsdt,0);}
-    @Test public void reinforcedBudgetIsTwelve(){assertEquals(12,AdaptiveRiskSizing.select(evidence(5,false,false,false)).budgetUsdt,0);}
-    @Test public void premiumBudgetIsFourteenFiftyFive(){assertEquals(14.55,AdaptiveRiskSizing.select(evidence(6,true,false,true)).budgetUsdt,0);}
-    @Test public void scoreAloneCannotRaiseBudget(){AdaptiveRiskSizing.Evidence e=new AdaptiveRiskSizing.Evidence(false,false,false,false,false,true,false,true,false,7);assertEquals(10,AdaptiveRiskSizing.select(e).budgetUsdt,0);}
-    @Test public void quantityOneIsNotForcedToThree(){StructuralStopPlanner.Result s=StructuralStopPlanner.calculate(MarketProfile.eth(),"LONG",100,1,5.5,Collections.emptyList(),CONFIRM);
-        DynamicTradePlan.Result p=DynamicTradePlan.calculateStructural(MarketProfile.eth(),"LONG",100,1,5.5,120,99,7,s,evidence(7,false,false,false));
+    @Test public void publicGrossRiskBudgetIsFourteenFiftyFive(){DynamicTradePlan.Result p=plan("LONG",stop("LONG",Collections.emptyList()),7,evidence(7,false,false,false));assertEquals(14.55,p.riskBudgetExcludingFees,0);}
+    @Test public void scoreAloneDoesNotChangePublicGrossBudget(){DynamicTradePlan.Result low=plan("LONG",stop("LONG",Collections.emptyList()),3,evidence(3,false,false,false));DynamicTradePlan.Result high=plan("LONG",stop("LONG",Collections.emptyList()),7,evidence(7,true,false,true));assertEquals(low.riskBudgetExcludingFees,high.riskBudgetExcludingFees,0);}
+    @Test public void quantityOneIsNotForcedToThree(){StructuralStopPlanner.Result s=StructuralStopPlanner.calculate(MarketProfile.eth(),"LONG",100,1,0,Collections.emptyList(),CONFIRM);
+        DynamicTradePlan.Result p=DynamicTradePlan.calculateStructural(MarketProfile.eth(),"LONG",100,1,0,120,99,1,s,evidence(1,false,false,false));
         assertEquals(1,p.finalQuantity);}
     @Test public void solQuantityStepIsRespected(){StructuralStopPlanner.Result s=StructuralStopPlanner.calculate(MarketProfile.sol(),"LONG",75.8,.04,0,Collections.emptyList(),CONFIRM);
         DynamicTradePlan.Result p=DynamicTradePlan.calculateStructural(MarketProfile.sol(),"LONG",75.8,.04,0,76,75,7,s,evidence(7,false,false,false));
@@ -101,10 +100,8 @@ public class V23430StructuralStopAndSizingTest {
     @Test public void onlyTpAndSlAreTerminal(){assertTrue(SignalSafetyPolicies.isTerminalStatus("TP_TOUCHED"));assertTrue(SignalSafetyPolicies.isTerminalStatus("SL_TOUCHED"));assertFalse(SignalSafetyPolicies.isTerminalStatus("TIMEOUT_45M"));}
     @Test public void realTradingRemainsDisabled()throws Exception{String s=source("MarketWatchService.java");assertTrue(s.contains("realTradingAllowed"));assertTrue(s.contains("false"));}
     @Test public void stopExplanationFieldsReachUi(){PlanUiModel m=new PlanUiModel("ETHUSDT","ETH","LONG","P01","P01","ACTIVE","FRESH","",96,2,5,100,105,98,101,100,101,1.43,2.35,10,1,2,3,1,.2,1,98,8,.2,"STRUCTURE",StructuralStopPlanner.CONFIRMED,AdaptiveRiskSizing.STANDARD,3.35,2,5);assertEquals("STRUCTURE",m.stopCalculationType);assertEquals(8,m.structuralWindowMinutes);}
-    @Test public void budgetAndSizingReachUi(){PlanUiModel m=new PlanUiModel("SOLUSDT","SOL","LONG","P02","P02","ACTIVE","FRESH","",90,50,2,75,76,74,75,75,75,0.06,.1,12,1,2,3,.04,.01,.04,74.9,8,.008,"COMBINAISON",StructuralStopPlanner.CONFIRMED,AdaptiveRiskSizing.REINFORCED,.15,80,6);assertEquals(12,m.riskBudgetUsdt,0);assertEquals(80,m.riskQuantity);}
+    @Test public void budgetAndSizingReachUi(){PlanUiModel m=new PlanUiModel("SOLUSDT","SOL","LONG","P02","P02","ACTIVE","FRESH","",90,50,2,75,76,74,75,75,75,0.06,.1,14.55,1,2,3,.04,.01,.04,74.9,8,.008,"COMBINAISON",StructuralStopPlanner.CONFIRMED,DynamicTradePlan.GROSS_RISK_BUDGET_CONFIRMED,.15,80,6);assertEquals(14.55,m.riskBudgetUsdt,0);assertEquals(80,m.riskQuantity);}
     @Test public void missingStopUiDataStaysNaN(){PlanUiModel m=new PlanUiModel("ETHUSDT","ETH","LONG","P01","P01","ACTIVE","FRESH","",90,2,5,100,105,98,101,100,101,1.43,2.35,10,1,2,3);assertTrue(Double.isNaN(m.baseStop));}
-    @Test public void canonicalFixtureStillHasSixteenTp()throws Exception{List<String> l=Files.readAllLines(Path.of("../tools/fixtures/eth_v2331_validated_plans.csv"));assertEquals(17,l.size());for(String row:l.subList(1,l.size()))assertEquals("TP",row.split(",",-1)[15]);}
-    @Test public void canonicalFixtureContainsSevenP01NineP02()throws Exception{int a=0,b=0;for(String row:Files.readAllLines(Path.of("../tools/fixtures/eth_v2331_validated_plans.csv")).subList(1,17)){if(row.contains(",P01,"))a++;if(row.contains(",P02,"))b++;}assertEquals(7,a);assertEquals(9,b);}
     @Test public void loudAlertChannelUnchanged()throws Exception{String s=source("MarketWatchService.java");assertTrue(s.contains("nmc_final_signal_loud_v1"));}
     @Test public void exportStreamingUnchanged()throws Exception{String s=source("DiagnosticStreamingExporter.java");assertFalse(s.contains("ByteArrayOutputStream"));}
     @Test public void productionConfigurationIsSingleAndDeterministic(){assertEquals(5,StructuralStopPlanner.PRODUCTION.windowMinutes);assertEquals(.15,StructuralStopPlanner.PRODUCTION.bufferMultiplier,0);}

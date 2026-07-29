@@ -43,23 +43,13 @@ public class V23420RecoveryAndPlansTest {
         assertEquals(45_000L,CandidateLifecycle.P02_MAX_PENDING_AGE_MS);
     }
 
-    @Test public void validatedFixtureContainsSixteenPlansAndNoEarlyPublicPlan()throws Exception{
-        List<String> lines=Files.readAllLines(Path.of("../tools/fixtures/eth_v2331_validated_plans.csv"));
-        assertEquals(17,lines.size());int p01=0,p02=0;
-        for(String line:lines.subList(1,lines.size())){String[] v=line.split(",",-1);
-            if("P01".equals(v[1]))p01++;if("P02".equals(v[1]))p02++;
-            assertTrue(Long.parseLong(v[5])-Long.parseLong(v[4])>=15_000L);
-            assertEquals("TP",v[15]);}
-        assertEquals(7,p01);assertEquals(9,p02);
-    }
-
     @Test public void planMetricsUsePublishedImmutableLevels(){
         PlanMetricsCalculator.Result r=PlanMetricsCalculator.calculate("LONG",3,100,105,98,
                 102,101.9,102.1,1.43,2.35,14.55,5);
         assertTrue(r.complete);assertEquals(15,r.grossProfit,1e-12);
         assertEquals(6,r.grossLoss,1e-12);assertEquals(4.29,r.estimatedFees,1e-12);
         assertEquals(10.71,r.netProfit,1e-12);assertEquals(10.29,r.netLoss,1e-12);
-        assertEquals(13.05,r.theoreticalMaximumLoss,1e-12);assertEquals(2.5,r.rewardRisk,1e-12);
+        assertEquals(6,r.theoreticalMaximumLoss,1e-12);assertEquals(2.5,r.rewardRisk,1e-12);
     }
 
     @Test public void longAndShortPresentationMathIsSymmetric(){

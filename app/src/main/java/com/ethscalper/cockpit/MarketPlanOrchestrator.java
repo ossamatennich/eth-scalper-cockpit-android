@@ -253,10 +253,11 @@ public final class MarketPlanOrchestrator {
     }
 
     private static String sizing(DynamicTradePlan.Result p){return String.format(Locale.US,
-            "costPerUnit=%.4f|allowancePerUnit=%.4f|budget=%.2f|budgetReason=%s|riskPerUnit=%.4f|riskQuantity=%d|qualityCap=%d|quantity=%d|loss=%.4f|A=%.4f|E=%.4f|baseStop=%.4f|anchor=%.4f|window=%d|buffer=%.4f|stop=%.4f|stopType=%s",
+            "costPerUnit=%.4f|allowancePerUnit=%.4f|grossBudgetExcludingFees=%.2f|budgetReason=%s|grossRiskPerUnit=%.4f|riskQuantity=%d|qualityCap=%d|quantity=%d|grossLossAtSl=%.4f|fees=%.4f|totalLossAtSl=%.4f|A=%.4f|E=%.4f|baseStop=%.4f|anchor=%.4f|window=%d|buffer=%.4f|stop=%.4f|stopType=%s",
             p.resultCostPerUnit,p.riskAllowancePerUnit,p.qualityRiskBudget,p.selectedBudgetReason,
-            p.riskPerUnit,p.riskQuantity,p.qualityCap,p.finalQuantity,p.theoreticalMaximumLoss,
-            p.a,p.adverseExcursion60,p.baseStop,p.structuralAnchor,p.structuralWindowMinutes,
+            p.grossRiskPerUnit,p.riskQuantity,p.qualityCap,p.finalQuantity,p.grossLossAtSl,
+            p.estimatedRoundTripFees,p.estimatedTotalLossAtSl,p.a,p.adverseExcursion60,
+            p.baseStop,p.structuralAnchor,p.structuralWindowMinutes,
             p.structuralBuffer,p.roundedStopDistance,p.stopCalculationType);}
     private static double progress(RuntimeCandidate c){return c.signal.targetMove>0?c.favorable/c.signal.targetMove:0;}
     public static String signature(SignalDecision d,long now){return d.symbol+"|"+d.side+"|"+d.family+"|"+d.entry+"|"+d.takeProfit+"|"+d.stopLoss+"|"+(now/60_000L);}
@@ -278,7 +279,21 @@ public final class MarketPlanOrchestrator {
         out.put("requiredStop",p.stopRequired);out.put("sanityEnvelope",p.sanityEnvelope);
         out.put("stopCalculationType",p.stopCalculationType);out.put("stopReasonCode",p.stopReasonCode);
         out.put("selectedBudgetReason",p.selectedBudgetReason);out.put("riskPerUnit",p.riskPerUnit);
-        out.put("riskQuantity",p.riskQuantity);out.put("qualityCap",p.qualityCap);return out;
+        out.put("riskQuantity",p.riskQuantity);out.put("qualityCap",p.qualityCap);
+        out.put("selectedStructuralLevel",p.structuralAnchor);
+        out.put("structuralInvalidationDistance",p.structureDistance);
+        out.put("volatilityProtectionDistance",p.volatilityProtectionDistance);
+        out.put("adverseExcursionProtectionDistance",p.adverseExcursionProtectionDistance);
+        out.put("spread",p.spread);out.put("tick",p.priceTick);
+        out.put("technicalBuffer",p.structuralBuffer);
+        out.put("finalStopDistance",p.roundedStopDistance);
+        out.put("grossRiskPerUnit",p.grossRiskPerUnit);
+        out.put("riskBudgetExcludingFees",p.riskBudgetExcludingFees);
+        out.put("grossLossAtSl",p.grossLossAtSl);
+        out.put("estimatedRoundTripFees",p.estimatedRoundTripFees);
+        out.put("estimatedTotalLossAtSl",p.estimatedTotalLossAtSl);
+        out.put("stopDecisionSource",p.stopCalculationType);
+        out.put("rejectionReason",p.valid?"":p.reasonCode);return out;
     }
     private static void record(MarketRuntime runtime,MarketSnapshot snapshot,ActivePlanState plan,
             SignalDecision signal,long now,String type,String code,String text,String classification,
@@ -286,6 +301,9 @@ public final class MarketPlanOrchestrator {
             double adverse,Map<String,Object> details){
         if(signal==null&&plan!=null)signal=plan.toSignalDecision();
         LinkedHashMap<String,Object> merged=new LinkedHashMap<>();if(details!=null)merged.putAll(details);
+        if(snapshot!=null){merged.put("recentLow",snapshot.recentLow);
+            merged.put("recentHigh",snapshot.recentHigh);merged.put("entry",
+                    signal==null?Double.NaN:signal.entry);}
         if(plan!=null){merged.put("quantity",plan.quantity);merged.put("entry",plan.entry);
             merged.put("tp",plan.takeProfit);merged.put("sl",plan.stopLoss);
             merged.put("riskBudgetUsdt",plan.qualityRiskBudget);
