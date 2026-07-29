@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.3.4 — flux indépendant du stockage diagnostic
+
+- connexion Binance Futures et préchargement REST lancés avant toute publication diagnostic ;
+- ancien index recorder totalement ignoré dans le chemin de démarrage ;
+- écritures JSONL et sauvegardes d’index déplacées sur un thread dédié ;
+- reset et export attendent explicitement la fin des écritures diagnostics ;
+- aucune modification des règles de marché, des plans ou du lifecycle TP/SL.
+
 ## 2.34.3.3 — démarrage Android non bloquant
 
 - service foreground activé avant toute initialisation potentiellement lente ;
