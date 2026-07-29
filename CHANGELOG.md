@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.3.2 — flux publics résilients
+
+- rotation automatique entre plusieurs routes publiques de données de marché ;
+- secours REST pour ETH, SOL et BTC lorsque le WebSocket principal est indisponible ;
+- reprise immédiate au retour du réseau et nouvelle tentative de préchargement ;
+- maintien renforcé du service de surveillance en arrière-plan ;
+- source active et dernier incident réseau visibles dans l'écran Diagnostic ;
+- aucune modification des règles de marché, du sizing ou du lifecycle TP/SL.
+
 ## 2.34.3.1 — stop dynamique et risque brut multi-marchés
 
 - invalidation causale fondée sur la structure récente, la volatilité, l’excursion adverse, le spread et le tick ;

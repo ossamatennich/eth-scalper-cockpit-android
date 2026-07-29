@@ -85,7 +85,6 @@ public class MarketWatchService extends Service {
     private static final String PERSISTENT_RECORDER_INDEX_FILE = "persistent_recorder_index.properties";
     private static final long PERSISTENT_MARKET_FRAME_INTERVAL_MS = PersistentMarketLog.FRAME_INTERVAL_MS;
     private static final String ALERT_DEDUPE_PREFERENCES = "confirmed_signal_alerts_v2330";
-    private static final String BINANCE_STREAM = buildBinanceStream();
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final MarketRegistry marketRegistry = MarketRegistry.production();
@@ -119,9 +118,17 @@ public class MarketWatchService extends Service {
 
     private OkHttpClient client;
     private WebSocket socket;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
     private PowerManager.WakeLock wakeLock;
     private boolean running;
+    private boolean explicitStopRequested;
     private boolean healthScheduled;
+    private int websocketEndpointIndex;
+    private String activeMarketDataSource = "NONE";
+    private boolean executionFeedAuthoritative;
+    private String lastFeedError = "";
+    private long lastNetworkAvailableAt;
     private long lastMessageAt;
     private long lastSignalAt;
     private long lastP01ConfirmedAt;
@@ -141,6 +148,7 @@ public class MarketWatchService extends Service {
     private long restTradeRefreshes;
     private long lastRestKlineRefreshAt;
     private long lastRestTradeRefreshAt;
+    private long lastRestBookRefreshAt;
     private long lastRestKlineOkAt;
     private long lastRestTradeOkAt;
     private long lastRestAggTradeId = -1;
@@ -151,17 +159,6 @@ public class MarketWatchService extends Service {
     private SignalDecision lastDecision;
     private SignalDecision lastSignal;
 
-    private static String buildBinanceStream() {
-        StringBuilder value=new StringBuilder("wss://fstream.binance.com/stream?streams=");
-        for(MarketProfile profile:MarketRegistry.production().tradedMarkets()) {
-            if(value.charAt(value.length()-1)!='=')value.append('/');
-            String symbol=profile.symbol.toLowerCase(Locale.ROOT);
-            value.append(symbol).append("@kline_1m/").append(symbol)
-                    .append("@aggTrade/").append(symbol).append("@bookTicker");
-        }
-        value.append("/btcusdt@kline_1m/btcusdt@bookTicker");
-        return value.toString();
-    }
     public static volatile String LAST_STATUS_JSON = "";
     public static volatile String LAST_MARKET_FRAMES_JSON = "[]";
     public static volatile String LAST_MARKET_SUMMARY_JSON = "{}";
@@ -399,16 +396,21 @@ public class MarketWatchService extends Service {
         restoreActiveFinalPlan();
         restoreSecondaryFinalPlans();
         client = new OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(20, TimeUnit.SECONDS)
+                .callTimeout(25, TimeUnit.SECONDS)
                 .pingInterval(20, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
                 .build();
         aiAdvisor = new AiAdvisor(this);
         acquireWakeLock();
+        registerNetworkMonitoring();
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null || intent.getAction() == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
+            explicitStopRequested = true;
             running = false;
             stopSocket();
             stopForeground(true);
@@ -416,6 +418,7 @@ public class MarketWatchService extends Service {
             return START_NOT_STICKY;
         }
 
+        explicitStopRequested = false;
         running = true;
         startForeground(NOTIF_WATCH_ID, buildWatchNotification("Initialisation du moteur natif…"));
         if (ACTION_TEST_ALERT.equals(action)) {
@@ -622,27 +625,32 @@ public class MarketWatchService extends Service {
     }
 
     @Override public void onTaskRemoved(Intent rootIntent) {
-        if (running) {
-            try {
-                Intent restart = new Intent(getApplicationContext(), MarketWatchService.class);
-                restart.setAction(ACTION_START);
-                PendingIntent pending = PendingIntent.getService(getApplicationContext(), 2220, restart,
-                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-                AlarmManager alarm = (AlarmManager) getSystemService(ALARM_SERVICE);
-                if (alarm != null) alarm.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        SystemClock.elapsedRealtime() + 5000, pending);
-            } catch (Exception ignored) {}
-        }
+        if (running) scheduleServiceRestart(5_000L);
         super.onTaskRemoved(rootIntent);
     }
 
     @Override public void onDestroy() {
+        boolean shouldRestart = running && !explicitStopRequested;
         running = false;
         handler.removeCallbacksAndMessages(null);
         stopSocket();
+        unregisterNetworkMonitoring();
         releaseWakeLock();
         if (client != null) client.dispatcher().executorService().shutdown();
+        if (shouldRestart) scheduleServiceRestart(2_000L);
         super.onDestroy();
+    }
+
+    private void scheduleServiceRestart(long delayMs) {
+        try {
+            Intent restart = new Intent(getApplicationContext(), MarketWatchService.class);
+            restart.setAction(ACTION_START);
+            PendingIntent pending = PendingIntent.getService(getApplicationContext(), 2220,
+                    restart, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            AlarmManager alarm = (AlarmManager) getSystemService(ALARM_SERVICE);
+            if (alarm != null) alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + Math.max(1_000L, delayMs), pending);
+        } catch (Exception ignored) {}
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
@@ -690,7 +698,9 @@ public class MarketWatchService extends Service {
             if (manager != null && (wakeLock == null || !wakeLock.isHeld())) {
                 wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ETHScalper:MarketWatch");
                 wakeLock.setReferenceCounted(false);
-                wakeLock.acquire(10 * 60 * 1000L);
+                // The foreground service owns this lock and releases it in onDestroy. A timed
+                // lock created small monitoring gaps on devices with aggressive power saving.
+                wakeLock.acquire();
             }
         } catch (Exception ignored) {}
     }
@@ -700,27 +710,123 @@ public class MarketWatchService extends Service {
         wakeLock = null;
     }
 
+    private void registerNetworkMonitoring() {
+        try {
+            connectivityManager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (connectivityManager == null || networkCallback != null) return;
+            networkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override public void onAvailable(Network network) {
+                    handler.post(() -> {
+                        lastNetworkAvailableAt = System.currentTimeMillis();
+                        if (!running) return;
+                        reconnectAttempt = 0;
+                        if (socket == null) connectIfNeeded();
+                        if (ethLast <= 0 || btcLast <= 0) historyPrefillRequested = false;
+                        prefillHistoricalCandlesIfNeeded();
+                        lastRestBookRefreshAt = 0;
+                        lastRestKlineRefreshAt = 0;
+                        lastRestTradeRefreshAt = 0;
+                        maybeRefreshRestFallback(System.currentTimeMillis());
+                        broadcastStatus("network_available",
+                                "Réseau disponible — synchronisation immédiate des flux");
+                    });
+                }
+
+                @Override public void onLost(Network network) {
+                    handler.post(() -> {
+                        if (!running || isNetworkAvailable()) return;
+                        stopSocket();
+                        activeMarketDataSource = "NONE";
+                        executionFeedAuthoritative = false;
+                        lastFeedError = "NETWORK_UNAVAILABLE";
+                        updateWatch("Réseau indisponible · reprise automatique en attente", true);
+                        broadcastStatus("network_lost",
+                                "Réseau indisponible — le service reste actif et reprendra automatiquement");
+                    });
+                }
+            };
+            connectivityManager.registerDefaultNetworkCallback(networkCallback);
+        } catch (Exception error) {
+            lastFeedError = "NETWORK_CALLBACK_FAILED:" + safeError(error);
+        }
+    }
+
+    private void unregisterNetworkMonitoring() {
+        try {
+            if (connectivityManager != null && networkCallback != null)
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+        } catch (Exception ignored) {}
+        networkCallback = null;
+        connectivityManager = null;
+    }
+
+    private boolean isNetworkAvailable() {
+        try {
+            if (connectivityManager == null) return false;
+            Network active = connectivityManager.getActiveNetwork();
+            NetworkCapabilities caps = connectivityManager.getNetworkCapabilities(active);
+            return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (Exception ignored) { return false; }
+    }
+
+    private static String safeError(Throwable error) {
+        if (error == null) return "UNKNOWN";
+        String name = error.getClass().getSimpleName();
+        String message = error.getMessage();
+        if (message == null || message.trim().isEmpty()) return name;
+        message = message.replace('\n', ' ').replace('\r', ' ').trim();
+        return name + ":" + message.substring(0, Math.min(180, message.length()));
+    }
+
+    private long marketFeedAgeMs(long now) {
+        long oldest = sharedBtc.lastTickerAt;
+        if (oldest <= 0) return Long.MAX_VALUE;
+        for (MarketRuntime runtime : marketCoordinator.runtimes().values()) {
+            if (runtime.lastTickerAt <= 0) return Long.MAX_VALUE;
+            oldest = Math.min(oldest, runtime.lastTickerAt);
+        }
+        return Math.max(0L, now - oldest);
+    }
+
+    private boolean marketFeedsOperational(long now) {
+        return marketFeedAgeMs(now) <= ETH_BOOK_MAX_AGE_MS;
+    }
+
     private void connectIfNeeded() {
         if (!running || socket != null || client == null) return;
-        Request request = new Request.Builder().url(BINANCE_STREAM).build();
+        final int endpointIndex = websocketEndpointIndex;
+        final MarketFeedEndpointPool.Endpoint endpoint =
+                MarketFeedEndpointPool.webSocket(endpointIndex);
+        executionFeedAuthoritative = false;
+        Request request = new Request.Builder()
+                .url(MarketFeedEndpointPool.combinedStreamUrl(endpointIndex, marketRegistry))
+                .header("User-Agent", "NMC/" + BuildConfig.VERSION_NAME)
+                .build();
         socket = client.newWebSocket(request, new WebSocketListener() {
             @Override public void onOpen(WebSocket webSocket, Response response) {
                 if (socket != webSocket) return;
                 reconnectAttempt = 0;
                 lastMessageAt = System.currentTimeMillis();
-                updateWatch("Connecté · surveillance ETH/BTC active", true);
-                broadcastStatus("connected", "Flux Binance Futures connecté");
+                activeMarketDataSource = endpoint.name;
+                lastFeedError = "";
+                updateWatch("Connecté · " + endpoint.name, true);
+                broadcastStatus("connected", "Source de marché connectée : " + endpoint.name);
             }
 
             @Override public void onMessage(WebSocket webSocket, String text) {
                 if (socket != webSocket) return;
                 lastMessageAt = System.currentTimeMillis();
+                executionFeedAuthoritative = !endpoint.spotFallback;
                 handleMessage(text);
             }
 
             @Override public void onFailure(WebSocket webSocket, Throwable error, Response response) {
                 if (socket != webSocket) return;
                 socket = null;
+                int status = response == null ? -1 : response.code();
+                lastFeedError = endpoint.name + ":WS:" + status + ":" + safeError(error);
+                websocketEndpointIndex = (endpointIndex + 1)
+                        % MarketFeedEndpointPool.webSocketCount();
                 updateWatch("Flux interrompu · reconnexion native", true);
                 broadcastStatus("reconnect", "Reconnexion native en cours");
                 scheduleReconnect();
@@ -729,7 +835,12 @@ public class MarketWatchService extends Service {
             @Override public void onClosed(WebSocket webSocket, int code, String reason) {
                 if (socket != webSocket) return;
                 socket = null;
-                if (running) scheduleReconnect();
+                if (running) {
+                    lastFeedError = endpoint.name + ":WS_CLOSED:" + code + ":" + reason;
+                    websocketEndpointIndex = (endpointIndex + 1)
+                            % MarketFeedEndpointPool.webSocketCount();
+                    scheduleReconnect();
+                }
             }
         });
     }
@@ -759,6 +870,9 @@ public class MarketWatchService extends Service {
                 long age = lastMessageAt == 0 ? Long.MAX_VALUE : now - lastMessageAt;
                 if (age > 65_000L) {
                     stopSocket();
+                    websocketEndpointIndex = (websocketEndpointIndex + 1)
+                            % MarketFeedEndpointPool.webSocketCount();
+                    lastFeedError = "WEBSOCKET_STALE:" + age;
                     updateWatch("Flux retardé · reconnexion forcée", true);
                     broadcastStatus("reconnect", "Flux retardé, reconnexion forcée");
                     connectIfNeeded();
@@ -776,6 +890,22 @@ public class MarketWatchService extends Service {
 
     private void maybeRefreshRestFallback(long now) {
         if (client == null) return;
+
+        boolean quoteMissing = sharedBtc.lastTickerAt == 0
+                || now - sharedBtc.lastTickerAt > ETH_BOOK_MAX_AGE_MS;
+        for (MarketRuntime runtime : marketCoordinator.runtimes().values()) {
+            if (runtime.lastTickerAt == 0 || now - runtime.lastTickerAt > ETH_BOOK_MAX_AGE_MS) {
+                quoteMissing = true;
+                break;
+            }
+        }
+        if (quoteMissing && (lastRestBookRefreshAt == 0
+                || now - lastRestBookRefreshAt >= 3_000L)) {
+            lastRestBookRefreshAt = now;
+            for (MarketRuntime runtime : marketCoordinator.runtimes().values())
+                fetchRuntimeBookTicker(runtime, 0);
+            fetchReferenceBookTicker(0);
+        }
 
         long liveKlineAge = ageSeconds(now, lastKlineAt);
         boolean tradedKlineMissing=false;
@@ -938,6 +1068,14 @@ public class MarketWatchService extends Service {
         fetchReferenceKlines(180,true);
     }
 
+    private void scheduleHistoryPrefillRetry() {
+        handler.postDelayed(() -> {
+            if (!running) return;
+            historyPrefillRequested = false;
+            prefillHistoricalCandlesIfNeeded();
+        }, 15_000L);
+    }
+
     private void fetchHistoricalKlines(String symbol, boolean isEth) {
         Request request = new Request.Builder()
                 .url("https://fapi.binance.com/fapi/v1/klines?symbol=" + symbol + "&interval=1m&limit=180")
@@ -993,14 +1131,99 @@ public class MarketWatchService extends Service {
         });
     }
 
-    private void fetchRuntimeKlines(MarketRuntime runtime,int limit,boolean replace) {
-        Request request=new Request.Builder().url("https://fapi.binance.com/fapi/v1/klines?symbol="
-                +runtime.profile.symbol+"&interval=1m&limit="+limit).build();
+    private void fetchRuntimeBookTicker(MarketRuntime runtime,int endpointIndex) {
+        List<MarketFeedEndpointPool.RestEndpoint> endpoints =
+                MarketFeedEndpointPool.bookTickerEndpoints(runtime.profile.symbol);
+        if(endpointIndex>=endpoints.size()) return;
+        MarketFeedEndpointPool.RestEndpoint endpoint=endpoints.get(endpointIndex);
+        Request request=new Request.Builder().url(endpoint.url)
+                .header("User-Agent","NMC/"+BuildConfig.VERSION_NAME).build();
         client.newCall(request).enqueue(new Callback(){
-            @Override public void onFailure(Call call,IOException error){handler.post(()->broadcastStatus("rest_kline_failed","Fallback "+runtime.profile.symbol+" impossible"));}
+            @Override public void onFailure(Call call,IOException error){
+                lastFeedError=endpoint.name+":REST_BOOK:"+safeError(error);
+                fetchRuntimeBookTicker(runtime,endpointIndex+1);
+            }
+            @Override public void onResponse(Call call,Response response){try{
+                String raw=response.body()==null?"":response.body().string();
+                if(!response.isSuccessful())throw new IOException("HTTP_"+response.code());
+                JSONObject value=new JSONObject(raw);
+                double bid=value.optDouble("bidPrice",value.optDouble("b",0));
+                double ask=value.optDouble("askPrice",value.optDouble("a",0));
+                if(!(bid>0&&ask>=bid))throw new IOException("INVALID_BOOK_TICKER");
+                handler.post(()->{long receivedAt=System.currentTimeMillis();
+                    marketDataRouter.routeBookTicker(runtime.profile.symbol,bid,ask,receivedAt);
+                    if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L) {
+                        activeMarketDataSource="REST:"+endpoint.name;
+                        executionFeedAuthoritative=!endpoint.spotFallback;
+                    }
+                    lastFeedError="";evaluateSignal(receivedAt);});
+            }catch(Exception error){lastFeedError=endpoint.name+":REST_BOOK:"
+                    +safeError(error);fetchRuntimeBookTicker(runtime,endpointIndex+1);
+            }finally{try{response.close();}catch(Exception ignored){}}}
+        });
+    }
+
+    private void fetchReferenceBookTicker(int endpointIndex) {
+        List<MarketFeedEndpointPool.RestEndpoint> endpoints =
+                MarketFeedEndpointPool.bookTickerEndpoints(MarketProfile.BTC_SYMBOL);
+        if(endpointIndex>=endpoints.size()) return;
+        MarketFeedEndpointPool.RestEndpoint endpoint=endpoints.get(endpointIndex);
+        Request request=new Request.Builder().url(endpoint.url)
+                .header("User-Agent","NMC/"+BuildConfig.VERSION_NAME).build();
+        client.newCall(request).enqueue(new Callback(){
+            @Override public void onFailure(Call call,IOException error){
+                lastFeedError=endpoint.name+":REST_BTC_BOOK:"+safeError(error);
+                fetchReferenceBookTicker(endpointIndex+1);
+            }
+            @Override public void onResponse(Call call,Response response){try{
+                String raw=response.body()==null?"":response.body().string();
+                if(!response.isSuccessful())throw new IOException("HTTP_"+response.code());
+                JSONObject value=new JSONObject(raw);
+                double bid=value.optDouble("bidPrice",value.optDouble("b",0));
+                double ask=value.optDouble("askPrice",value.optDouble("a",0));
+                if(!(bid>0&&ask>=bid))throw new IOException("INVALID_BTC_BOOK_TICKER");
+                handler.post(()->{long receivedAt=System.currentTimeMillis();btcBid=bid;btcAsk=ask;
+                    btcLast=(bid+ask)/2.0;sharedBtc.bid=bid;sharedBtc.ask=ask;sharedBtc.last=btcLast;
+                    sharedBtc.lastTickerAt=receivedAt;if(socket==null||lastMessageAt==0
+                            ||receivedAt-lastMessageAt>70_000L) {
+                        activeMarketDataSource="REST:"+endpoint.name;
+                        executionFeedAuthoritative=!endpoint.spotFallback;
+                    }
+                    lastFeedError="";evaluateSignal(receivedAt);});
+            }catch(Exception error){lastFeedError=endpoint.name+":REST_BTC_BOOK:"
+                    +safeError(error);fetchReferenceBookTicker(endpointIndex+1);
+            }finally{try{response.close();}catch(Exception ignored){}}}
+        });
+    }
+
+    private void fetchRuntimeKlines(MarketRuntime runtime,int limit,boolean replace) {
+        fetchRuntimeKlines(runtime,limit,replace,0);
+    }
+
+    private void fetchRuntimeKlines(MarketRuntime runtime,int limit,boolean replace,
+                                    int endpointIndex) {
+        List<MarketFeedEndpointPool.RestEndpoint> endpoints =
+                MarketFeedEndpointPool.klineEndpoints(runtime.profile.symbol,limit);
+        if(endpointIndex>=endpoints.size()) {
+            handler.post(()->broadcastStatus("rest_kline_failed",
+                    "Aucune source de bougies disponible pour "+runtime.profile.symbol));
+            scheduleHistoryPrefillRetry();
+            return;
+        }
+        MarketFeedEndpointPool.RestEndpoint endpoint=endpoints.get(endpointIndex);
+        Request request=new Request.Builder().url(endpoint.url)
+                .header("User-Agent","NMC/"+BuildConfig.VERSION_NAME).build();
+        client.newCall(request).enqueue(new Callback(){
+            @Override public void onFailure(Call call,IOException error){
+                lastFeedError=endpoint.name+":REST_KLINE:"+safeError(error);
+                fetchRuntimeKlines(runtime,limit,replace,endpointIndex+1);
+            }
             @Override public void onResponse(Call call,Response response){
-                try{JSONArray rows=new JSONArray(response.body()==null?"":response.body().string());List<Candle> loaded=new ArrayList<>();
+                try{String raw=response.body()==null?"":response.body().string();
+                    if(!response.isSuccessful())throw new IOException("HTTP_"+response.code());
+                    JSONArray rows=new JSONArray(raw);List<Candle> loaded=new ArrayList<>();
                     for(int i=0;i<rows.length();i++){JSONArray row=rows.optJSONArray(i);if(row!=null&&row.length()>=6)loaded.add(new Candle(row.optLong(0),row.optDouble(1),row.optDouble(2),row.optDouble(3),row.optDouble(4),row.optDouble(5)));}
+                    if(loaded.isEmpty())throw new IOException("EMPTY_KLINES");
                     handler.post(()->{long receivedAt=System.currentTimeMillis();
                         List<MarketRuntime.MarketBar> bars=new ArrayList<>();
                         for(Candle candle:loaded)bars.add(toRuntimeBar(candle));
@@ -1008,22 +1231,83 @@ public class MarketWatchService extends Service {
                                 runtime.profile.symbol,bars,receivedAt);
                         else marketDataRouter.mergeFallbackCandles(
                                 runtime.profile.symbol,bars,receivedAt);
+                        if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L) {
+                            activeMarketDataSource="REST:"+endpoint.name;
+                            executionFeedAuthoritative=!endpoint.spotFallback;
+                        }
+                        lastFeedError="";
                         evaluateSignal(receivedAt);});
-                }catch(Exception ignored){}finally{try{response.close();}catch(Exception ignored){}}
+                }catch(Exception error){lastFeedError=endpoint.name+":REST_KLINE:"
+                        +safeError(error);fetchRuntimeKlines(runtime,limit,replace,
+                        endpointIndex+1);}finally{try{response.close();}catch(Exception ignored){}}
             }});
     }
 
     private void fetchRuntimeAggTrades(MarketRuntime runtime) {
-        Request request=new Request.Builder().url("https://fapi.binance.com/fapi/v1/aggTrades?symbol="+runtime.profile.symbol+"&limit=500").build();
+        fetchRuntimeAggTrades(runtime,0);
+    }
+
+    private void fetchRuntimeAggTrades(MarketRuntime runtime,int endpointIndex) {
+        List<MarketFeedEndpointPool.RestEndpoint> endpoints =
+                MarketFeedEndpointPool.aggregateTradeEndpoints(runtime.profile.symbol,500);
+        if(endpointIndex>=endpoints.size()) {
+            handler.post(()->broadcastStatus("rest_trade_failed",
+                    "Aucune source de trades disponible pour "+runtime.profile.symbol));
+            return;
+        }
+        MarketFeedEndpointPool.RestEndpoint endpoint=endpoints.get(endpointIndex);
+        Request request=new Request.Builder().url(endpoint.url)
+                .header("User-Agent","NMC/"+BuildConfig.VERSION_NAME).build();
         client.newCall(request).enqueue(new Callback(){
-            @Override public void onFailure(Call call,IOException error){}
-            @Override public void onResponse(Call call,Response response){try{String raw=response.body()==null?"":response.body().string();handler.post(()->{try{JSONArray rows=new JSONArray(raw);List<MarketRuntime.AggTrade> trades=new ArrayList<>();for(int i=0;i<rows.length();i++){JSONObject row=rows.optJSONObject(i);if(row==null)continue;long id=row.optLong("a",-1);double q=row.optDouble("q",0),price=row.optDouble("p",runtime.last);long at=row.optLong("T",System.currentTimeMillis());trades.add(new MarketRuntime.AggTrade(id,at,price,q,row.optBoolean("m",false)));}long receivedAt=System.currentTimeMillis();marketDataRouter.mergeFallbackAggTrades(runtime.profile.symbol,trades,receivedAt);evaluateSignal(receivedAt);}catch(Exception ignored){}});}catch(Exception ignored){}finally{try{response.close();}catch(Exception ignored){}}}
+            @Override public void onFailure(Call call,IOException error){
+                lastFeedError=endpoint.name+":REST_TRADES:"+safeError(error);
+                fetchRuntimeAggTrades(runtime,endpointIndex+1);
+            }
+            @Override public void onResponse(Call call,Response response){try{
+                String raw=response.body()==null?"":response.body().string();
+                if(!response.isSuccessful())throw new IOException("HTTP_"+response.code());
+                JSONArray rows=new JSONArray(raw);List<MarketRuntime.AggTrade> trades=new ArrayList<>();
+                for(int i=0;i<rows.length();i++){JSONObject row=rows.optJSONObject(i);if(row==null)continue;long id=row.optLong("a",-1);double q=row.optDouble("q",0),price=row.optDouble("p",runtime.last);long at=row.optLong("T",System.currentTimeMillis());if(id>=0&&q>0&&price>0)trades.add(new MarketRuntime.AggTrade(id,at,price,q,row.optBoolean("m",false)));}
+                if(trades.isEmpty())throw new IOException("EMPTY_TRADES");
+                handler.post(()->{long receivedAt=System.currentTimeMillis();marketDataRouter.mergeFallbackAggTrades(runtime.profile.symbol,trades,receivedAt);if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L){activeMarketDataSource="REST:"+endpoint.name;executionFeedAuthoritative=!endpoint.spotFallback;}lastFeedError="";evaluateSignal(receivedAt);});
+            }catch(Exception error){lastFeedError=endpoint.name+":REST_TRADES:"
+                    +safeError(error);fetchRuntimeAggTrades(runtime,endpointIndex+1);
+            }finally{try{response.close();}catch(Exception ignored){}}}
         });
     }
 
     private void fetchReferenceKlines(int limit,boolean replace) {
-        if(replace)fetchHistoricalKlines(MarketProfile.BTC_SYMBOL,false);
-        else fetchRestKlines(MarketProfile.BTC_SYMBOL,false);
+        fetchReferenceKlines(limit,replace,0);
+    }
+
+    private void fetchReferenceKlines(int limit,boolean replace,int endpointIndex) {
+        List<MarketFeedEndpointPool.RestEndpoint> endpoints=
+                MarketFeedEndpointPool.klineEndpoints(MarketProfile.BTC_SYMBOL,limit);
+        if(endpointIndex>=endpoints.size()) {
+            handler.post(()->broadcastStatus("rest_btc_failed",
+                    "Aucune source de bougies BTC disponible"));
+            scheduleHistoryPrefillRetry();
+            return;
+        }
+        MarketFeedEndpointPool.RestEndpoint endpoint=endpoints.get(endpointIndex);
+        Request request=new Request.Builder().url(endpoint.url)
+                .header("User-Agent","NMC/"+BuildConfig.VERSION_NAME).build();
+        client.newCall(request).enqueue(new Callback(){
+            @Override public void onFailure(Call call,IOException error){
+                lastFeedError=endpoint.name+":REST_BTC:"+safeError(error);
+                fetchReferenceKlines(limit,replace,endpointIndex+1);
+            }
+            @Override public void onResponse(Call call,Response response){try{
+                String raw=response.body()==null?"":response.body().string();
+                if(!response.isSuccessful())throw new IOException("HTTP_"+response.code());
+                JSONArray rows=new JSONArray(raw);List<Candle> loaded=new ArrayList<>();
+                for(int i=0;i<rows.length();i++){JSONArray row=rows.optJSONArray(i);if(row!=null&&row.length()>=6)loaded.add(new Candle(row.optLong(0),row.optDouble(1),row.optDouble(2),row.optDouble(3),row.optDouble(4),row.optDouble(5)));}
+                if(loaded.isEmpty())throw new IOException("EMPTY_BTC_KLINES");
+                handler.post(()->{long receivedAt=System.currentTimeMillis();if(replace)btcCandles.clear();for(Candle candle:loaded)upsert(btcCandles,candle,180);Candle last=loaded.get(loaded.size()-1);btcLast=last.close;sharedBtc.last=btcLast;sharedBtc.candles.clear();for(Candle candle:loaded)sharedBtc.candles.addLast(toRuntimeBar(candle));sharedBtc.lastKlineAt=receivedAt;lastRestKlineOkAt=receivedAt;restKlineRefreshes++;if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L){activeMarketDataSource="REST:"+endpoint.name;executionFeedAuthoritative=!endpoint.spotFallback;}lastFeedError="";evaluateSignal(receivedAt);});
+            }catch(Exception error){lastFeedError=endpoint.name+":REST_BTC:"
+                    +safeError(error);fetchReferenceKlines(limit,replace,endpointIndex+1);
+            }finally{try{response.close();}catch(Exception ignored){}}}
+        });
     }
 
     private void handleMessage(String text) {
@@ -1166,6 +1450,7 @@ public class MarketWatchService extends Service {
     }
 
     private boolean ethExecutionFeedFresh(long now) {
+        if (!executionFeedAuthoritative) return false;
         if (ethBid <= 0 || ethAsk <= 0 || ethLast <= 0) return false;
         if (lastEthBookTickerAt <= 0) return false;
         return now - lastEthBookTickerAt <= ETH_BOOK_MAX_AGE_MS
@@ -1177,7 +1462,7 @@ public class MarketWatchService extends Service {
         for(MarketProfile profile:marketRegistry.tradedMarkets()) {
             if(MarketProfile.ETH_SYMBOL.equals(profile.symbol))continue;
             MarketRuntime runtime=marketCoordinator.runtime(profile.symbol);
-            boolean marketFresh=runtime.bid>0&&runtime.ask>0&&runtime.last>0
+            boolean marketFresh=executionFeedAuthoritative&&runtime.bid>0&&runtime.ask>0&&runtime.last>0
                     &&runtime.lastTickerAt>0&&now-runtime.lastTickerAt<=ETH_BOOK_MAX_AGE_MS;
             MarketPlanOrchestrator.Event event=marketOrchestrator.evaluate(runtime,sharedBtc,now,
                     marketFresh,sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
@@ -4190,8 +4475,9 @@ public class MarketWatchService extends Service {
         try {
             long now = System.currentTimeMillis();
             recordFeedTransitions(now);
-            long age = lastMessageAt == 0 ? -1 : Math.max(0, (now - lastMessageAt) / 1000);
-            boolean connected = socket != null && age >= 0 && age < 70;
+            long feedAgeMs = marketFeedAgeMs(now);
+            long age = feedAgeMs == Long.MAX_VALUE ? -1 : feedAgeMs / 1000L;
+            boolean connected = marketFeedsOperational(now);
             SignalDecision decision = lastDecision;
             MarketSnapshot statusSnapshot = buildSnapshot(now);
             String activeStatus = activeSignalStatus(statusSnapshot, now);
@@ -4202,7 +4488,15 @@ public class MarketWatchService extends Service {
             state.put("version", BuildConfig.VERSION_NAME+"-android-complete-multi-market-research");
             state.put("nativeActive", running);
             state.put("connected", connected);
+            state.put("websocketConnected", socket != null
+                    && lastMessageAt > 0 && now - lastMessageAt < 70_000L);
             state.put("lastAgeSec", age);
+            state.put("marketDataSource", activeMarketDataSource);
+            state.put("executionFeedAuthoritative", executionFeedAuthoritative);
+            state.put("websocketEndpointIndex", websocketEndpointIndex);
+            state.put("networkAvailable", isNetworkAvailable());
+            state.put("lastNetworkAvailableAt", lastNetworkAvailableAt);
+            state.put("lastFeedError", lastFeedError);
             state.put("type", type);
             state.put("message", message);
             putPrice(state, "eth", ethLast); putPrice(state, "bid", ethBid); putPrice(state, "ask", ethAsk);
