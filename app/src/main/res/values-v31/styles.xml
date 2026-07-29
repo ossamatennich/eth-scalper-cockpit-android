@@ -1,0 +1,7 @@
+<resources>
+    <style name="SplashTheme" parent="AppTheme">
+        <item name="android:windowSplashScreenBackground">#050A11</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/nmc_splash_logo</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#050A11</item>
+    </style>
+</resources>

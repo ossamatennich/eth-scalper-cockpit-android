@@ -1,0 +1,51 @@
+name: NMC v2.34.3.0 CI
+
+on:
+  push:
+    branches: [main, release/nmc-v2.34.3.0-final]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+      - name: Debug unit tests
+        run: gradle testDebugUnitTest --rerun-tasks
+      - name: All unit tests
+        run: gradle test --rerun-tasks
+      - name: SOL profile validator tests
+        run: python3 -m unittest tools/test_validate_sol_profile.py
+      - name: ETH validated replay
+        run: python3 tools/validate_eth_v2331_replay.py
+      - name: Build debug APK
+        run: gradle assembleDebug
+      - name: Build release APK
+        run: gradle assembleRelease
+      - name: Release lint
+        run: gradle lintRelease
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NMC-v2.34.3.0-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
