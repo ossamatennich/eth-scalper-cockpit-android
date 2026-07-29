@@ -44,6 +44,9 @@ import java.io.FileOutputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.Call;
@@ -87,6 +90,11 @@ public class MarketWatchService extends Service {
     private static final String ALERT_DEDUPE_PREFERENCES = "confirmed_signal_alerts_v2330";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final ExecutorService diagnosticIoExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "nmc-diagnostic-io");
+        thread.setDaemon(true);
+        return thread;
+    });
     private final MarketRegistry marketRegistry = MarketRegistry.production();
     private final MultiMarketCoordinator marketCoordinator =
             new MultiMarketCoordinator(marketRegistry);
@@ -383,8 +391,9 @@ public class MarketWatchService extends Service {
             }
         });
         marketDataRouter=new MarketDataRouter(marketRegistry,marketCoordinator,legacyMirrors);
-        recorderIndex=PersistentRecorderIndex.loadFast(
-                persistentFile(PERSISTENT_RECORDER_INDEX_FILE),
+        // Never open a potentially legacy or corrupt index before the market connection.
+        // The first asynchronous recorder write replaces it with a compact current index.
+        recorderIndex=PersistentRecorderIndex.metadataOnly(
                 persistentFile(PERSISTENT_OBSERVATIONS_FILE),
                 persistentFile(PERSISTENT_MARKET_FRAMES_FILE));
         activePlanPersistence = new ActivePlanPersistence(
@@ -423,8 +432,13 @@ public class MarketWatchService extends Service {
 
         explicitStopRequested = false;
         running = true;
-        broadcastStatus("service_started", "Service actif — connexion Binance Futures en cours");
         startForeground(NOTIF_WATCH_ID, buildWatchNotification("Initialisation du moteur natif…"));
+        // Start primary market I/O before any status or diagnostic persistence. Recorder files
+        // can survive many upgrades; their state must never delay the first Futures request.
+        connectIfNeeded();
+        prefillHistoricalCandlesIfNeeded();
+        scheduleHealthCheck();
+        broadcastStatus("service_started", "Service actif — connexion Binance Futures en cours");
         if (ACTION_TEST_ALERT.equals(action)) {
             boolean posted = notifyTestAlert();
             broadcastStatus(posted ? "test_alert" : "test_alert_failed",
@@ -476,14 +490,11 @@ public class MarketWatchService extends Service {
                                 :"Diagnostic moteur + recorder persistant réinitialisés");
             }
         } else if (ACTION_FLUSH_DIAGNOSTICS.equals(action)) {
-            flushCoalescedDiagnostics();
+            flushDiagnosticsBlocking(10_000L);
             broadcastStatus("diagnostics_flushed", "Diagnostic prêt pour export");
         } else if (ACTION_SYNC_NOW.equals(action)) {
             broadcastStatus("sync", "État du service natif resynchronisé");
         }
-        connectIfNeeded();
-        prefillHistoricalCandlesIfNeeded();
-        scheduleHealthCheck();
         return START_STICKY;
     }
 
@@ -640,6 +651,8 @@ public class MarketWatchService extends Service {
         stopSocket();
         unregisterNetworkMonitoring();
         releaseWakeLock();
+        flushDiagnosticsBlocking(2_000L);
+        diagnosticIoExecutor.shutdownNow();
         if (client != null) client.dispatcher().executorService().shutdown();
         if (shouldRestart) scheduleServiceRestart(2_000L);
         super.onDestroy();
@@ -832,8 +845,8 @@ public class MarketWatchService extends Service {
                 websocketEndpointIndex = (endpointIndex + 1)
                         % MarketFeedEndpointPool.webSocketCount();
                 updateWatch("Flux interrompu · reconnexion native", true);
-                broadcastStatus("reconnect", "Reconnexion native en cours");
                 scheduleReconnect();
+                broadcastStatus("reconnect", "Reconnexion native en cours");
             }
 
             @Override public void onClosed(WebSocket webSocket, int code, String reason) {
@@ -2108,7 +2121,14 @@ public class MarketWatchService extends Service {
         if (object == null) return;
         if(PERSISTENT_OBSERVATIONS_FILE.equals(fileName)
                 &&"MARKET_FRAME".equals(object.optString("eventType","")))return;
+        final String serialized=object.toString();
+        try { diagnosticIoExecutor.execute(() -> appendPersistentJsonLineNow(fileName,serialized)); }
+        catch (Exception ignored) {}
+    }
+
+    private void appendPersistentJsonLineNow(String fileName,String serialized) {
         try {
+            JSONObject object=new JSONObject(serialized);
             File file = persistentFile(fileName);
             if(PERSISTENT_OBSERVATIONS_FILE.equals(fileName)) {
                 Map<String,Object> map=jsonObjectMap(object);
@@ -2130,9 +2150,17 @@ public class MarketWatchService extends Service {
                 PersistentMarketLog.combinedBytes(persistentFile(PERSISTENT_MARKET_FRAMES_FILE)));saveRecorderIndex();}
     }
 
-    private void flushCoalescedDiagnostics() {
+    private void flushCoalescedDiagnosticsNow() {
         for(Map<String,Object> value:diagnosticCoalescer.flush(System.currentTimeMillis()))
             try{writePersistentEvent(value);}catch(Exception ignored){}
+    }
+
+    private boolean flushDiagnosticsBlocking(long timeoutMs) {
+        try {
+            Future<?> barrier=diagnosticIoExecutor.submit(this::flushCoalescedDiagnosticsNow);
+            barrier.get(Math.max(1L,timeoutMs),TimeUnit.MILLISECONDS);
+            return true;
+        } catch (Exception ignored) { return false; }
     }
 
     private void saveRecorderIndex(){if(recorderIndex==null)return;
@@ -2192,6 +2220,13 @@ public class MarketWatchService extends Service {
         return power!=null&&power.isIgnoringBatteryOptimizations(getPackageName());}
 
     private void resetPersistentRecorder() {
+        try {
+            Future<?> barrier=diagnosticIoExecutor.submit(this::resetPersistentRecorderNow);
+            barrier.get(10L,TimeUnit.SECONDS);
+        } catch (Exception ignored) {}
+    }
+
+    private void resetPersistentRecorderNow() {
         diagnosticCoalescer.reset();
         feedObservabilityTracker.reset();
         try { PersistentMarketLog.reset(persistentFile(PERSISTENT_OBSERVATIONS_FILE)); }

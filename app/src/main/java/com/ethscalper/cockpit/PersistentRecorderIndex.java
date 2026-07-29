@@ -114,6 +114,18 @@ public final class PersistentRecorderIndex {
         return value;
     }
 
+    /**
+     * Network-startup loader. It deliberately does not open the index or either JSONL file.
+     * File lengths are metadata calls only, so a legacy/corrupt recorder can never delay the
+     * first WebSocket and REST requests. Existing journals remain available to the exporter.
+     */
+    public static PersistentRecorderIndex metadataOnly(File events,File frames) {
+        PersistentRecorderIndex value=new PersistentRecorderIndex();
+        value.eventBytes=PersistentMarketLog.combinedBytes(events);
+        value.frameBytes=PersistentMarketLog.combinedBytes(frames);
+        return value;
+    }
+
     private boolean load(File file) {
         if(file==null||!file.exists())return false;Properties p=new Properties();
         try(FileInputStream input=new FileInputStream(file)){p.load(input);

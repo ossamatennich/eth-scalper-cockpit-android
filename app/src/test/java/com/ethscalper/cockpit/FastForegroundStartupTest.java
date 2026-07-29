@@ -24,10 +24,11 @@ public class FastForegroundStartupTest {
         String onCreate=service.substring(start,end);
         int foreground=onCreate.indexOf("startForeground(");
         assertTrue(foreground>=0);
-        assertTrue(foreground<onCreate.indexOf("PersistentRecorderIndex.loadFast"));
+        assertTrue(foreground<onCreate.indexOf("PersistentRecorderIndex.metadataOnly"));
         assertTrue(foreground<onCreate.indexOf("restoreActiveFinalPlan"));
         assertFalse(onCreate.contains("migratePersistentFramesToSymbolAwareFormat()"));
         assertFalse(onCreate.contains("loadOrRebuild("));
+        assertFalse(onCreate.contains("PersistentRecorderIndex.loadFast"));
     }
 
     @Test public void fastIndexLoaderNeverScansLargeJournals() throws Exception {
@@ -44,6 +45,43 @@ public class FastForegroundStartupTest {
         assertEquals(0L,snapshot.get("startupJsonlDiskReads"));
         assertEquals(events.length(),snapshot.get("eventFileBytes"));
         assertEquals(frames.length(),snapshot.get("frameFileBytes"));
+    }
+
+    @Test public void startupMetadataNeverOpensLegacyIndex() throws Exception {
+        Path dir=Files.createTempDirectory("nmc-metadata-index");
+        File events=dir.resolve("events.jsonl").toFile();
+        File frames=dir.resolve("frames.jsonl").toFile();
+        File corrupt=dir.resolve("persistent_recorder_index.properties").toFile();
+        Files.write(corrupt.toPath(),new byte[4*1024*1024]);
+        Files.write(events.toPath(),"legacy\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(frames.toPath(),"legacy-frame\n".getBytes(StandardCharsets.UTF_8));
+
+        PersistentRecorderIndex index=PersistentRecorderIndex.metadataOnly(events,frames);
+        Map<String,Object> snapshot=index.snapshot();
+        assertEquals(0L,snapshot.get("startupJsonlDiskReads"));
+        assertEquals(events.length(),snapshot.get("eventFileBytes"));
+        assertEquals(frames.length(),snapshot.get("frameFileBytes"));
+        assertEquals(4L*1024L*1024L,corrupt.length());
+    }
+
+    @Test public void networkStartsBeforeStatusAndDiagnostics() throws Exception {
+        String service=source("MarketWatchService.java");
+        int start=service.indexOf("@Override public int onStartCommand");
+        int end=service.indexOf("private void restoreActiveFinalPlan",start);
+        String onStart=service.substring(start,end);
+        assertTrue(onStart.indexOf("connectIfNeeded();")<onStart.indexOf("broadcastStatus(\"service_started\""));
+        assertTrue(onStart.indexOf("prefillHistoricalCandlesIfNeeded();")
+                <onStart.indexOf("broadcastStatus(\"service_started\""));
+    }
+
+    @Test public void diagnosticDiskWritesRunOffMarketThread() throws Exception {
+        String service=source("MarketWatchService.java");
+        int start=service.indexOf("private void appendPersistentJsonLine(");
+        int end=service.indexOf("private void appendPersistentJsonLineNow",start);
+        String dispatcher=service.substring(start,end);
+        assertTrue(dispatcher.contains("diagnosticIoExecutor.execute"));
+        assertFalse(dispatcher.contains("PersistentMarketLog.append"));
+        assertTrue(service.contains("new Thread(r, \"nmc-diagnostic-io\")"));
     }
 
     @Test public void futuresPrimaryRemainsFirstAndAuthoritative() {
