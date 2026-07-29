@@ -221,6 +221,7 @@ public final class CandidateLifecycle {
                 snapshot,confirmation,premium,historicalReplayRiskVeto);
         StructuralStopPlanner.Result structural=StructuralStopPlanner.calculate(profile,
                 candidate.side,candidate.entry,snapshot.avgRange20,adverseExcursion60,
+                snapshot.recentHigh,snapshot.recentLow,snapshot.marketBid,snapshot.marketAsk,
                 completedCandles==null?Collections.emptyList():completedCandles,snapshot.now);
         if(!structural.valid)return FillResult.rejected(structural.reasonCode,confirmation,sizing,
                 null,metrics,p01,p02Filter,trendRegime,sleeve);

@@ -22,6 +22,11 @@ public final class DynamicTradePlan {
     public static final int MAX_QUANTITY = 7;
     public static final String MARKET_QUANTITY_INVALID = "V2340_MARKET_QUANTITY_INVALID";
     public static final String STRUCTURAL_PLAN_CONFIRMED = "V2343_STRUCTURAL_DYNAMIC_PLAN_CONFIRMED";
+    public static final String GROSS_RISK_BUDGET_EXCEEDED =
+            "V23431_GROSS_RISK_BUDGET_EXCEEDED";
+    public static final String GROSS_RISK_BUDGET_CONFIRMED =
+            "GROSS_STOP_BUDGET_14_55_EXCLUDING_FEES";
+    public static final double GROSS_RISK_BUDGET_USDT = 14.55;
 
     private DynamicTradePlan() {}
 
@@ -117,29 +122,35 @@ public final class DynamicTradePlan {
         double roundedStop=direction>0?entry-stopLoss:stopLoss-entry;
         double roundedTarget=direction>0?takeProfit-entry:entry-takeProfit;
         double rr=roundedTarget/roundedStop;
-        AdaptiveRiskSizing.Result budget=AdaptiveRiskSizing.select(budgetEvidence);
-        double riskPerUnit=roundedStop+allowance;
-        int riskQuantity=(int)Math.floor((budget.budgetUsdt+1e-12)/riskPerUnit);
+        // The public budget applies only to the gross entry-to-stop movement. Fees and the
+        // execution allowance remain separate diagnostics and never tighten the stop.
+        double riskPerUnit=roundedStop;
+        int riskQuantity=(int)Math.floor((GROSS_RISK_BUDGET_USDT+1e-12)/riskPerUnit);
         int stepped=(riskQuantity/profile.quantityStep)*profile.quantityStep;
-        int boundedQuality=MarketProfile.ETH_SYMBOL.equals(profile.symbol)
-                ?Math.min(Math.max(0,qualityCap),profile.maximumQuantity)
-                :profile.maximumQuantity;
-        int finalQuantity=Math.min(stepped,boundedQuality);
-        double loss=finalQuantity*riskPerUnit;
+        int boundedQuality=profile.quantityCapForQuality(qualityCap,riskPerUnit);
+        int finalQuantity=Math.min(Math.min(stepped,boundedQuality),profile.maximumQuantity);
+        double grossLoss=finalQuantity*roundedStop;
+        double fees=finalQuantity*resultCost;
+        double totalLoss=grossLoss+fees;
         Result calculated=new Result(false,STRUCTURAL_PLAN_CONFIRMED,a,adverse,room,required,
                 structuralStop.sanityEnvelope,targetFloor,targetRaw,targetDistance,stopLoss,
-                takeProfit,roundedStop,roundedTarget,rr,resultCost,allowance,budget.budgetUsdt,
-                riskPerUnit,riskQuantity,boundedQuality,finalQuantity,loss,profile.priceTick,
+                takeProfit,roundedStop,roundedTarget,rr,resultCost,allowance,GROSS_RISK_BUDGET_USDT,
+                riskPerUnit,riskQuantity,boundedQuality,finalQuantity,grossLoss,profile.priceTick,
                 profile.legacyRiskBudgetUsdt,riskQuantity,finalQuantity,false,finalQuantity,
-                budget.budgetUsdt,riskQuantity,loss,loss).withStructural(structuralStop,budget.reason);
+                GROSS_RISK_BUDGET_USDT,riskQuantity,grossLoss,grossLoss)
+                .withStructural(structuralStop,GROSS_RISK_BUDGET_CONFIRMED);
         if(!positive(stopLoss)||!positive(takeProfit)||!positive(roundedStop)||!positive(roundedTarget)
                 ||(direction>0&&!(takeProfit>entry&&stopLoss<entry))
                 ||(direction<0&&!(takeProfit<entry&&stopLoss>entry)))
             return calculated.withRejection(INVALID_DATA);
         if(!finite(rr)||rr<1.40)return calculated.withRejection(REWARD_RISK_INSUFFICIENT);
-        if(riskQuantity<1||finalQuantity<profile.minimumQuantity
-                ||finalQuantity>profile.maximumQuantity||loss>budget.budgetUsdt+1e-9)
+        if(profile.minimumQuantity*roundedStop>GROSS_RISK_BUDGET_USDT+1e-9)
+            return calculated.withRejection(GROSS_RISK_BUDGET_EXCEEDED);
+        if(riskQuantity<profile.minimumQuantity||finalQuantity<profile.minimumQuantity
+                ||finalQuantity>profile.maximumQuantity)
             return calculated.withRejection(MARKET_QUANTITY_INVALID);
+        if(grossLoss>GROSS_RISK_BUDGET_USDT+1e-9)
+            return calculated.withRejection(GROSS_RISK_BUDGET_EXCEEDED);
         return calculated.withValidity(STRUCTURAL_PLAN_CONFIRMED);
     }
 
@@ -385,9 +396,16 @@ public final class DynamicTradePlan {
         public final double qualityRiskBudget;
         public final double riskPerUnit;
         public final int rawQuantity;
+        public final double grossRiskPerUnit;
+        public final double riskBudgetExcludingFees;
+        public final double grossLossAtSl;
+        public final double estimatedRoundTripFees;
+        public final double estimatedTotalLossAtSl;
         /** v2.34.3 structural-stop and adaptive-budget diagnostics. */
         public final double baseStop, structuralAnchor, structuralBuffer;
         public final double structureDistance, structuralStop, sanityEnvelope;
+        public final double spread, volatilityProtectionDistance;
+        public final double adverseExcursionProtectionDistance;
         public final int structuralWindowMinutes;
         public final String stopCalculationType, stopReasonCode, selectedBudgetReason;
 
@@ -415,7 +433,7 @@ public final class DynamicTradePlan {
                     legacyRiskQuantity,baselineFinalQuantity,quantityUpliftApplied,upliftedQuantity,
                     upliftedRiskBudgetUsdt,upliftedRiskQuantity,theoreticalMaximumLossBeforeUplift,
                     theoreticalMaximumLossAfterUplift,stopRequired,Double.NaN,0,0.0,0.0,0.0,
-                    stopMaximum,"LEGACY_DYNAMIC","","");
+                    stopMaximum,"LEGACY_DYNAMIC","","",Double.NaN,Double.NaN,Double.NaN);
         }
 
         private Result(boolean valid, String reasonCode, double a,
@@ -437,7 +455,9 @@ public final class DynamicTradePlan {
                        double baseStop,double structuralAnchor,int structuralWindowMinutes,
                        double structuralBuffer,double structureDistance,double structuralStop,
                        double sanityEnvelope,String stopCalculationType,String stopReasonCode,
-                       String selectedBudgetReason) {
+                       String selectedBudgetReason,double spread,
+                       double volatilityProtectionDistance,
+                       double adverseExcursionProtectionDistance) {
             this.valid = valid;
             this.reasonCode = reasonCode;
             this.a = a;
@@ -476,6 +496,11 @@ public final class DynamicTradePlan {
             this.qualityRiskBudget = riskBudgetUsdt;
             this.riskPerUnit = riskPerEth;
             this.rawQuantity = riskQuantity;
+            this.grossRiskPerUnit = roundedStopDistance;
+            this.riskBudgetExcludingFees = riskBudgetUsdt;
+            this.grossLossAtSl = finalQuantity * roundedStopDistance;
+            this.estimatedRoundTripFees = finalQuantity * estimatedRoundTripCostPerEth;
+            this.estimatedTotalLossAtSl = grossLossAtSl + estimatedRoundTripFees;
             this.baseStop=baseStop;this.structuralAnchor=structuralAnchor;
             this.structuralWindowMinutes=structuralWindowMinutes;
             this.structuralBuffer=structuralBuffer;this.structureDistance=structureDistance;
@@ -483,6 +508,9 @@ public final class DynamicTradePlan {
             this.stopCalculationType=stopCalculationType==null?"":stopCalculationType;
             this.stopReasonCode=stopReasonCode==null?"":stopReasonCode;
             this.selectedBudgetReason=selectedBudgetReason==null?"":selectedBudgetReason;
+            this.spread=spread;
+            this.volatilityProtectionDistance=volatilityProtectionDistance;
+            this.adverseExcursionProtectionDistance=adverseExcursionProtectionDistance;
         }
 
         private Result withStructural(StructuralStopPlanner.Result stop,String budgetReason) {
@@ -497,7 +525,8 @@ public final class DynamicTradePlan {
                     theoreticalMaximumLossAfterUplift,stop.baseStop,stop.structuralAnchor,
                     stop.structuralWindowMinutes,stop.structuralBuffer,stop.structureDistance,
                     stop.structuralStop,stop.sanityEnvelope,stop.calculationType,stop.reasonCode,
-                    budgetReason);
+                    budgetReason,stop.spread,stop.volatilityProtectionDistance,
+                    stop.adverseExcursionProtectionDistance);
         }
 
         private static Result rejected(String code) {
@@ -530,7 +559,9 @@ public final class DynamicTradePlan {
                     theoreticalMaximumLossBeforeUplift,
                     theoreticalMaximumLossAfterUplift,baseStop,structuralAnchor,
                     structuralWindowMinutes,structuralBuffer,structureDistance,structuralStop,
-                    sanityEnvelope,stopCalculationType,stopReasonCode,selectedBudgetReason);
+                    sanityEnvelope,stopCalculationType,stopReasonCode,selectedBudgetReason,
+                    spread,volatilityProtectionDistance,
+                    adverseExcursionProtectionDistance);
         }
     }
 }

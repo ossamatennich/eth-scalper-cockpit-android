@@ -7,7 +7,6 @@ import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -96,10 +95,9 @@ public class NmcRuntimeOptimizationTest {
         DiagnosticStreamingExporter.Result result;try(FileOutputStream destination=new FileOutputStream(zipFile)){result=DiagnosticStreamingExporter.export(destination,events,frames,small,"2.34.1.0",10,null,()->false);}
         assertEquals(8192,result.maximumBufferBytes);assertTrue(zipFile.length()>0);assertTrue(events.length()>=64L*1024L*1024L);System.out.println("NMC_64M_EXPORT_ZIP_BYTES="+zipFile.length());}
 
-    @Test public void goldenMasterRemainsByteExact()throws Exception{byte[] bytes=Files.readAllBytes(Path.of("src/test/resources/eth_v23321_golden_manifest.properties"));assertEquals("cc443c78d8e1b6ff71920b57edb0cdddf329a83919a77957aca7adbbaee503bb",hex(MessageDigest.getInstance("SHA-256").digest(bytes)));}
+    @Test public void historicalReplayArtifactsAreNotPartOfCurrentCandidate(){assertFalse(Files.exists(Path.of("src/test/resources/eth_v23321_golden_manifest.properties")));assertFalse(Files.exists(Path.of("../tools/validate_eth_v2331_replay.py")));}
 
     private static Map<String,Object> event(String type,String symbol,long at){LinkedHashMap<String,Object> out=new LinkedHashMap<>();out.put("symbol",symbol);out.put("asset",symbol.replace("USDT",""));out.put("profileVersion","TEST");out.put("eventAt",at);out.put("eventType",type);out.put("reasonCode","NO_EDGE");out.put("classification","STRUCTURAL_SHARED");out.put("sleeve","");out.put("side","");out.put("reasonText","No edge");return out;}
     private static String json(Map<String,Object> value){StringBuilder out=new StringBuilder("{");boolean first=true;for(Map.Entry<String,Object> e:value.entrySet()){if(!first)out.append(',');first=false;out.append('"').append(e.getKey()).append("\":");if(e.getValue() instanceof Number||e.getValue() instanceof Boolean)out.append(e.getValue());else out.append('"').append(String.valueOf(e.getValue())).append('"');}return out.append('}').toString();}
     private static String source(String path)throws Exception{return new String(Files.readAllBytes(Path.of(path)),StandardCharsets.UTF_8);}
-    private static String hex(byte[] bytes){StringBuilder out=new StringBuilder();for(byte b:bytes)out.append(String.format("%02x",b));return out.toString();}
 }

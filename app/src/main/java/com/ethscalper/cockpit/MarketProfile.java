@@ -18,6 +18,7 @@ public final class MarketProfile {
     public final int maximumQuantity;
     public final boolean researchCandidate;
     public final boolean adaptivePriceScale;
+    public final boolean qualityLevelCapsQuantity;
 
     public final double aMinimumReference;
     public final double p02AppearanceFloorReference;
@@ -55,6 +56,7 @@ public final class MarketProfile {
         maximumQuantity = b.maximumQuantity;
         researchCandidate = b.researchCandidate;
         adaptivePriceScale = b.adaptivePriceScale;
+        qualityLevelCapsQuantity = b.qualityLevelCapsQuantity;
         aMinimumReference = positive(b.aMinimumReference, "aMinimumReference");
         p02AppearanceFloorReference = positive(b.p02AppearanceFloorReference,
                 "p02AppearanceFloorReference");
@@ -92,7 +94,7 @@ public final class MarketProfile {
     public static MarketProfile eth() {
         return builder(ETH_SYMBOL, "ETH", "ETH_V23321")
                 .referencePrice(1900.00).priceTick(.01).quantity(1, 1, 7)
-                .researchCandidate(true).adaptivePriceScale(false)
+                .researchCandidate(true).adaptivePriceScale(false).qualityLevelCapsQuantity(true)
                 .detection(.35, .75, .55)
                 .stops(.55, 2.50).targets(2.80, 5.50).p02Seed(2.80, 1.35)
                 .revalidation(.10, .30).lateDistances(2.00, 2.20)
@@ -104,7 +106,7 @@ public final class MarketProfile {
     public static MarketProfile sol() {
         return builder(SOL_SYMBOL, "SOL", "SOL_V1_20260727")
                 .referencePrice(75.80).priceTick(.01).quantity(1, 1, 120)
-                .researchCandidate(true).adaptivePriceScale(true)
+                .researchCandidate(true).adaptivePriceScale(true).qualityLevelCapsQuantity(false)
                 .detection(.015, .03147, .03)
                 .stops(.03, .10).targets(.12, .23).p02Seed(.12, .06)
                 .revalidation(.01, .02).lateDistances(.03, .02)
@@ -155,6 +157,27 @@ public final class MarketProfile {
 
     public double[] qualityRiskBudgets() { return qualityRiskBudgets.clone(); }
 
+    /** Profile-owned policy: ETH quality levels are unit caps; SOL keeps its unit cap separate. */
+    public int quantityCapForQuality(int qualityLevel) {
+        return qualityLevelCapsQuantity
+                ? Math.min(maximumQuantity, Math.max(minimumQuantity, qualityLevel))
+                : maximumQuantity;
+    }
+
+    /**
+     * Converts the engine quality output into a market-unit cap. ETH quality levels are
+     * already unit caps. Markets such as SOL use their existing profile quality budget and
+     * quantity step, so no ETH-sized unit count is copied across assets.
+     */
+    public int quantityCapForQuality(int qualityLevel, double grossRiskPerUnit) {
+        if (qualityLevelCapsQuantity) return quantityCapForQuality(qualityLevel);
+        if (!Double.isFinite(grossRiskPerUnit) || grossRiskPerUnit <= 0.0) return 0;
+        int raw = (int) Math.floor((qualityRiskBudget(qualityLevel) + 1e-12)
+                / grossRiskPerUnit);
+        int stepped = (raw / quantityStep) * quantityStep;
+        return Math.min(maximumQuantity, Math.max(0, stepped));
+    }
+
     public double ceilToTick(double value) {
         return Math.ceil((value - 1e-12) / priceTick) * priceTick;
     }
@@ -188,6 +211,7 @@ public final class MarketProfile {
         private double referencePrice, priceTick;
         private int quantityStep, minimumQuantity, maximumQuantity;
         private boolean researchCandidate, adaptivePriceScale;
+        private boolean qualityLevelCapsQuantity;
         private double aMinimumReference, p02AppearanceFloorReference, maximumSpreadReference;
         private double stopMinimumReference, stopMaximumReference;
         private double targetFloorReference, targetMaximumReference;
@@ -207,6 +231,7 @@ public final class MarketProfile {
         public Builder quantity(int step,int min,int max) { quantityStep=step;minimumQuantity=min;maximumQuantity=max;return this; }
         public Builder researchCandidate(boolean v) { researchCandidate=v; return this; }
         public Builder adaptivePriceScale(boolean v) { adaptivePriceScale=v; return this; }
+        public Builder qualityLevelCapsQuantity(boolean v) { qualityLevelCapsQuantity=v; return this; }
         public Builder detection(double a,double p02,double spread) { aMinimumReference=a;p02AppearanceFloorReference=p02;maximumSpreadReference=spread;return this; }
         public Builder stops(double min,double max) { stopMinimumReference=min;stopMaximumReference=max;return this; }
         public Builder targets(double min,double max) { targetFloorReference=min;targetMaximumReference=max;return this; }

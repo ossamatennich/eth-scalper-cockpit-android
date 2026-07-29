@@ -20,7 +20,9 @@ public final class PlanMetricsCalculator {
         double estimatedFees=resultCostPerUnit*quantity;
         double netProfit=grossProfit-estimatedFees;
         double netLoss=grossLoss+estimatedFees;
-        double theoreticalLoss=quantity*(stopDistance+riskAllowancePerUnit);
+        // The public 14.55 USDT budget is the gross market movement to the SL.
+        // Fees and the execution allowance remain separate information.
+        double theoreticalLoss=grossLoss;
         double rewardRisk=targetDistance/stopDistance;
         double progress=Double.NaN,distanceToTarget=Double.NaN,distanceToStop=Double.NaN;
         if(positive(currentPrice)){
@@ -30,7 +32,7 @@ public final class PlanMetricsCalculator {
             distanceToStop=d*(currentPrice-stopLoss);
         }
         boolean executable="LONG".equals(side)?positive(ask)&&ask<=entry:positive(bid)&&bid>=entry;
-        double notional=positive(currentPrice)?currentPrice*quantity:entry*quantity;
+        double notional=entry*quantity;
         return new Result(true,grossProfit,grossLoss,estimatedFees,netProfit,netLoss,
                 theoreticalLoss,rewardRisk,progress,distanceToTarget,distanceToStop,
                 executable,notional,notional/leverage);

@@ -1242,6 +1242,11 @@ public class MarketWatchService extends Service {
         out.put("resultCostPerUnit",plan.resultCostPerUnit);
         out.put("riskAllowancePerUnit",plan.riskAllowancePerUnit);
         out.put("theoreticalMaximumLoss",plan.theoreticalMaximumLoss);
+        double gross=Math.abs(plan.entry-plan.stopLoss)*plan.quantity;
+        double fees=plan.resultCostPerUnit*plan.quantity;
+        out.put("grossLossAtSl",gross);out.put("estimatedRoundTripFees",fees);
+        out.put("estimatedTotalLossAtSl",gross+fees);
+        out.put("riskBudgetExcludingFees",DynamicTradePlan.GROSS_RISK_BUDGET_USDT);
         out.put("volatilityA",plan.volatilityA);out.put("adverseExcursion",plan.adverseExcursion);
         out.put("baseStop",plan.baseStop);out.put("structuralAnchor",plan.structuralAnchor);
         out.put("structuralWindowMinutes",plan.structuralWindowMinutes);
@@ -3270,6 +3275,12 @@ public class MarketWatchService extends Service {
         putMetric(o,"structuralBuffer",plan.structuralBuffer);
         putMetric(o,"structureDistance",plan.structureDistance);
         putMetric(o,"structuralStop",plan.structuralStop);
+        putMetric(o,"spread",plan.spread);
+        putMetric(o,"tick",plan.priceTick);
+        putMetric(o,"technicalBuffer",plan.structuralBuffer);
+        putMetric(o,"volatilityProtectionDistance",plan.volatilityProtectionDistance);
+        putMetric(o,"adverseExcursionProtectionDistance",
+                plan.adverseExcursionProtectionDistance);
         putMetric(o,"sanityEnvelope",plan.sanityEnvelope);
         o.put("stopCalculationType",plan.stopCalculationType);
         o.put("stopReasonCode",plan.stopReasonCode);
@@ -3291,10 +3302,17 @@ public class MarketWatchService extends Service {
         putMetric(o, "riskBudgetUsdt", plan.riskBudgetUsdt);
         putMetric(o, "riskPerEth", plan.riskPerEth);
         putMetric(o,"riskPerUnit",plan.riskPerUnit);
+        putMetric(o,"grossRiskPerUnit",plan.grossRiskPerUnit);
+        putMetric(o,"riskBudgetExcludingFees",plan.riskBudgetExcludingFees);
         o.put("riskQuantity", plan.riskQuantity);
         o.put("qualityCap", plan.qualityCap);
         o.put("finalQuantity", plan.finalQuantity);
         putMetric(o, "theoreticalMaximumLoss", plan.theoreticalMaximumLoss);
+        putMetric(o,"grossLossAtSl",plan.grossLossAtSl);
+        putMetric(o,"estimatedRoundTripFees",plan.estimatedRoundTripFees);
+        putMetric(o,"estimatedTotalLossAtSl",plan.estimatedTotalLossAtSl);
+        o.put("stopDecisionSource",plan.stopCalculationType);
+        o.put("rejectionReason",plan.valid?"":plan.reasonCode);
         putMetric(o, "legacyRiskBudgetUsdt", plan.legacyRiskBudgetUsdt);
         o.put("legacyRiskQuantity", plan.legacyRiskQuantity);
         o.put("baselineFinalQuantity", plan.baselineFinalQuantity);
@@ -4379,7 +4397,12 @@ public class MarketWatchService extends Service {
         value.put("finalConfirmedAt",p.finalConfirmedAt);value.put("resultCostPerUnit",p.resultCostPerUnit);
         value.put("riskAllowancePerUnit",p.riskAllowancePerUnit);value.put("qualityRiskBudget",p.qualityRiskBudget);
         value.put("theoreticalMaximumLoss",p.theoreticalMaximumLoss);
-        value.put("modeledRiskUsdt",p.theoreticalMaximumLoss);return value;
+        double gross=Math.abs(p.entry-p.stopLoss)*p.quantity;
+        double fees=p.resultCostPerUnit*p.quantity;
+        value.put("grossLossAtSl",gross);value.put("estimatedRoundTripFees",fees);
+        value.put("estimatedTotalLossAtSl",gross+fees);
+        value.put("riskBudgetExcludingFees",DynamicTradePlan.GROSS_RISK_BUDGET_USDT);
+        value.put("modeledRiskUsdt",gross);return value;
     }
 
     private JSONObject ethActivePlanJson(SignalDecision signal,ObservedSignal observed,
@@ -4396,8 +4419,13 @@ public class MarketWatchService extends Service {
         value.put("resultCostPerUnit",plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:plan.resultCostPerUnit);
         value.put("riskAllowancePerUnit",plan==null?DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH:plan.riskAllowancePerUnit);
         value.put("qualityRiskBudget",plan==null?DynamicTradePlan.DEFAULT_RISK_BUDGET_USDT:plan.qualityRiskBudget);
-        double loss=signal.quantity*(signal.stopDistance+DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH);
-        value.put("theoreticalMaximumLoss",loss);value.put("modeledRiskUsdt",loss);return value;
+        double loss=signal.quantity*signal.stopDistance;
+        double fees=signal.quantity*(plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:
+                plan.resultCostPerUnit);
+        value.put("theoreticalMaximumLoss",loss);value.put("grossLossAtSl",loss);
+        value.put("estimatedRoundTripFees",fees);value.put("estimatedTotalLossAtSl",loss+fees);
+        value.put("riskBudgetExcludingFees",DynamicTradePlan.GROSS_RISK_BUDGET_USDT);
+        value.put("modeledRiskUsdt",loss);return value;
     }
 
 

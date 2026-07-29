@@ -1,24 +1,37 @@
-# Validation du moteur
+# Validation du moteur courant
 
-## Référence ETH
+## Stop causal multi-marchés
 
-Le replay canonique couvre 16 plans : 7 P01, 9 P02, 16 TP et 0 SL. Aucun plan public n’est publié avant 15 secondes.
-
-## Stop structurel v2.34.3.0
+Pour chaque marché, avec ses propres prix, bougies, spread, tick et profil :
 
 ```text
-A = max(profile.aMinimumScaled(entry), avgRange20)
-baseStop = max(profile.stopMinimumScaled(entry), A, E + 0.20 × A)
-structuralStop = structureDistance + 0.15 × A
-requiredStop = max(baseStop, structuralStop)
+A = avgRange20 courant valide
+technicalBuffer = max(0,15 × A, spread + tick)
+structuralProtection = distance(entry, dernier pivot causal) + technicalBuffer
+volatilityProtection = A
+adverseProtection = E + max(0,20 × A, spread + tick)
+finalStopDistance = max(structuralProtection, volatilityProtection, adverseProtection)
 ```
 
-La structure utilise uniquement les bougies terminées disponibles à la confirmation, sur une fenêtre de 5 minutes. L’enveloppe d’intégrité rejette les données aberrantes et ne rapproche jamais le stop.
+Si aucun pivot local valide n’est disponible, le dernier `recentLow` sous l’entrée (LONG) ou `recentHigh` au-dessus de l’entrée (SHORT) peut servir de niveau causal. À défaut, la volatilité et l’excursion adverse protègent le plan. Les bougies futures et les valeurs invalides sont ignorées.
 
-Le TP validé reste `clamp(2.70 × A + 0.20 × R, TP_floor, TP_cap)` et le rendement/risque brut doit être au moins `1,40`.
+Une enveloppe d’intégrité volontairement large rejette une donnée techniquement aberrante mais ne réduit jamais le stop. Le TP dynamique existant et le seuil brut de rendement/risque `1,40` sont inchangés ; un ratio insuffisant refuse le plan sans rapprocher le SL.
 
-## Sizing
+## Sizing hors frais
 
-Le sizing est calculé après le stop avec des budgets déterministes de 10,00, 12,00 ou 14,55 USDT selon des preuves cumulatives. Le score seul ne relève jamais le budget. Aucun minimum artificiel à 3 et aucun uplift ne sont appliqués.
+```text
+grossRiskPerUnit = abs(entry - stopLoss)
+riskQuantity = floorToQuantityStep(14,55 / grossRiskPerUnit)
+finalQuantity = min(riskQuantity, qualityQuantityCap, marketMaximumQuantity)
+grossLossAtSl = grossRiskPerUnit × finalQuantity
+estimatedRoundTripFees = resultCostPerUnit × finalQuantity
+estimatedTotalLossAtSl = grossLossAtSl + estimatedRoundTripFees
+```
 
-Les rapports détaillés et les limites de la validation sont conservés dans `docs/releases/v2.34.3.0/`. Aucun résultat historique ne constitue une garantie financière.
+La perte brute doit rester inférieure ou égale à 14,55 USDT. Les frais ne sont jamais mélangés à cette limite. Si la quantité minimale du profil dépasse le budget brut, le plan est refusé ; le stop n’est jamais resserré.
+
+ETH utilise son plafond qualitatif en unités. SOL traduit son niveau qualitatif avec ses budgets et son pas de quantité propres. Aucun nombre d’unités ETH n’est copié vers SOL.
+
+## Limites
+
+Cette validation porte sur la causalité, les calculs de risque, l’isolation des marchés et les invariants de lifecycle. Le replay historique retiré n’est plus une condition de publication. Aucune performance future n’est garantie.
