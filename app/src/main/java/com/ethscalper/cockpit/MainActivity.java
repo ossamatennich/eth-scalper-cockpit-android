@@ -64,7 +64,9 @@ public class MainActivity extends Activity {
     private final Map<Integer,ScrollView> screens=new LinkedHashMap<>();
     private final Map<Integer,Integer> scrollPositions=new LinkedHashMap<>();
     private final Map<String,MarketViews> marketViews=new LinkedHashMap<>();
-    private TextView connection,feedAge,generalState,btcContext,aggregateRisk,planList;
+    private TextView connection,feedAge,generalState,btcContext,aggregateRisk,planHistory;
+    private LinearLayout activePlansHost;
+    private final Map<String,ActivePlanCardView> activePlanCards=new LinkedHashMap<>();
     private TextView diagnosticHealth,diagnosticRecent,diagnosticDetails,exportProgress,aiInfo;
     private Button exportButton;
     private int selectedSection=COCKPIT;
@@ -94,7 +96,8 @@ public class MainActivity extends Activity {
         addNav("Cockpit",COCKPIT);addNav("Plans",PLANS);addNav("Diagnostic",DIAGNOSTIC);addNav("Outils",TOOLS);
         screens.put(COCKPIT,buildCockpitScreen());screens.put(PLANS,buildPlansScreen());
         screens.put(DIAGNOSTIC,buildDiagnosticScreen());screens.put(TOOLS,buildToolsScreen());
-        setContentView(shell);applySystemInsets(shell);showSection(COCKPIT);
+        setContentView(shell);applySystemInsets(shell);
+        showSection("plans".equals(getIntent().getStringExtra("nmc_section"))?PLANS:COCKPIT);
     }
 
     private void applySystemInsets(View root){
@@ -139,8 +142,10 @@ public class MainActivity extends Activity {
         return wrap(root);}
 
     private ScrollView buildPlansScreen(){LinearLayout root=screenRoot();addSectionHeader(root,"Plans","Plans manuels actifs et historique récent");
-        LinearLayout card=card(root,"PLANS ACTIFS",RED);planList=mono("Aucun plan actif",15,TEXT,false);card.addView(planList);
-        LinearLayout history=card(root,"HISTORIQUE RÉCENT",CYAN);TextView info=text("PLAN_CONFIRMED · PLAN_RESTORED · TP_TOUCHED · SL_TOUCHED\nUne restauration n’est jamais comptée comme un nouveau trade.",13,MUTED,false);history.addView(info);
+        activePlansHost=new LinearLayout(this);activePlansHost.setOrientation(LinearLayout.VERTICAL);root.addView(activePlansHost);
+        LinearLayout history=card(root,"HISTORIQUE RÉCENT · 20 MAXIMUM",CYAN);
+        planHistory=mono("Aucun événement de plan récent",12,TEXT,false);history.addView(planHistory);
+        TextView info=text("PLAN_RESTORED conserve le plan existant et n’est jamais compté comme un nouveau trade.",12,MUTED,false);info.setPadding(0,dp(8),0,0);history.addView(info);
         return wrap(root);}
 
     private ScrollView buildDiagnosticScreen(){LinearLayout root=screenRoot();addSectionHeader(root,"Diagnostic","Santé des flux et recorder multi-marchés");
@@ -169,10 +174,28 @@ public class MainActivity extends Activity {
             setChanged(views.state,market.optString("state",market.optString("status",market.optBoolean("activePlan",false)?"PLAN ACTIF":"ANALYSE")));
             setChanged(views.plan,marketPlanText(market));}
         JSONObject btc=latestState.optJSONObject("referenceMarket");if(btc!=null)setChanged(btcContext,"Prix "+price(btc.optDouble("last",Double.NaN))+"\nBID "+price(btc.optDouble("bid",Double.NaN))+"   ASK "+price(btc.optDouble("ask",Double.NaN))+"\nFraîcheur : "+age(btc.optLong("feedAgeSec",-1)));
-        JSONArray plans=latestState.optJSONArray("activePlans");setChanged(planList,plansText(plans));setChanged(aggregateRisk,riskText(latestState.optJSONObject("aggregateRisk")));
+        JSONArray plans=latestState.optJSONArray("activePlans");renderPlans(plans,markets);
+        setChanged(planHistory,recentPlanHistory(latestState.optJSONArray("diagnostics"),20));
+        setChanged(aggregateRisk,riskText(latestState.optJSONObject("aggregateRisk")));
         JSONObject recorder=latestState.optJSONObject("overnightRecorder");setChanged(diagnosticHealth,healthText(markets,btc,recorder));
         setChanged(diagnosticRecent,recentEvents(latestState.optJSONArray("diagnostics"),5));setChanged(diagnosticDetails,recorder==null?"Index indisponible":recorder.toString(2));
     }catch(Exception ignored){}}
+
+    private void renderPlans(JSONArray plans,JSONObject markets){
+        LinkedHashMap<String,PlanUiModel> next=new LinkedHashMap<>();long now=System.currentTimeMillis();
+        if(plans!=null)for(int i=0;i<plans.length();i++){JSONObject p=plans.optJSONObject(i);if(p==null)continue;
+            String symbol=p.optString("symbol","");JSONObject market=markets==null?null:markets.optJSONObject(symbol);
+            PlanUiModel model=PlanUiMapper.from(p,market,now);if(!symbol.isEmpty())next.put(symbol,model);}
+        for(String symbol:new java.util.ArrayList<>(activePlanCards.keySet()))if(!next.containsKey(symbol)){
+            activePlansHost.removeView(activePlanCards.remove(symbol));}
+        for(Map.Entry<String,PlanUiModel> entry:next.entrySet()){
+            ActivePlanCardView view=activePlanCards.get(entry.getKey());if(view==null){view=new ActivePlanCardView(this);
+                LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(10),0,0);
+                activePlansHost.addView(view,p);activePlanCards.put(entry.getKey(),view);}view.bind(entry.getValue());}
+        if(next.isEmpty()&&activePlansHost.getChildCount()==0){TextView empty=mono("Aucun plan actif\nLe moteur analyse ETH et SOL silencieusement.",14,MUTED,false);
+            empty.setTag("emptyPlans");empty.setPadding(dp(2),dp(18),0,dp(8));activePlansHost.addView(empty);}
+        else{View empty=activePlansHost.findViewWithTag("emptyPlans");if(empty!=null)activePlansHost.removeView(empty);}
+    }
 
     private static final class UiState{final boolean connected;final String connection,feedAge,generalState;
         UiState(boolean connected,String connection,String feedAge,String generalState){this.connected=connected;this.connection=connection;this.feedAge=feedAge;this.generalState=generalState;}
@@ -246,6 +269,12 @@ public class MainActivity extends Activity {
     private static String riskText(JSONObject aggregate){if(aggregate==null||aggregate.optDouble("totalActiveRiskUsdt",0)<=0)return "Aucun risque actif";StringBuilder out=new StringBuilder();JSONObject by=aggregate.optJSONObject("riskBySymbol");if(by!=null){for(String symbol:new String[]{"ETHUSDT","SOLUSDT"})if(by.has(symbol))out.append("Risque ").append(symbol.replace("USDT","")).append(" actif : ").append(price(by.optDouble(symbol,0))).append(" USDT\n");}out.append("Risque total actif : ").append(price(aggregate.optDouble("totalActiveRiskUsdt",0))).append(" USDT");return out.toString();}
     private static String healthText(JSONObject markets,JSONObject btc,JSONObject recorder){StringBuilder out=new StringBuilder();if(markets!=null)for(String symbol:new String[]{"ETHUSDT","SOLUSDT"}){JSONObject m=markets.optJSONObject(symbol);out.append(symbol).append(" : ").append(m==null?"—":age(m.optLong("feedAgeSec",-1))).append('\n');}out.append("BTCUSDT : ").append(btc==null?"—":age(btc.optLong("feedAgeSec",-1))).append('\n');if(recorder!=null)out.append("Événements : ").append(recorder.optLong("eventCount",recorder.optLong("observationEvents",0))).append(" · Frames : ").append(recorder.optLong("frameCount",recorder.optLong("marketFrames",0))).append("\nDurée : ").append(recorder.optLong("durationSec",0)).append(" s\nFichiers : ").append(recorder.optLong("eventFileBytes",0)+recorder.optLong("frameFileBytes",0)).append(" octets");return out.toString();}
     private static String recentEvents(JSONArray events,int maximum){if(events==null||events.length()==0)return "Aucun événement";StringBuilder out=new StringBuilder();int start=Math.max(0,events.length()-maximum);for(int i=start;i<events.length();i++){JSONObject e=events.optJSONObject(i);if(e==null)continue;if(out.length()>0)out.append('\n');out.append(e.optString("symbol","—")).append(" · ").append(e.optString("eventType",e.optString("code","EVENT"))).append(" · ").append(e.optString("reasonCode",e.optString("message","")));}return out.toString();}
+    private static String recentPlanHistory(JSONArray events,int maximum){if(events==null)return "Aucun événement de plan récent";
+        java.util.ArrayList<String> values=new java.util.ArrayList<>();for(int i=events.length()-1;i>=0&&values.size()<maximum;i--){JSONObject e=events.optJSONObject(i);if(e==null)continue;
+            String type=e.optString("eventType",e.optString("event",""));if(!"PLAN_CONFIRMED".equals(type)&&!"PLAN_RESTORED".equals(type)&&!"TP_TOUCHED".equals(type)&&!"SL_TOUCHED".equals(type))continue;
+            String symbol=e.optString("symbol","—"),side=e.optString("side","");long at=e.optLong("eventAt",e.optLong("at",0));
+            values.add(symbol+" · "+type+(side.isEmpty()?"":" · "+side)+(at>0?" · "+new SimpleDateFormat("dd/MM HH:mm:ss",Locale.FRANCE).format(new Date(at)):""));}
+        if(values.isEmpty())return "Aucun événement de plan récent";java.util.Collections.reverse(values);return String.join("\n",values);}
     private static String json(Object value,String fallback){return value==null?fallback:String.valueOf(value);}
     private static String summaryText(JSONObject summary){return summary==null?"Recorder indisponible":"Événements : "+summary.optLong("eventCount",0)+"\nFrames : "+summary.optLong("frameCount",0)+"\nTrades confirmés : "+summary.optLong("confirmedTrades",0)+"\nPlans restaurés : "+summary.optLong("restoredActivePlans",0);}
     private static JSONObject feedHealth(JSONObject state)throws Exception{JSONObject out=new JSONObject();out.put("version",BuildConfig.VERSION_NAME);out.put("markets",state.optJSONObject("markets"));out.put("referenceMarket",state.optJSONObject("referenceMarket"));out.put("connected",state.optBoolean("connected"));out.put("lastAgeSec",state.optLong("lastAgeSec",-1));return out;}

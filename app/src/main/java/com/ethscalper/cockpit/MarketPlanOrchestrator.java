@@ -94,14 +94,31 @@ public final class MarketPlanOrchestrator {
                 P01EarlyConfirmation.StabilityResult stability=P01EarlyConfirmation.advance(now,
                         c.earlySince,c.earlyMode,quality.earlyP01);
                 c.earlySince=stability.qualitySince;c.earlyMode=stability.mode;
-                if(!stability.confirmed){record(runtime,snapshot,null,c.signal,now,
-                        "P01_EARLY_STABILITY",quality.reasonCode,"Stabilité P01 anticipée.",
-                        "STRUCTURAL_SHARED",c.historicalDiagnosticCode,c.sleeve,age,fresh,fresh,
-                        c.adverse,Map.of("earlyP01Mode",c.earlyMode,"earlyP01StabilityMs",
-                                c.earlySince==0?0:now-c.earlySince,"earlyP01ReasonCode",quality.reasonCode));continue;}
-                result=CandidateLifecycle.processEarlyP01Candidate(runtime.profile,c.signal,
-                        snapshot,true,c.createdAt,now,progress(c),c.adverse,c.historicalReplayRiskVeto,
-                        !runtime.hasActivePlan(),runtime.rearmRemainingMs(now)==0,c.signal.entry,true);
+                if(!stability.confirmed){if(!"EARLY_P01_SHADOW_REJECTED".equals(c.lastEarlyShadowEventType)){
+                    c.lastEarlyShadowEventType="EARLY_P01_SHADOW_REJECTED";
+                    record(runtime,snapshot,null,c.signal,now,"EARLY_P01_SHADOW_REJECTED",
+                            quality.reasonCode,"Évaluation anticipée conservée en recherche fantôme; aucune publication.",
+                            "STRUCTURAL_SHARED",c.historicalDiagnosticCode,c.sleeve,age,fresh,fresh,
+                            c.adverse,Map.of("earlyP01Mode",c.earlyMode,"earlyP01StabilityMs",
+                                    c.earlySince==0?0:now-c.earlySince,"earlyP01ReasonCode",quality.reasonCode,
+                                    "scope","SHADOW_RESEARCH"));}continue;}
+                CandidateLifecycle.FillResult shadow=CandidateLifecycle.processEarlyP01Candidate(
+                        runtime.profile,c.signal,snapshot,true,c.createdAt,now,progress(c),c.adverse,
+                        c.historicalReplayRiskVeto,!runtime.hasActivePlan(),
+                        runtime.rearmRemainingMs(now)==0,c.signal.entry,true);
+                String shadowEvent=shadow.confirmed?"EARLY_P01_SHADOW_WOULD_CONFIRM":"EARLY_P01_SHADOW_REJECTED";
+                if(!shadowEvent.equals(c.lastEarlyShadowEventType)){c.lastEarlyShadowEventType=shadowEvent;
+                    record(runtime,snapshot,null,c.signal,now,shadowEvent,shadow.reasonCode,
+                            shadow.confirmed
+                                    ?"La branche anticipée aurait confirmé; publication publique interdite avant 15 s."
+                                    :"La branche anticipée a rejeté; aucune publication publique.",
+                            "STRUCTURAL_SHARED",c.historicalDiagnosticCode,c.sleeve,age,fresh,fresh,
+                            c.adverse,Map.of("earlyP01Mode",c.earlyMode,"earlyP01StabilityMs",
+                                    c.earlySince==0?0:now-c.earlySince,"earlyP01ReasonCode",shadow.reasonCode,
+                                    "scope","SHADOW_RESEARCH"));}
+                // v2.34.2 restores the validated v2.33.1 public timing. The early
+                // branch remains observability-only and can never publish.
+                continue;
             } else {
                 TrendRegime60.Result trend=CandidateLifecycle.SLEEVE_P02.equals(c.sleeve)
                         ? trend(runtime,c,snapshot,now):null;
@@ -268,7 +285,7 @@ public final class MarketPlanOrchestrator {
 
     public static final class RuntimeCandidate {
         public final SignalDecision signal;public final String sleeve,signature;public final long createdAt;
-        public double adverse,favorable;public long earlySince;public String earlyMode="";
+        public double adverse,favorable;public long earlySince;public String earlyMode="",lastEarlyShadowEventType="";
         public boolean historicalReplayRiskVeto;
         public String historicalDiagnosticCode="";
         RuntimeCandidate(SignalDecision signal,String sleeve,long createdAt){this.signal=signal;this.sleeve=sleeve;this.createdAt=createdAt;this.signature=signal.symbol+"|"+signal.side+"|"+signal.family+"|"+signal.entry+"|"+signal.takeProfit+"|"+signal.stopLoss;}

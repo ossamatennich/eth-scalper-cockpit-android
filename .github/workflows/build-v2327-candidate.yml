@@ -1,4 +1,4 @@
-name: NMC v2.34.1.1 reliable audible final signal alerts
+name: NMC v2.34.2.0 validated engine recovery and professional plans UX
 
 on:
   push:
@@ -30,6 +30,8 @@ jobs:
         run: gradle test
       - name: Python SOL profile validator tests
         run: python3 -m unittest tools/test_validate_sol_profile.py
+      - name: ETH v2.33.1 validated replay parity
+        run: python3 tools/validate_eth_v2331_replay.py
       - name: Build debug APK
         run: gradle assembleDebug
       - name: Build release APK
@@ -39,5 +41,5 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NMC-v2.34.1.1-debug-apk
+          name: NMC-v2.34.2.0-debug-apk
           path: app/build/outputs/apk/debug/*.apk

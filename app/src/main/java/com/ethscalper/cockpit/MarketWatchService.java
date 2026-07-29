@@ -2596,6 +2596,8 @@ public class MarketWatchService extends Service {
         item.p01EarlyEligible = quality.earlyP01 != null && quality.earlyP01.accepted;
         if (!stability.confirmed) {
             item.lastConfirmationCode = stability.reasonCode;
+            item.p01EarlyShadowEventType = "EARLY_P01_SHADOW_REJECTED";
+            persistEarlyShadowTransition(item,current,now);
             return false;
         }
 
@@ -2608,11 +2610,25 @@ public class MarketWatchService extends Service {
         if (!confirmed.confirmed) {
             resetEarlyP01Stability(item, confirmed.reasonCode);
             item.lastConfirmationCode = confirmed.reasonCode;
+            item.p01EarlyShadowEventType = "EARLY_P01_SHADOW_REJECTED";
+            persistEarlyShadowTransition(item,current,now);
             return false;
         }
         item.p01EarlyAgeAtConfirmationMs = now - item.createdAt;
         item.p01EarlyLastReasonCode = P01EarlyConfirmation.CONFIRMED;
-        return applyCandidateFillResult(item, item.signal, current, now, confirmed);
+        item.p01EarlyShadowEventType = "EARLY_P01_SHADOW_WOULD_CONFIRM";
+        item.lastConfirmationCode = item.p01EarlyShadowEventType;
+        persistEarlyShadowTransition(item,current,now);
+        // Research-only shadow. Public confirmation remains governed by the
+        // normal v2.33.1 lifecycle at or after 15,000 ms.
+        return false;
+    }
+
+    private void persistEarlyShadowTransition(ObservedSignal item,MarketSnapshot snapshot,long now){
+        if(item==null||item.p01EarlyShadowEventType.equals(item.p01EarlyShadowLastPersistedType))return;
+        item.p01EarlyShadowLastPersistedType=item.p01EarlyShadowEventType;
+        item.p01EarlyShadowRecordedAt=now;
+        persistObservedSignalEvent(item,item.p01EarlyShadowEventType,snapshot,now);
     }
 
     private static void updateEarlyP01Diagnostics(ObservedSignal item, MarketSnapshot snapshot,
@@ -3286,6 +3302,8 @@ public class MarketWatchService extends Service {
                 ? item.p01EarlyQualitySince : JSONObject.NULL);
         o.put("earlyP01StabilityMs", item.p01EarlyStabilityMs);
         o.put("earlyP01ReasonCode", item.p01EarlyLastReasonCode);
+        o.put("earlyP01Scope", "SHADOW_RESEARCH");
+        o.put("earlyP01ShadowEventType", item.p01EarlyShadowEventType);
         o.put("ageAtEarlyConfirmationMs", item.p01EarlyAgeAtConfirmationMs >= 0
                 ? item.p01EarlyAgeAtConfirmationMs : JSONObject.NULL);
         putMetric(o, "earlyP01TriggerBid", item.p01EarlyTriggerBid);
@@ -3871,7 +3889,8 @@ public class MarketWatchService extends Service {
         SignalDecision decision = item.signal;
         ConfirmedSignalPayload payload = ConfirmedSignalPayload.from(decision);
         String title = "ETHUSDT · SIGNAL CONFIRMÉ — " + decision.side;
-        String body = payload.notificationBody(item.premium15m);
+        String body = payload.notificationBody(item.premium15m)
+                + String.format(Locale.US," · Score %d · %s",decision.score,item.sleeve);
 
         String signature = item.notificationSignature;
         int id = confirmedNotificationId(signature);
@@ -3887,8 +3906,9 @@ public class MarketWatchService extends Service {
     private void notifyMarketPlan(ActivePlanState plan, boolean audible) {
         if (plan == null) return;
         String title=plan.symbol+" · SIGNAL CONFIRMÉ — "+plan.side;
-        String body=String.format(Locale.US,"LIMIT %.2f · TP %.2f · SL %.2f · %d %s",
-                plan.entry,plan.takeProfit,plan.stopLoss,plan.quantity,plan.asset);
+        String sleeve=plan.family.contains("P02")?"P02":"P01";
+        String body=String.format(Locale.US,"LIMIT %.2f · TP %.2f · SL %.2f · %d %s · Score %d · %s",
+                plan.entry,plan.takeProfit,plan.stopLoss,plan.quantity,plan.asset,plan.score,sleeve);
         if (!audible) {
             postSilentSignalNotification(plan.notificationId,title,body);
             return;
@@ -4049,7 +4069,7 @@ public class MarketWatchService extends Service {
     }
 
     private Notification buildSignalNotification(String title, String body, boolean audible) {
-        Intent open = new Intent(this, MainActivity.class);
+        Intent open = new Intent(this, MainActivity.class).putExtra("nmc_section","plans");
         PendingIntent pending = PendingIntent.getActivity(this, 0, open,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Uri sound = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.eth_alert_loud);
@@ -4158,7 +4178,9 @@ public class MarketWatchService extends Service {
             reference.put("feedAgeSec",ageSeconds(now,sharedBtc.lastTickerAt));reference.put("tradable",false);
             state.put("referenceMarket",reference);
             JSONArray activePlans=new JSONArray();
-            if(activeSignal&&lastSignal!=null)activePlans.put(signalJson(lastSignal));
+            ObservedSignal activeObserved=observedForLastSignal();
+            if(activeSignal&&lastSignal!=null)activePlans.put(ethActivePlanJson(
+                    lastSignal,activeObserved,statusSnapshot));
             for(MarketProfile profile:marketRegistry.tradedMarkets()) {
                 if(MarketProfile.ETH_SYMBOL.equals(profile.symbol))continue;
                 MarketRuntime runtime=marketCoordinator.runtime(profile.symbol);
@@ -4314,8 +4336,33 @@ public class MarketWatchService extends Service {
     private JSONObject activePlanJson(ActivePlanState p)throws Exception{
         JSONObject value=new JSONObject();value.put("symbol",p.symbol);value.put("asset",p.asset);
         value.put("profileVersion",p.profileVersion);value.put("side",p.side);value.put("family",p.family);
-        value.put("quantity",p.quantity);putPrice(value,"entry",p.entry);putPrice(value,"takeProfit",p.takeProfit);
-        putPrice(value,"stopLoss",p.stopLoss);value.put("modeledRiskUsdt",p.theoreticalMaximumLoss);return value;
+        value.put("sleeve",p.family.contains("P02")?"P02":"P01");value.put("status",p.status);
+        value.put("score",p.score);value.put("quantity",p.quantity);putPrice(value,"entry",p.entry);
+        putPrice(value,"takeProfit",p.takeProfit);putPrice(value,"stopLoss",p.stopLoss);
+        putPrice(value,"lastPrice",p.lastPrice);putPrice(value,"lastBid",p.lastBid);putPrice(value,"lastAsk",p.lastAsk);
+        value.put("createdAt",p.createdAt);value.put("entryTriggeredAt",p.entryTriggeredAt);
+        value.put("finalConfirmedAt",p.finalConfirmedAt);value.put("resultCostPerUnit",p.resultCostPerUnit);
+        value.put("riskAllowancePerUnit",p.riskAllowancePerUnit);value.put("qualityRiskBudget",p.qualityRiskBudget);
+        value.put("theoreticalMaximumLoss",p.theoreticalMaximumLoss);
+        value.put("modeledRiskUsdt",p.theoreticalMaximumLoss);return value;
+    }
+
+    private JSONObject ethActivePlanJson(SignalDecision signal,ObservedSignal observed,
+                                         MarketSnapshot snapshot)throws Exception{
+        JSONObject value=signalJson(signal);value.put("status","ACTIVE");
+        value.put("quantity",signal.quantity);value.put("takeProfit",signal.takeProfit);
+        value.put("stopLoss",signal.stopLoss);value.put("sleeve",observed==null?"P01":observed.sleeve);
+        if(observed!=null){value.put("createdAt",observed.createdAt);
+            value.put("entryTriggeredAt",observed.entryTriggeredAt);
+            value.put("finalConfirmedAt",observed.finalConfirmedAt);}
+        putPrice(value,"lastPrice",snapshot.ethLast);putPrice(value,"lastBid",snapshot.ethBid);
+        putPrice(value,"lastAsk",snapshot.ethAsk);
+        DynamicTradePlan.Result plan=observed==null?null:observed.dynamicTradePlan;
+        value.put("resultCostPerUnit",plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:plan.resultCostPerUnit);
+        value.put("riskAllowancePerUnit",plan==null?DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH:plan.riskAllowancePerUnit);
+        value.put("qualityRiskBudget",plan==null?DynamicTradePlan.DEFAULT_RISK_BUDGET_USDT:plan.qualityRiskBudget);
+        double loss=signal.quantity*(signal.stopDistance+DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH);
+        value.put("theoreticalMaximumLoss",loss);value.put("modeledRiskUsdt",loss);return value;
     }
 
 
@@ -4977,6 +5024,9 @@ public class MarketWatchService extends Service {
         String p01EarlyQualityMode = "";
         long p01EarlyStabilityMs;
         String p01EarlyLastReasonCode = "";
+        String p01EarlyShadowEventType = "";
+        String p01EarlyShadowLastPersistedType = "";
+        long p01EarlyShadowRecordedAt;
         long p01EarlyAgeAtConfirmationMs = -1L;
         double p01EarlyTriggerBid = Double.NaN;
         double p01EarlyTriggerAsk = Double.NaN;
