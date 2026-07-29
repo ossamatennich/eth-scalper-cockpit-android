@@ -1,5 +1,7 @@
 package com.ethscalper.cockpit;
 
+import java.util.Collections;
+
 /**
  * End-to-end, side-effect-free candidate path used by MarketWatchService and integration tests.
  *
@@ -158,6 +160,93 @@ public final class CandidateLifecycle {
         return processAtFill(profile,candidate,currentSnapshot,true,candidateCreatedAt,
                 targetProgressBeforeFill,historicalReplayRiskVeto,adverseExcursion60,
                 sleeve,trendRegime);
+    }
+
+    /** v2.34.3 production overload: selection is unchanged; only final plan construction differs. */
+    public static FillResult processPendingCandidate(
+            MarketProfile profile, SignalDecision candidate, MarketSnapshot currentSnapshot,
+            boolean feedFresh, long candidateCreatedAt, long confirmationAt,
+            double targetProgressBeforeFill, double adverseExcursion60,
+            boolean historicalReplayRiskVeto, String sleeve,
+            TrendRegime60.Result trendRegime,
+            Iterable<MarketRuntime.MarketBar> completedCandles) {
+        if (candidate == null || !candidate.isSignal() || !validPlan(candidate))
+            return FillResult.rejected(INVALID_DATA,null);
+        if (!ContinuationConfirmation.requiresP01(candidate.family))
+            return FillResult.rejected(RANGE_FADE_DIAGNOSTIC_ONLY,null);
+        if (feedFresh && targetReachedBeforeConfirmedFill(candidate,currentSnapshot))
+            return FillResult.rejected(TARGET_BEFORE_FILL,null);
+        long age=Math.max(0L,confirmationAt-candidateCreatedAt);
+        boolean p02=SLEEVE_P02.equals(sleeve);
+        if(age>(p02?P02_MAX_PENDING_AGE_MS:MAX_PENDING_AGE_MS))
+            return FillResult.rejected(p02?P02SleeveFilter.EXPIRED:P01SleeveFilter.AGE_EXPIRED,null);
+        if(p02?age<=P02_MIN_CONFIRMATION_AGE_MS:age<MIN_CONFIRMATION_AGE_MS)
+            return FillResult.rejected(p02?P02SleeveFilter.SILENT_WINDOW:SILENT_CONFIRMATION_WINDOW,null);
+        if(currentSnapshot==null||currentSnapshot.now!=confirmationAt)
+            return FillResult.rejected(FRESH_SNAPSHOT_REQUIRED,null);
+        if(!feedFresh)return FillResult.rejected(profile.staleReasonCode,null);
+        if(!currentlyExecutable(candidate,currentSnapshot))return FillResult.rejected(LIMIT_NOT_EXECUTABLE,null);
+        String revalidation=entryRevalidationCode(profile,candidate,currentSnapshot,currentSnapshot.marketLast);
+        if(!revalidation.isEmpty())return FillResult.rejected(revalidation,null);
+        return confirmAtFillStructural(profile,candidate,currentSnapshot,true,candidateCreatedAt,
+                targetProgressBeforeFill,historicalReplayRiskVeto,adverseExcursion60,sleeve,
+                trendRegime,completedCandles);
+    }
+
+    private static FillResult confirmAtFillStructural(MarketProfile profile,
+            SignalDecision candidate, MarketSnapshot snapshot, boolean feedFresh,
+            long candidateCreatedAt, double targetProgressBeforeFill,
+            boolean historicalReplayRiskVeto, double adverseExcursion60, String sleeve,
+            TrendRegime60.Result trendRegime,
+            Iterable<MarketRuntime.MarketBar> completedCandles) {
+        ContinuationConfirmation.Result confirmation=ContinuationConfirmation.evaluate(profile,
+                candidate.side,snapshot,feedFresh,candidateCreatedAt,targetProgressBeforeFill);
+        if(!confirmation.confirmed)return FillResult.rejected(confirmation.reasonCode,confirmation);
+        long ageMs=Math.max(0L,snapshot.now-candidateCreatedAt);
+        NormalizedSignalMetrics.Result metrics=NormalizedSignalMetrics.calculate(profile,
+                candidate.side,candidate,snapshot,adverseExcursion60);
+        P01SleeveFilter.Result p01=null;P02SleeveFilter.Result p02Filter=null;
+        boolean p02=SLEEVE_P02.equals(sleeve);
+        if(p02){p02Filter=P02SleeveFilter.confirmation(metrics,ageMs);
+            if(!p02Filter.accepted)return FillResult.rejected(p02Filter.reasonCode,confirmation,
+                    null,null,metrics,null,p02Filter,trendRegime,sleeve);
+            if(trendRegime==null||!trendRegime.accepted)return FillResult.rejected(
+                    trendRegime==null?TrendRegime60.INSUFFICIENT:trendRegime.reasonCode,
+                    confirmation,null,null,metrics,null,p02Filter,trendRegime,sleeve);
+        }else{p01=P01SleeveFilter.evaluate(metrics,ageMs);
+            if(!p01.accepted)return FillResult.rejected(p01.reasonCode,confirmation,null,null,
+                    metrics,p01,null,null,sleeve);}
+        boolean premium=confirmation.premium15m;
+        ConfirmedSizing.Result sizing=ConfirmedSizing.computeConfirmedSizingQuantity(candidate,
+                snapshot,confirmation,premium,historicalReplayRiskVeto);
+        StructuralStopPlanner.Result structural=StructuralStopPlanner.calculate(profile,
+                candidate.side,candidate.entry,snapshot.avgRange20,adverseExcursion60,
+                completedCandles==null?Collections.emptyList():completedCandles,snapshot.now);
+        if(!structural.valid)return FillResult.rejected(structural.reasonCode,confirmation,sizing,
+                null,metrics,p01,p02Filter,trendRegime,sleeve);
+        AdaptiveRiskSizing.Evidence evidence=new AdaptiveRiskSizing.Evidence(true,true,premium,
+                sizing.cleanContextBonus,historicalReplayRiskVeto,feedFresh,
+                confirmation.confirmed,true,
+                sizing.cleanContextBonus&&sizing.move1Bonus&&sizing.move3Bonus,
+                sizing.finalQuantity);
+        DynamicTradePlan.Result plan=DynamicTradePlan.calculateStructural(profile,candidate.side,
+                candidate.entry,snapshot.avgRange20,adverseExcursion60,snapshot.recentHigh,
+                snapshot.recentLow,sizing.finalQuantity,structural,evidence);
+        if(!plan.valid)return FillResult.rejected(plan.reasonCode,confirmation,sizing,plan,
+                metrics,p01,p02Filter,trendRegime,sleeve);
+        String mode=p02&&trendRegime!=null?trendRegime.mode:"";
+        String family=p02?"P02_"+mode:candidate.family+" · P01"+(premium?" · P01_PREMIUM_15M":"");
+        String text=p02?"P02 "+mode+" confirmé":premium
+                ?"CONTINUATION confirmée — Qualité premium 15 min":"CONTINUATION confirmée";
+        String reason=p02?"V2343_P02_"+mode+"_STRUCTURAL_PLAN_CONFIRMED"
+                :"V2343_P01_STRUCTURAL_PLAN_CONFIRMED";
+        SignalDecision published=SignalDecision.confirmed(profile,candidate.side,family,reason,text,
+                candidate.score,plan.finalQuantity,candidate.entry,plan.takeProfit,plan.stopLoss,
+                plan.roundedTargetDistance,plan.roundedStopDistance,candidate.impulse,
+                candidate.resetConfirmed,candidate.movementOrigin,candidate.movementExtreme,
+                candidate.movementDistance);
+        return new FillResult(true,reason,published,premium,confirmation,sizing,plan,metrics,p01,
+                p02Filter,trendRegime,sleeve,null);
     }
 
     public static FillResult confirmAtFill(SignalDecision candidate, MarketSnapshot snapshot,

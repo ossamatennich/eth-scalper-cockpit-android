@@ -51,6 +51,18 @@ public final class ActivePlanState {
     public final double riskAllowancePerUnit;
     public final double qualityRiskBudget;
     public final double theoreticalMaximumLoss;
+    public final double volatilityA;
+    public final double adverseExcursion;
+    public final double baseStop;
+    public final double structuralAnchor;
+    public final int structuralWindowMinutes;
+    public final double structuralBuffer;
+    public final String stopCalculationType;
+    public final String stopReasonCode;
+    public final String selectedBudgetReason;
+    public final double riskPerUnit;
+    public final int riskQuantity;
+    public final int qualityCap;
 
     private ActivePlanState(Builder b) {
         formatVersion = b.formatVersion;
@@ -97,6 +109,11 @@ public final class ActivePlanState {
         riskAllowancePerUnit = b.riskAllowancePerUnit;
         qualityRiskBudget = b.qualityRiskBudget;
         theoreticalMaximumLoss = b.theoreticalMaximumLoss;
+        volatilityA=b.volatilityA;adverseExcursion=b.adverseExcursion;baseStop=b.baseStop;
+        structuralAnchor=b.structuralAnchor;structuralWindowMinutes=b.structuralWindowMinutes;
+        structuralBuffer=b.structuralBuffer;stopCalculationType=text(b.stopCalculationType);
+        stopReasonCode=text(b.stopReasonCode);selectedBudgetReason=text(b.selectedBudgetReason);
+        riskPerUnit=b.riskPerUnit;riskQuantity=b.riskQuantity;qualityCap=b.qualityCap;
     }
 
     public static Builder builder() {
@@ -160,6 +177,13 @@ public final class ActivePlanState {
         put(out, "riskAllowancePerUnit", riskAllowancePerUnit);
         put(out, "qualityRiskBudget", qualityRiskBudget);
         put(out, "theoreticalMaximumLoss", theoreticalMaximumLoss);
+        put(out,"volatilityA",volatilityA);put(out,"adverseExcursion",adverseExcursion);
+        put(out,"baseStop",baseStop);put(out,"structuralAnchor",structuralAnchor);
+        put(out,"structuralWindowMinutes",structuralWindowMinutes);
+        put(out,"structuralBuffer",structuralBuffer);put(out,"stopCalculationType",stopCalculationType);
+        put(out,"stopReasonCode",stopReasonCode);put(out,"selectedBudgetReason",selectedBudgetReason);
+        put(out,"riskPerUnit",riskPerUnit);put(out,"riskQuantity",riskQuantity);
+        put(out,"qualityCap",qualityCap);
         return out;
     }
 
@@ -196,7 +220,19 @@ public final class ActivePlanState {
                     .unitRisk(optionalDecimal(values, "resultCostPerUnit", 0.0),
                             optionalDecimal(values, "riskAllowancePerUnit", 0.0),
                             optionalDecimal(values, "qualityRiskBudget", 0.0),
-                            optionalDecimal(values, "theoreticalMaximumLoss", 0.0));
+                            optionalDecimal(values, "theoreticalMaximumLoss", 0.0))
+                    .structural(optionalDecimal(values,"volatilityA",Double.NaN),
+                            optionalDecimal(values,"adverseExcursion",Double.NaN),
+                            optionalDecimal(values,"baseStop",Double.NaN),
+                            optionalDecimal(values,"structuralAnchor",Double.NaN),
+                            optionalInteger(values,"structuralWindowMinutes",0),
+                            optionalDecimal(values,"structuralBuffer",Double.NaN),
+                            optional(values,"stopCalculationType",""),
+                            optional(values,"stopReasonCode",""),
+                            optional(values,"selectedBudgetReason",""),
+                            optionalDecimal(values,"riskPerUnit",Double.NaN),
+                            optionalInteger(values,"riskQuantity",0),
+                            optionalInteger(values,"qualityCap",0));
             ActivePlanState state = b.build();
             return state.isValid() ? state : null;
         } catch (RuntimeException ignored) {
@@ -214,6 +250,9 @@ public final class ActivePlanState {
     }
     private static double optionalDecimal(Map<String,String> map,String key,double fallback) {
         String value=map.get(key); return value==null?fallback:Double.parseDouble(value);
+    }
+    private static int optionalInteger(Map<String,String> map,String key,int fallback) {
+        String value=map.get(key); return value==null?fallback:Integer.parseInt(value);
     }
 
     private static int integer(Map<String, String> map, String key) { return Integer.parseInt(value(map, key)); }
@@ -247,6 +286,10 @@ public final class ActivePlanState {
         private double p01Flow30Aligned = Double.NaN;
         private double resultCostPerUnit, riskAllowancePerUnit, qualityRiskBudget;
         private double theoreticalMaximumLoss;
+        private double volatilityA=Double.NaN,adverseExcursion=Double.NaN,baseStop=Double.NaN;
+        private double structuralAnchor=Double.NaN,structuralBuffer=Double.NaN,riskPerUnit=Double.NaN;
+        private int structuralWindowMinutes,riskQuantity,qualityCap;
+        private String stopCalculationType="",stopReasonCode="",selectedBudgetReason="";
 
         public Builder formatVersion(int v) { formatVersion=v; return this; }
         public Builder market(MarketProfile profile) { symbol=profile.symbol;asset=profile.asset;profileVersion=profile.profileVersion;return this; }
@@ -270,6 +313,14 @@ public final class ActivePlanState {
         public Builder p01(double move1, double move3, double move8, double move15, double flow30) { p01Move1Aligned=move1; p01Move3Aligned=move3; p01Move8Aligned=move8; p01Move15Aligned=move15; p01Flow30Aligned=flow30; return this; }
         public Builder sizingDiagnostic(String v) { sizingDiagnostic=v; return this; }
         public Builder unitRisk(double cost,double allowance,double budget,double loss) { resultCostPerUnit=cost;riskAllowancePerUnit=allowance;qualityRiskBudget=budget;theoreticalMaximumLoss=loss;return this; }
+        public Builder structural(double a,double adverse,double base,double anchor,int window,
+                                  double buffer,String type,String stopReason,String budgetReason,
+                                  double perUnit,int riskQty,int cap) {
+            volatilityA=a;adverseExcursion=adverse;baseStop=base;structuralAnchor=anchor;
+            structuralWindowMinutes=window;structuralBuffer=buffer;stopCalculationType=type;
+            stopReasonCode=stopReason;selectedBudgetReason=budgetReason;riskPerUnit=perUnit;
+            riskQuantity=riskQty;qualityCap=cap;return this;
+        }
         public ActivePlanState build() { return new ActivePlanState(this); }
     }
 }

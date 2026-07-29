@@ -91,7 +91,7 @@ public final class MarketProfile {
 
     public static MarketProfile eth() {
         return builder(ETH_SYMBOL, "ETH", "ETH_V23321")
-                .referencePrice(1900.00).priceTick(.01).quantity(1, 3, 7)
+                .referencePrice(1900.00).priceTick(.01).quantity(1, 1, 7)
                 .researchCandidate(true).adaptivePriceScale(false)
                 .detection(.35, .75, .55)
                 .stops(.55, 2.50).targets(2.80, 5.50).p02Seed(2.80, 1.35)

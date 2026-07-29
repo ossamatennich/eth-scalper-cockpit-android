@@ -572,7 +572,7 @@ public class MarketWatchService extends Service {
         if (item == null || item.signal == null || snapshot == null) return false;
         try {
             Object sizing = confirmedSizingJson(item);
-            ActivePlanState state = ActivePlanState.builder()
+            ActivePlanState.Builder builder = ActivePlanState.builder()
                     .status("ACTIVE")
                     .side(item.signal.side).family(item.signal.family)
                     .reasonCode(item.signal.reasonCode).reasonText(item.signal.reasonText)
@@ -591,8 +591,15 @@ public class MarketWatchService extends Service {
                     .replayRisk(item.replayRiskReasonCode, item.replayRiskDetail)
                     .p01(item.p01Move1Aligned, item.p01Move3Aligned, item.p01Move8Aligned,
                             item.p01Move15Aligned, item.p01Flow30Aligned)
-                    .sizingDiagnostic(sizing == null ? "" : sizing.toString())
-                    .build();
+                    .sizingDiagnostic(sizing == null ? "" : sizing.toString());
+            if(item.dynamicTradePlan!=null){DynamicTradePlan.Result p=item.dynamicTradePlan;
+                builder.unitRisk(p.resultCostPerUnit,p.riskAllowancePerUnit,p.qualityRiskBudget,
+                        p.theoreticalMaximumLoss)
+                        .structural(p.a,p.adverseExcursion60,p.baseStop,p.structuralAnchor,
+                                p.structuralWindowMinutes,p.structuralBuffer,
+                                p.stopCalculationType,p.stopReasonCode,p.selectedBudgetReason,
+                                p.riskPerUnit,p.riskQuantity,p.qualityCap);}
+            ActivePlanState state=builder.build();
             return activePlanPersistence.saveForMarket(state);
         } catch (Exception ignored) {
             return false;
@@ -1235,6 +1242,15 @@ public class MarketWatchService extends Service {
         out.put("resultCostPerUnit",plan.resultCostPerUnit);
         out.put("riskAllowancePerUnit",plan.riskAllowancePerUnit);
         out.put("theoreticalMaximumLoss",plan.theoreticalMaximumLoss);
+        out.put("volatilityA",plan.volatilityA);out.put("adverseExcursion",plan.adverseExcursion);
+        out.put("baseStop",plan.baseStop);out.put("structuralAnchor",plan.structuralAnchor);
+        out.put("structuralWindowMinutes",plan.structuralWindowMinutes);
+        out.put("structuralBuffer",plan.structuralBuffer);
+        out.put("stopCalculationType",plan.stopCalculationType);
+        out.put("stopReasonCode",plan.stopReasonCode);
+        out.put("selectedBudgetReason",plan.selectedBudgetReason);
+        out.put("riskPerUnit",plan.riskPerUnit);out.put("riskQuantity",plan.riskQuantity);
+        out.put("qualityCap",plan.qualityCap);
         out.put("notificationId",plan.notificationId);return out;
     }
 
@@ -2563,10 +2579,19 @@ public class MarketWatchService extends Service {
                 ? trendRegime60(item, snapshot, now) : null;
         if (trendRegime != null) item.trendRegime60 = trendRegime;
         CandidateLifecycle.FillResult fill = CandidateLifecycle.processPendingCandidate(
-                candidate, snapshot, feedFresh, item.createdAt, now,
+                MarketProfile.eth(), candidate, snapshot, feedFresh, item.createdAt, now,
                 pendingProgressBeforeFill(item), item.adverseExcursion60,
-                !item.replayRiskReasonCode.isEmpty(), item.sleeve, trendRegime);
+                !item.replayRiskReasonCode.isEmpty(), item.sleeve, trendRegime,
+                structuralEthBars(now));
         return applyCandidateFillResult(item, candidate, snapshot, now, fill);
+    }
+
+    private List<MarketRuntime.MarketBar> structuralEthBars(long confirmationAt) {
+        List<MarketRuntime.MarketBar> out=new ArrayList<>();
+        for(Candle candle:ethCandles)if(candle.openTime+60_000L<=confirmationAt)
+            out.add(new MarketRuntime.MarketBar(candle.openTime,candle.open,candle.high,
+                    candle.low,candle.close,candle.volume));
+        return out;
     }
 
     private boolean processEarlyP01Candidate(ObservedSignal item, long now) {
@@ -3232,7 +3257,7 @@ public class MarketWatchService extends Service {
     private static Object dynamicTradePlanJson(DynamicTradePlan.Result plan) throws Exception {
         if (plan == null) return JSONObject.NULL;
         JSONObject o = new JSONObject();
-        o.put("policy", "TIMELY_P01_QUANTITY_UPLIFT_V2332");
+        o.put("policy", "STRUCTURAL_STOP_ADAPTIVE_RISK_V2343");
         o.put("valid", plan.valid);
         o.put("reasonCode", plan.reasonCode);
         putMetric(o, "A", plan.a);
@@ -3240,6 +3265,15 @@ public class MarketWatchService extends Service {
         putMetric(o, "R", plan.structuralRoom);
         putMetric(o, "slRequired", plan.stopRequired);
         putMetric(o, "slMaximum", plan.stopMaximum);
+        putMetric(o,"baseStop",plan.baseStop);putMetric(o,"structuralAnchor",plan.structuralAnchor);
+        o.put("structuralWindowMinutes",plan.structuralWindowMinutes);
+        putMetric(o,"structuralBuffer",plan.structuralBuffer);
+        putMetric(o,"structureDistance",plan.structureDistance);
+        putMetric(o,"structuralStop",plan.structuralStop);
+        putMetric(o,"sanityEnvelope",plan.sanityEnvelope);
+        o.put("stopCalculationType",plan.stopCalculationType);
+        o.put("stopReasonCode",plan.stopReasonCode);
+        o.put("selectedBudgetReason",plan.selectedBudgetReason);
         putMetric(o, "tpFloor", plan.targetFloor);
         putMetric(o, "tpRaw", plan.targetRaw);
         putMetric(o, "tpDistance", plan.targetDistance);
@@ -3256,6 +3290,7 @@ public class MarketWatchService extends Service {
         putMetric(o, "riskAllowance", plan.riskExecutionAllowancePerEth);
         putMetric(o, "riskBudgetUsdt", plan.riskBudgetUsdt);
         putMetric(o, "riskPerEth", plan.riskPerEth);
+        putMetric(o,"riskPerUnit",plan.riskPerUnit);
         o.put("riskQuantity", plan.riskQuantity);
         o.put("qualityCap", plan.qualityCap);
         o.put("finalQuantity", plan.finalQuantity);

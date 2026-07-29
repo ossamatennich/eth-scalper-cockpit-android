@@ -128,7 +128,7 @@ public final class MarketPlanOrchestrator {
                         trendDetails(trend));
                 result=CandidateLifecycle.processPendingCandidate(runtime.profile,c.signal,
                         snapshot,true,c.createdAt,now,progress(c),c.adverse,
-                        c.historicalReplayRiskVeto,c.sleeve,trend);
+                        c.historicalReplayRiskVeto,c.sleeve,trend,runtime.candles);
             }
             if(result.confirmed) {
                 iterator.remove();
@@ -245,12 +245,19 @@ public final class MarketPlanOrchestrator {
                 .lastP01ConfirmedAt(r.lastP01ConfirmedAt).movement(d.impulse,d.resetConfirmed,d.movementOrigin,
                         d.movementExtreme,d.movementDistance)
                 .unitRisk(p.resultCostPerUnit,p.riskAllowancePerUnit,p.qualityRiskBudget,
-                        p.theoreticalMaximumLoss).sizingDiagnostic(sizing(p)).build();
+                        p.theoreticalMaximumLoss)
+                .structural(p.a,p.adverseExcursion60,p.baseStop,p.structuralAnchor,
+                        p.structuralWindowMinutes,p.structuralBuffer,p.stopCalculationType,
+                        p.stopReasonCode,p.selectedBudgetReason,p.riskPerUnit,p.riskQuantity,
+                        p.qualityCap).sizingDiagnostic(sizing(p)).build();
     }
 
     private static String sizing(DynamicTradePlan.Result p){return String.format(Locale.US,
-            "costPerUnit=%.4f|allowancePerUnit=%.4f|budget=%.2f|riskPerUnit=%.4f|quantity=%d|loss=%.4f",
-            p.resultCostPerUnit,p.riskAllowancePerUnit,p.qualityRiskBudget,p.riskPerUnit,p.finalQuantity,p.theoreticalMaximumLoss);}
+            "costPerUnit=%.4f|allowancePerUnit=%.4f|budget=%.2f|budgetReason=%s|riskPerUnit=%.4f|riskQuantity=%d|qualityCap=%d|quantity=%d|loss=%.4f|A=%.4f|E=%.4f|baseStop=%.4f|anchor=%.4f|window=%d|buffer=%.4f|stop=%.4f|stopType=%s",
+            p.resultCostPerUnit,p.riskAllowancePerUnit,p.qualityRiskBudget,p.selectedBudgetReason,
+            p.riskPerUnit,p.riskQuantity,p.qualityCap,p.finalQuantity,p.theoreticalMaximumLoss,
+            p.a,p.adverseExcursion60,p.baseStop,p.structuralAnchor,p.structuralWindowMinutes,
+            p.structuralBuffer,p.roundedStopDistance,p.stopCalculationType);}
     private static double progress(RuntimeCandidate c){return c.signal.targetMove>0?c.favorable/c.signal.targetMove:0;}
     public static String signature(SignalDecision d,long now){return d.symbol+"|"+d.side+"|"+d.family+"|"+d.entry+"|"+d.takeProfit+"|"+d.stopLoss+"|"+(now/60_000L);}
 
@@ -265,7 +272,13 @@ public final class MarketPlanOrchestrator {
         out.put("riskBudgetUsdt",p.qualityRiskBudget);out.put("resultCostPerUnit",p.resultCostPerUnit);
         out.put("riskAllowancePerUnit",p.riskAllowancePerUnit);
         out.put("theoreticalMaximumLoss",p.theoreticalMaximumLoss);out.put("quantity",p.finalQuantity);
-        out.put("tp",p.takeProfit);out.put("sl",p.stopLoss);return out;
+        out.put("tp",p.takeProfit);out.put("sl",p.stopLoss);out.put("baseStop",p.baseStop);
+        out.put("structuralAnchor",p.structuralAnchor);out.put("structuralWindowMinutes",p.structuralWindowMinutes);
+        out.put("structuralBuffer",p.structuralBuffer);out.put("structuralStop",p.structuralStop);
+        out.put("requiredStop",p.stopRequired);out.put("sanityEnvelope",p.sanityEnvelope);
+        out.put("stopCalculationType",p.stopCalculationType);out.put("stopReasonCode",p.stopReasonCode);
+        out.put("selectedBudgetReason",p.selectedBudgetReason);out.put("riskPerUnit",p.riskPerUnit);
+        out.put("riskQuantity",p.riskQuantity);out.put("qualityCap",p.qualityCap);return out;
     }
     private static void record(MarketRuntime runtime,MarketSnapshot snapshot,ActivePlanState plan,
             SignalDecision signal,long now,String type,String code,String text,String classification,

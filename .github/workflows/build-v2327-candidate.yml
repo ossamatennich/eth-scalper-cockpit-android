@@ -1,4 +1,4 @@
-name: NMC v2.34.2.0 validated engine recovery and professional plans UX
+name: NMC v2.34.3.0 structural stops and adaptive risk sizing
 
 on:
   push:
@@ -41,5 +41,5 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NMC-v2.34.2.0-debug-apk
+          name: NMC-v2.34.3.0-debug-apk
           path: app/build/outputs/apk/debug/*.apk

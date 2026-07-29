@@ -19,7 +19,7 @@ public final class ActivePlanCardView extends LinearLayout {
     private static final int TEXT=Color.rgb(237,244,251),MUTED=Color.rgb(137,155,177);
     private static final int CYAN=Color.rgb(67,224,193),AMBER=Color.rgb(255,169,64);
     private static final int RED=Color.rgb(255,78,112),CARD=Color.rgb(14,23,36);
-    private final TextView title,state,levels,market,progress,results,risk,execution,warning;
+    private final TextView title,state,levels,market,progress,results,stopWhy,sizingWhy,risk,execution,warning;
     private PlanUiModel model;
 
     public ActivePlanCardView(Context context){super(context);setOrientation(VERTICAL);
@@ -30,6 +30,8 @@ public final class ActivePlanCardView extends LinearLayout {
         market=text("",13,MUTED,false,true);market.setPadding(0,dp(8),0,0);addView(market);
         progress=text("",13,TEXT,false,true);progress.setPadding(0,dp(8),0,0);addView(progress);
         results=text("",13,TEXT,false,true);results.setPadding(0,dp(8),0,0);addView(results);
+        stopWhy=text("",13,TEXT,false,true);stopWhy.setPadding(0,dp(10),0,0);addView(stopWhy);
+        sizingWhy=text("",13,AMBER,false,true);sizingWhy.setPadding(0,dp(8),0,0);addView(sizingWhy);
         risk=text("",13,AMBER,false,true);risk.setPadding(0,dp(8),0,0);addView(risk);
         execution=text("",13,CYAN,false,true);execution.setPadding(0,dp(8),0,0);addView(execution);
         warning=text("",12,RED,true,false);warning.setPadding(0,dp(8),0,0);addView(warning);
@@ -48,6 +50,8 @@ public final class ActivePlanCardView extends LinearLayout {
         if(!value.complete()){
             changed(progress,"Progression : DONNÉE INDISPONIBLE");
             changed(results,"Résultats : DONNÉE INDISPONIBLE");
+            changed(stopWhy,"POURQUOI CE STOP ?\nDONNÉE INDISPONIBLE");
+            changed(sizingWhy,"SIZING\nDONNÉE INDISPONIBLE");
             changed(risk,"Risque : DONNÉE INDISPONIBLE");
             changed(execution,"Exécution LIMIT : DONNÉE INDISPONIBLE");
             changed(warning,PlanUiModel.DATA_INCOMPLETE+" · DONNÉE INDISPONIBLE");return;
@@ -58,6 +62,25 @@ public final class ActivePlanCardView extends LinearLayout {
         changed(results,String.format(Locale.FRANCE,
                 "Gain brut %.2f · net estimé %.2f\nPerte brute %.2f · nette estimée %.2f · frais %.2f USDT",
                 m.grossProfit,m.netProfit,m.grossLoss,m.netLoss,m.estimatedFees));
+        double finalStopDistance=Math.abs(value.entry-value.stopLoss);
+        boolean stopData=positive(value.volatilityA)&&positive(value.baseStop)
+                &&positive(finalStopDistance)
+                &&!value.stopCalculationType.isEmpty();
+        changed(stopWhy,stopData?String.format(Locale.FRANCE,
+                "POURQUOI CE STOP ?\nA %.2f · E %s · base %.2f · anchor %s · fenêtre %s · buffer %s\nSL final %.2f · %s",
+                value.volatilityA,number(value.adverseExcursion),value.baseStop,
+                number(value.structuralAnchor),value.structuralWindowMinutes>0
+                        ?value.structuralWindowMinutes+" min":"DONNÉE INDISPONIBLE",
+                number(value.structuralBuffer),finalStopDistance,value.stopCalculationType)
+                :"POURQUOI CE STOP ?\nDONNÉE INDISPONIBLE");
+        boolean sizingData=positive(value.riskBudgetUsdt)&&positive(value.riskPerUnit)
+                &&value.riskQuantity>0&&value.qualityCap>0&&!value.selectedBudgetReason.isEmpty();
+        changed(sizingWhy,sizingData?String.format(Locale.FRANCE,
+                "SIZING\nBudget %.2f · %s\nRisque/unité %.2f · quantité risque %d · plafond qualité %d · finale %d\nPerte brute %.2f · frais %.2f · perte nette %.2f · réserve %.2f · risque max %.2f USDT",
+                value.riskBudgetUsdt,value.selectedBudgetReason,value.riskPerUnit,
+                value.riskQuantity,value.qualityCap,value.quantity,m.grossLoss,m.estimatedFees,
+                m.netLoss,value.riskPerUnit-finalStopDistance,m.theoreticalMaximumLoss)
+                :"SIZING\nDONNÉE INDISPONIBLE");
         changed(risk,String.format(Locale.FRANCE,
                 "Perte maximale modélisée %.2f / budget %.2f USDT · R/R brut %.2f",
                 m.theoreticalMaximumLoss,value.riskBudgetUsdt,m.rewardRisk));
@@ -79,6 +102,8 @@ public final class ActivePlanCardView extends LinearLayout {
     private static String integer(int v){return v>=0?String.valueOf(v):"DONNÉE INDISPONIBLE";}
     private static String available(String v){return v==null||v.isEmpty()?"DONNÉE INDISPONIBLE":v;}
     private static String duration(long ms){if(ms<0)return "DONNÉE INDISPONIBLE";long s=ms/1000;return s<60?s+" s":(s/60)+" min "+(s%60)+" s";}
+    private static boolean positive(double value){return Double.isFinite(value)&&value>0;}
+    private static String number(double value){return positive(value)?String.format(Locale.FRANCE,"%.2f",value):"DONNÉE INDISPONIBLE";}
     private TextView text(String value,int size,int color,boolean bold,boolean mono){TextView out=new TextView(getContext());out.setText(value);out.setTextSize(size);out.setTextColor(color);out.setTypeface(mono?Typeface.MONOSPACE:Typeface.DEFAULT,bold?Typeface.BOLD:Typeface.NORMAL);out.setLineSpacing(dp(2),1);return out;}
     private GradientDrawable background(){GradientDrawable d=new GradientDrawable();d.setColor(CARD);d.setCornerRadius(dp(16));d.setStroke(dp(1),Color.rgb(38,57,78));return d;}
     private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}

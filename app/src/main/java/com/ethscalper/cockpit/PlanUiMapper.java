@@ -21,7 +21,13 @@ public final class PlanUiMapper {
                 number(plan,"stopLoss","sl"),last,bid,ask,
                 number(plan,"resultCostPerUnit"),number(plan,"riskAllowancePerUnit"),
                 number(plan,"qualityRiskBudget","riskBudgetUsdt"),
-                plan.optLong("finalConfirmedAt",plan.optLong("confirmedAt",-1)),now,feedAgeMs);
+                plan.optLong("finalConfirmedAt",plan.optLong("confirmedAt",-1)),now,feedAgeMs,
+                number(plan,"volatilityA"),number(plan,"adverseExcursion"),
+                number(plan,"baseStop"),number(plan,"structuralAnchor"),
+                plan.optInt("structuralWindowMinutes",0),number(plan,"structuralBuffer"),
+                plan.optString("stopCalculationType",""),plan.optString("stopReasonCode",""),
+                plan.optString("selectedBudgetReason",""),number(plan,"riskPerUnit"),
+                plan.optInt("riskQuantity",0),plan.optInt("qualityCap",0));
     }
     private static int quantity(JSONObject o){return o.has("quantity")?o.optInt("quantity",-1):o.optInt("qty",-1);}
     private static double number(JSONObject o,String... keys){for(String key:keys)if(o.has(key)){
