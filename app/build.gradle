@@ -1,5 +1,11 @@
 plugins { id 'com.android.application' }
 
+def stableStoreFile = System.getenv('NMC_SIGNING_STORE_FILE')
+def stableStorePassword = System.getenv('NMC_SIGNING_STORE_PASSWORD')
+def stableKeyAlias = System.getenv('NMC_SIGNING_KEY_ALIAS')
+def stableKeyPassword = System.getenv('NMC_SIGNING_KEY_PASSWORD')
+def stableSigningAvailable = stableStoreFile && stableStorePassword && stableKeyAlias && stableKeyPassword
+
 android {
     namespace 'com.ethscalper.cockpit'
     compileSdk 35
@@ -9,8 +15,20 @@ android {
         applicationId 'com.ethscalper.cockpit'
         minSdk 26
         targetSdk 35
-        versionCode 23434
-        versionName '2.34.3.4'
+        versionCode 23435
+        versionName '2.34.3.5'
+        manifestPlaceholders = [appLabel: 'NMC']
+    }
+
+    signingConfigs {
+        nmcStable {
+            if (stableSigningAvailable) {
+                storeFile file(stableStoreFile)
+                storePassword stableStorePassword
+                keyAlias stableKeyAlias
+                keyPassword stableKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -20,6 +38,13 @@ android {
         }
         debug {
             applicationIdSuffix '.debug'
+        }
+        stable {
+            initWith debug
+            applicationIdSuffix '.stable'
+            manifestPlaceholders = [appLabel: 'NMC Stable']
+            signingConfig stableSigningAvailable ? signingConfigs.nmcStable : signingConfigs.debug
+            matchingFallbacks = ['debug']
         }
     }
 

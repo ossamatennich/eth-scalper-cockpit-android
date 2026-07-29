@@ -22,7 +22,7 @@ public class NmcRuntimeOptimizationTest {
     @Test public void brandingIsNativeOnlyAndRegistryDriven()throws Exception{
         String activity=source("src/main/java/com/ethscalper/cockpit/MainActivity.java");
         String manifest=source("src/main/AndroidManifest.xml");
-        assertTrue(manifest.contains("android:label=\"NMC\""));
+        assertTrue(manifest.contains("android:label=\"${appLabel}\""));
         assertTrue(activity.contains("Native Market Cockpit"));assertTrue(activity.contains("Multi-Market Research Engine"));
         assertTrue(activity.contains("MarketUiCatalog.cards(MarketRegistry.production())"));
         assertTrue(activity.contains("WindowInsetsCompat.Type.systemBars()"));assertTrue(activity.contains("WindowInsetsCompat.Type.displayCutout()"));

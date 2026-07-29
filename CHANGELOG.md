@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.3.5 — livraison Android stable
+
+- nouvelle APK `NMC Stable` installable sans conflit avec les anciennes APK debug ;
+- signature Android durable injectée par les secrets GitHub Actions et vérifiée en CI ;
+- package stable indépendant `com.ethscalper.cockpit.stable` pour la migration initiale ;
+- conservation intégrale du démarrage réseau non bloquant de la v2.34.3.4 ;
+- aucune modification des règles de marché, des plans ou du mode `RESEARCH_ONLY`.
+
 ## 2.34.3.4 — flux indépendant du stockage diagnostic
 
 - connexion Binance Futures et préchargement REST lancés avant toute publication diagnostic ;

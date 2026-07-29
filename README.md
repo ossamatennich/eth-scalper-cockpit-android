@@ -2,7 +2,7 @@
 
 Application Android de recherche qui analyse en continu **ETHUSDT** et **SOLUSDT**. **BTCUSDT** sert uniquement de contexte partagé.
 
-La version courante est **2.34.3.4** (`versionCode 23434`). L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
+La version courante est **2.34.3.5** (`versionCode 23435`). L’APK recommandée est l’édition **NMC Stable**, signée durablement afin que les mises à jour Android remplacent réellement la version précédente. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
 
 ## Principes essentiels
 

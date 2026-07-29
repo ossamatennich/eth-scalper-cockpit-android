@@ -1,8 +1,8 @@
-name: NMC v2.34.3.4 CI
+name: NMC v2.34.3.5 Stable CI
 
 on:
   push:
-    branches: [main, agent/fix-recorder-blocking-feed-start]
+    branches: [main, agent/stable-signed-android-delivery]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -13,6 +13,10 @@ permissions:
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+    env:
+      NMC_SIGNING_STORE_PASSWORD: ${{ secrets.NMC_SIGNING_STORE_PASSWORD }}
+      NMC_SIGNING_KEY_ALIAS: ${{ secrets.NMC_SIGNING_KEY_ALIAS }}
+      NMC_SIGNING_KEY_PASSWORD: ${{ secrets.NMC_SIGNING_KEY_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,21 +33,34 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.10.2
+      - name: Prepare durable NMC signing key
+        shell: bash
+        env:
+          NMC_SIGNING_STORE_BASE64: ${{ secrets.NMC_SIGNING_STORE_BASE64 }}
+        run: |
+          test -n "$NMC_SIGNING_STORE_BASE64"
+          printf '%s' "$NMC_SIGNING_STORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nmc-stable-v1.jks"
+          echo "NMC_SIGNING_STORE_FILE=$RUNNER_TEMP/nmc-stable-v1.jks" >> "$GITHUB_ENV"
       - name: Debug unit tests
         run: gradle testDebugUnitTest --rerun-tasks
       - name: All unit tests
         run: gradle test --rerun-tasks
       - name: SOL profile validator tests
         run: python3 -m unittest tools/test_validate_sol_profile.py
-      - name: Build debug APK
-        run: gradle assembleDebug
+      - name: Build stable APK
+        run: gradle assembleStable
       - name: Build release APK
         run: gradle assembleRelease
       - name: Release lint
         run: gradle lintRelease
+      - name: Verify stable APK identity and signature
+        shell: bash
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/stable/app-stable.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/stable/app-stable.apk | head -n 3
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NMC-v2.34.3.4-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: NMC-v2.34.3.5-stable-apk
+          path: app/build/outputs/apk/stable/app-stable.apk
           if-no-files-found: error
