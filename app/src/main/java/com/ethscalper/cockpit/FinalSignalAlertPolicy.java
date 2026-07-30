@@ -10,6 +10,13 @@ public final class FinalSignalAlertPolicy {
 
     public static boolean shouldWriteBusinessDedupe(boolean testAlert,
                                                      boolean notificationPostedSuccessfully) {
-        return !testAlert && notificationPostedSuccessfully;
+        return shouldWriteBusinessDedupe(testAlert,notificationPostedSuccessfully,true);
+    }
+
+    /** A posted notification is not an audible delivery when Android reports a broken channel. */
+    public static boolean shouldWriteBusinessDedupe(boolean testAlert,
+                                                     boolean notificationPostedSuccessfully,
+                                                     boolean audibleChannelReady) {
+        return !testAlert && notificationPostedSuccessfully && audibleChannelReady;
     }
 }

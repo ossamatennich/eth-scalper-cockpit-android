@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.34.3.8 — diagnostic complet et alerte finale vérifiée
+
+- index recorder, événements récents, plans actifs et santé du canal conservés dans le statut de secours ;
+- erreurs des sections de recherche isolées sans faire tomber tout le statut Android ;
+- détails techniques affichant explicitement le mode complet ou de secours et sa cause ;
+- nouveau canal sonore `nmc_final_signal_loud_v2`, sans héritage des réglages persistants du canal v1 ;
+- une notification n’est plus marquée comme alertée si Android signale un canal désactivé, faible ou sans son ;
+- trois nouvelles tentatives bornées d’alerte pour un nouveau plan lorsque le canal devient disponible ;
+- restaurations, TP et SL toujours silencieux ; aucune règle de marché modifiée.
+
 ## 2.34.3.7 — flux découplé du statut et des diagnostics
 
 - Binance Futures public reste la source principale et prioritaire ;
