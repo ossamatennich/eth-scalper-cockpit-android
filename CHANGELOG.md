@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.3.6 — démarrage automatique des flux
+
+- démarrage du service avant les dialogues de permission Android ;
+- reprise automatique bornée tant qu’aucun feed complet et frais n’est disponible ;
+- nouvelle tentative après la réponse à la permission de notification et au retour dans l’application ;
+- récupération REST publique immédiate au démarrage, sans attendre le premier contrôle de santé ;
+- le bouton de réinitialisation diagnostic n’est plus nécessaire pour amorcer les flux ;
+- aucune modification de la logique des signaux ou des plans.
+
 ## 2.34.3.5 — livraison Android stable
 
 - nouvelle APK `NMC Stable` installable sans conflit avec les anciennes APK debug ;
