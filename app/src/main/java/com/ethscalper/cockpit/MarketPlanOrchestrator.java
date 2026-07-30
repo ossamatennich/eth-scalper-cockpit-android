@@ -301,9 +301,9 @@ public final class MarketPlanOrchestrator {
             double adverse,Map<String,Object> details){
         if(signal==null&&plan!=null)signal=plan.toSignalDecision();
         LinkedHashMap<String,Object> merged=new LinkedHashMap<>();if(details!=null)merged.putAll(details);
-        if(snapshot!=null){merged.put("recentLow",snapshot.recentLow);
-            merged.put("recentHigh",snapshot.recentHigh);merged.put("entry",
-                    signal==null?Double.NaN:signal.entry);}
+        if(snapshot!=null){if(Double.isFinite(snapshot.recentLow))merged.put("recentLow",snapshot.recentLow);
+            if(Double.isFinite(snapshot.recentHigh))merged.put("recentHigh",snapshot.recentHigh);
+            if(signal!=null&&Double.isFinite(signal.entry))merged.put("entry",signal.entry);}
         if(plan!=null){merged.put("quantity",plan.quantity);merged.put("entry",plan.entry);
             merged.put("tp",plan.takeProfit);merged.put("sl",plan.stopLoss);
             merged.put("riskBudgetUsdt",plan.qualityRiskBudget);

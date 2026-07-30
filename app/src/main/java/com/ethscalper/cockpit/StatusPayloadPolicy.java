@@ -2,7 +2,6 @@ package com.ethscalper.cockpit;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -67,21 +66,10 @@ public final class StatusPayloadPolicy {
         return out;
     }
 
-    public static int sizeBytes(JSONObject state){return state.toString()
-            .getBytes(StandardCharsets.UTF_8).length;}
-    public static int sizeBytes(Map<String,Object> state){return jsonValue(state)
-            .getBytes(StandardCharsets.UTF_8).length;}
+    public static int sizeBytes(JSONObject state){try{return SafeJsonNormalizer.sizeBytes(state);}
+        catch(Exception error){throw new IllegalArgumentException("invalid status JSON",error);}}
+    public static int sizeBytes(Map<String,Object> state){try{return SafeJsonNormalizer.sizeBytes(state);}
+        catch(Exception error){throw new IllegalArgumentException("invalid status map",error);}}
     private static long eventAt(Map<String,Object> value){Object at=value.get("eventAt");
         return at instanceof Number?((Number)at).longValue():0;}
-    private static String jsonValue(Object value){if(value==null)return"null";
-        if(value instanceof Number||value instanceof Boolean)return String.valueOf(value);
-        if(value instanceof Map){StringBuilder out=new StringBuilder("{");boolean first=true;
-            for(Object entryObject:((Map<?,?>)value).entrySet()){Map.Entry<?,?> entry=(Map.Entry<?,?>)entryObject;
-                if(!first)out.append(',');first=false;out.append(jsonString(String.valueOf(entry.getKey())))
-                        .append(':').append(jsonValue(entry.getValue()));}return out.append('}').toString();}
-        if(value instanceof Iterable){StringBuilder out=new StringBuilder("[");boolean first=true;
-            for(Object item:(Iterable<?>)value){if(!first)out.append(',');first=false;out.append(jsonValue(item));}
-            return out.append(']').toString();}return jsonString(String.valueOf(value));}
-    private static String jsonString(String value){return"\""+value.replace("\\","\\\\")
-            .replace("\"","\\\"").replace("\n","\\n").replace("\r","\\r")+"\"";}
 }

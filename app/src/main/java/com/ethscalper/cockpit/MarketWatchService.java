@@ -1,5 +1,6 @@
 package com.ethscalper.cockpit;
 
+import android.Manifest;
 import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -9,7 +10,11 @@ import android.app.Service;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.MediaMetadataRetriever;
+import android.content.res.AssetFileDescriptor;
 import android.net.Uri;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -65,8 +70,13 @@ public class MarketWatchService extends Service {
     public static final String ACTION_TEST_VIBRATION = "com.ethscalper.cockpit.TEST_VIBRATION";
     public static final String ACTION_RESET_DIAGNOSTICS = "com.ethscalper.cockpit.RESET_DIAGNOSTICS";
     public static final String ACTION_FLUSH_DIAGNOSTICS = "com.ethscalper.cockpit.FLUSH_DIAGNOSTICS";
+    public static final String ACTION_RECORD_EXPORT_TIMEOUT = "com.ethscalper.cockpit.RECORD_EXPORT_TIMEOUT";
     public static final String BROADCAST_STATUS = "com.ethscalper.cockpit.STATUS";
     public static final String EXTRA_PAYLOAD = "payload";
+    public static final String EXTRA_REQUEST_ID = "diagnostic_request_id";
+    public static final String EXTRA_FLUSH_COMPLETED = "diagnostic_flush_completed";
+    public static final String EXTRA_STATUS_MODE = "diagnostic_status_mode";
+    public static final String EXTRA_SNAPSHOT_AT = "diagnostic_snapshot_at";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
     private static final String CH_WATCH = "eth_scalper_watch_v22801";
@@ -156,6 +166,7 @@ public class MarketWatchService extends Service {
     private long lastEvaluationAt;
     private long lastWatchNotificationAt;
     private long lastStatusFallbackDiagnosticAt;
+    private String lastValidStatusJson="";
     private long bookTickerMessages;
     private long klineMessages;
     private long aggTradeMessages;
@@ -189,8 +200,9 @@ public class MarketWatchService extends Service {
 
     public static String getLastStatusJson(Context context) {
         String memory = LAST_STATUS_JSON == null ? "" : LAST_STATUS_JSON;
-        if (!memory.isEmpty()) return memory;
-        return context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).getString(STATE_JSON, "");
+        if (SafeJsonNormalizer.isValidObject(memory)) return memory;
+        String stored=context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).getString(STATE_JSON, "");
+        return SafeJsonNormalizer.isValidObject(stored)?stored:"";
     }
 
     public static String getLastStatusJson() {
@@ -369,6 +381,7 @@ public class MarketWatchService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        lastValidStatusJson=getLastStatusJson(this);
         // Android requires a foreground service to publish its notification immediately.
         // Never place recorder scans, migrations, REST calls or plan restoration before this.
         ensureChannels(this);
@@ -511,8 +524,19 @@ public class MarketWatchService extends Service {
                                 :"Diagnostic moteur + recorder persistant réinitialisés");
             }
         } else if (ACTION_FLUSH_DIAGNOSTICS.equals(action)) {
+            String requestId=intent==null?"":intent.getStringExtra(EXTRA_REQUEST_ID);
             flushDiagnosticsBlocking(10_000L);
-            broadcastStatus("diagnostics_flushed", "Diagnostic prêt pour export");
+            broadcastStatus("diagnostics_flushed", "Diagnostic prêt pour export",
+                    requestId==null?"":requestId,true);
+        } else if (ACTION_RECORD_EXPORT_TIMEOUT.equals(action)) {
+            String requestId=intent==null?"":intent.getStringExtra(EXTRA_REQUEST_ID);
+            long now=System.currentTimeMillis();Map<String,Object> details=new LinkedHashMap<>();
+            details.put("requestId",requestId==null?"":requestId);
+            marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,
+                    "DIAGNOSTIC_EXPORT_FLUSH_TIMEOUT","NMC_DIAGNOSTIC_EXPORT_FLUSH_TIMEOUT",
+                    "Acquittement du flush absent; export du dernier statut valide",
+                    "DIAGNOSTIC_RUNTIME","","",null,null,0,ethExecutionFeedFresh(now),
+                    sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,details);
         } else if (ACTION_SYNC_NOW.equals(action)) {
             broadcastStatus("sync", "État du service natif resynchronisé");
         }
@@ -4378,24 +4402,30 @@ public class MarketWatchService extends Service {
     private AudiblePostResult postAudibleFinalSignalAlert(String title,String body,
                                                             int notificationId,String symbol,
                                                             boolean test,String signature) {
+        return postAudibleFinalSignalAlert(title,body,notificationId,symbol,test,signature,1);
+    }
+
+    private AudiblePostResult postAudibleFinalSignalAlert(String title,String body,
+                                                            int notificationId,String symbol,
+                                                            boolean test,String signature,int attempt) {
         ensureChannels(this);
         String key=test?"":"signature_"+(signature==null?"":signature);
         boolean signatureAlreadyAlerted=!test&&getSharedPreferences(
                 ALERT_DEDUPE_PREFERENCES,MODE_PRIVATE).getBoolean(key,false);
         if(!FinalSignalAlertPolicy.shouldAttempt(test,signatureAlreadyAlerted)) {
-            recordAudibleAlertDiagnostic(test,symbol,notificationId,false,true,false,null);
+            recordAudibleAlertDiagnostic(test,symbol,notificationId,false,true,false,null,attempt,signature);
             return AudiblePostResult.alreadyAlerted();
         }
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         if(manager==null) {
             recordAudibleAlertDiagnostic(test,symbol,notificationId,false,false,false,
-                    "NotificationManager indisponible");
+                    "NotificationManager indisponible",attempt,signature);
             return AudiblePostResult.failed();
         }
         FinalSignalAlertChannelStatus.State channelState=audibleChannelState();
         if(channelState!=FinalSignalAlertChannelStatus.State.CHANNEL_READY){
             recordAudibleAlertDiagnostic(test,symbol,notificationId,false,false,false,
-                    "Canal sonore indisponible : "+channelState.name());
+                    "Canal sonore indisponible : "+channelState.name(),attempt,signature);
             return AudiblePostResult.failed();
         }
         try {
@@ -4407,11 +4437,11 @@ public class MarketWatchService extends Service {
                 dedupeWritten=getSharedPreferences(ALERT_DEDUPE_PREFERENCES,MODE_PRIVATE)
                         .edit().putBoolean(key,true).commit();
             }
-            recordAudibleAlertDiagnostic(test,symbol,notificationId,true,false,dedupeWritten,null);
+            recordAudibleAlertDiagnostic(test,symbol,notificationId,true,false,dedupeWritten,null,attempt,signature);
             return AudiblePostResult.posted();
         } catch(RuntimeException error) {
             recordAudibleAlertDiagnostic(test,symbol,notificationId,false,false,false,
-                    error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage()));
+                    error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage()),attempt,signature);
             return AudiblePostResult.failed();
         }
     }
@@ -4428,7 +4458,7 @@ public class MarketWatchService extends Service {
                 if(manager!=null)manager.cancel(notificationId);
             }
             AudiblePostResult result=postAudibleFinalSignalAlert(title,body,notificationId,
-                    symbol,false,signature);
+                    symbol,false,signature,attempt+2);
             if(!result.posted&&!result.alreadyAlerted){
                 postSilentSignalNotification(notificationId,title,body);
                 scheduleAudibleFinalSignalRetry(title,body,notificationId,symbol,signature,attempt+1);
@@ -4454,6 +4484,12 @@ public class MarketWatchService extends Service {
     }
 
     private JSONObject audibleChannelJson() throws Exception {
+        return audibleObservabilityJson(-1,"",false,0,"",false,false,null);
+    }
+
+    private JSONObject audibleObservabilityJson(int notificationId,String symbol,boolean test,
+                                                 int attempt,String signature,boolean posted,
+                                                 boolean dedupeWritten,String error)throws Exception{
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         NotificationChannel channel=manager==null?null:
                 manager.getNotificationChannel(FINAL_SIGNAL_LOUD_CHANNEL_ID);
@@ -4462,16 +4498,49 @@ public class MarketWatchService extends Service {
         value.put("channelId",FINAL_SIGNAL_LOUD_CHANNEL_ID);
         value.put("state",audibleChannelState().name());
         value.put("notificationsEnabled",manager!=null&&manager.areNotificationsEnabled());
+        value.put("postNotificationsPermission",Build.VERSION.SDK_INT<33||checkSelfPermission(
+                Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED);
         value.put("importance",channel==null?0:channel.getImportance());
         value.put("soundUri",sound==null?JSONObject.NULL:sound.toString());
         value.put("vibrationEnabled",channel!=null&&channel.shouldVibrate());
         value.put("ready",audibleChannelState()==FinalSignalAlertChannelStatus.State.CHANNEL_READY);
+        boolean soundResolvable=false,soundOpenable=false;long soundBytes=-1,soundDurationMs=-1;
+        if(sound!=null)try{AssetFileDescriptor descriptor=getContentResolver().openAssetFileDescriptor(sound,"r");
+            soundResolvable=descriptor!=null;if(descriptor!=null){soundOpenable=true;soundBytes=descriptor.getLength();
+                try{MediaMetadataRetriever retriever=new MediaMetadataRetriever();retriever.setDataSource(
+                        descriptor.getFileDescriptor(),descriptor.getStartOffset(),descriptor.getLength());
+                    String duration=retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                    if(duration!=null)soundDurationMs=Long.parseLong(duration);retriever.release();}catch(Exception ignored){}
+                descriptor.close();}}catch(Exception ignored){}
+        value.put("soundUriResolvable",soundResolvable);value.put("soundResourceOpenable",soundOpenable);
+        value.put("soundResourceBytes",soundBytes);value.put("soundDurationMs",soundDurationMs);
+        AudioManager audio=(AudioManager)getSystemService(AUDIO_SERVICE);
+        value.put("alarmVolume",audio==null?-1:audio.getStreamVolume(AudioManager.STREAM_ALARM));
+        value.put("alarmMaxVolume",audio==null?-1:audio.getStreamMaxVolume(AudioManager.STREAM_ALARM));
+        value.put("ringerMode",audio==null?-1:audio.getRingerMode());
+        value.put("interruptionFilter",manager==null?-1:manager.getCurrentInterruptionFilter());
+        PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);
+        value.put("batteryOptimizationExempt",power!=null&&power.isIgnoringBatteryOptimizations(getPackageName()));
+        ActivityManager activity=(ActivityManager)getSystemService(ACTIVITY_SERVICE);
+        value.put("backgroundRestricted",Build.VERSION.SDK_INT>=28&&activity!=null&&activity.isBackgroundRestricted());
+        value.put("attempt",attempt);value.put("notificationId",notificationId);value.put("symbol",symbol==null?"":symbol);
+        value.put("signature",signature==null?"":signature);value.put("observedAt",System.currentTimeMillis());
+        value.put("posted",posted);value.put("dedupeWritten",dedupeWritten);
+        value.put("failureReason",error==null?JSONObject.NULL:error);
         return value;
     }
 
     private void recordAudibleAlertDiagnostic(boolean test,String symbol,int notificationId,
                                                boolean success,boolean alreadyAlerted,
                                                boolean dedupeWritten,String error) {
+        recordAudibleAlertDiagnostic(test,symbol,notificationId,success,alreadyAlerted,
+                dedupeWritten,error,1,"");
+    }
+
+    private void recordAudibleAlertDiagnostic(boolean test,String symbol,int notificationId,
+                                               boolean success,boolean alreadyAlerted,
+                                               boolean dedupeWritten,String error,int attempt,
+                                               String signature) {
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         NotificationChannel channel=manager==null?null:
                 manager.getNotificationChannel(FINAL_SIGNAL_LOUD_CHANNEL_ID);
@@ -4495,6 +4564,10 @@ public class MarketWatchService extends Service {
             event.put("notificationId",notificationId);event.put("audible",true);
             event.put("vibrationRequested",true);event.put("posted",success);
             event.put("dedupeWritten",dedupeWritten);event.put("alreadyAlerted",alreadyAlerted);
+            JSONObject observability=audibleObservabilityJson(notificationId,symbol,test,attempt,
+                    signature,success,dedupeWritten,error);
+            Iterator<String> keys=observability.keys();while(keys.hasNext()){String key=keys.next();
+                event.put(key,observability.opt(key));}
             appendPersistentJsonLine(PERSISTENT_OBSERVATIONS_FILE,event);
         } catch(Exception ignored) {}
         Log.i("NMC_ALERT","channel="+FINAL_SIGNAL_LOUD_CHANNEL_ID+" state="+state
@@ -4608,6 +4681,11 @@ public class MarketWatchService extends Service {
     }
 
     private synchronized void broadcastStatus(String type, String message) {
+        broadcastStatus(type,message,"",false);
+    }
+
+    private synchronized void broadcastStatus(String type,String message,String requestId,
+                                               boolean flushCompleted) {
         try {
             long now = System.currentTimeMillis();
             recordFeedTransitions(now);
@@ -4771,17 +4849,48 @@ public class MarketWatchService extends Service {
                 state.put("lastPlan", signal);
             }
             StatusPayloadPolicy.compact(state,marketCoordinator.runtimes().values());
-            String output = state.toString();
-            LAST_STATUS_JSON = output;
-            getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().putString(STATE_JSON, output).apply();
-            Intent broadcast = new Intent(BROADCAST_STATUS).setPackage(getPackageName());
-            broadcast.putExtra(EXTRA_PAYLOAD, output);
-            sendBroadcast(broadcast);
+            SafeJsonNormalizer.Result normalized=SafeJsonNormalizer.normalizeAndSerialize(state);
+            if(!normalized.issues.isEmpty())recordStatusNormalization(normalized);
+            publishValidatedStatus(normalized.serialized,"FULL",requestId,flushCompleted,now);
         } catch (Exception error) {
             Log.e("NMC_STATUS","Status complet impossible; publication du statut minimal",error);
             recordStatusSerializationFailure(error);
-            publishMinimalStatus(type,message,error);
+            publishMinimalStatus(type,message,error,requestId,flushCompleted);
         }
+    }
+
+    private void publishValidatedStatus(String output,String mode,String requestId,
+                                        boolean flushCompleted,long snapshotAt){
+        if(!SafeJsonNormalizer.isValidObject(output))throw new IllegalArgumentException("invalid status");
+        LAST_STATUS_JSON=output;lastValidStatusJson=output;
+        getSharedPreferences(STATE_PREFERENCES,MODE_PRIVATE).edit().putString(STATE_JSON,output).apply();
+        Intent broadcast=new Intent(BROADCAST_STATUS).setPackage(getPackageName());
+        broadcast.putExtra(EXTRA_PAYLOAD,output);broadcast.putExtra(EXTRA_REQUEST_ID,requestId);
+        broadcast.putExtra(EXTRA_FLUSH_COMPLETED,flushCompleted);broadcast.putExtra(EXTRA_STATUS_MODE,mode);
+        broadcast.putExtra(EXTRA_SNAPSHOT_AT,snapshotAt);sendBroadcast(broadcast);
+    }
+
+    private void publishLastValidStatus(String requestId,boolean flushCompleted,long snapshotAt){
+        String candidate=StatusPublicationPolicy.validatedOrNull(lastValidStatusJson);
+        if(candidate==null)candidate=StatusPublicationPolicy.validatedOrNull(getLastStatusJson(this));
+        if(candidate==null)throw new IllegalStateException("last valid status unavailable");
+        Intent broadcast=new Intent(BROADCAST_STATUS).setPackage(getPackageName());
+        broadcast.putExtra(EXTRA_PAYLOAD,candidate);broadcast.putExtra(EXTRA_REQUEST_ID,requestId);
+        broadcast.putExtra(EXTRA_FLUSH_COMPLETED,flushCompleted);broadcast.putExtra(EXTRA_STATUS_MODE,"LAST_VALID");
+        broadcast.putExtra(EXTRA_SNAPSHOT_AT,snapshotAt);sendBroadcast(broadcast);
+    }
+
+    private void recordStatusNormalization(SafeJsonNormalizer.Result result){
+        try{long now=System.currentTimeMillis();Map<String,Object> details=new LinkedHashMap<>();
+            details.put("problemSection",result.firstProblemSection());details.put("issueCount",result.issues.size());
+            List<Map<String,Object>> issues=new ArrayList<>();
+            for(SafeJsonNormalizer.Issue issue:result.issues)issues.add(issue.asMap());
+            details.put("issues",issues);marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,
+                    "STATUS_VALUE_NORMALIZED","NMC_STATUS_VALUE_NORMALIZED",
+                    "Valeur de statut non sérialisable normalisée dans "+result.firstProblemSection(),
+                    "DIAGNOSTIC_RUNTIME","","",null,null,0,ethExecutionFeedFresh(now),
+                    sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,details);
+        }catch(Exception ignored){}
     }
 
     private void recordStatusSerializationFailure(Exception error){
@@ -4789,17 +4898,24 @@ public class MarketWatchService extends Service {
         if(lastStatusFallbackDiagnosticAt>0&&now-lastStatusFallbackDiagnosticAt<60_000L)return;
         lastStatusFallbackDiagnosticAt=now;
         try{MarketRuntime runtime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+            Map<String,Object> details=new LinkedHashMap<>();String stack=Log.getStackTraceString(error);
+            details.put("exception",error.getClass().getName());details.put("message",String.valueOf(error.getMessage()));
+            details.put("stackTrace",stack==null?"":stack.substring(0,Math.min(2000,stack.length())));
             runtime.recorder.record(now,"STATUS_SERIALIZATION_FALLBACK",
                     "NMC_STATUS_SERIALIZATION_FALLBACK",
                     error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage()),
                     "DIAGNOSTIC_RUNTIME","","",null,null,0,
-                    ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,
-                    Collections.emptyMap());
+                    ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,details);
         }catch(Exception ignored){}
     }
 
     /** A status serialization problem must never leave the UI blank or affect market ingestion. */
     private void publishMinimalStatus(String type,String message,Exception error) {
+        publishMinimalStatus(type,message,error,"",false);
+    }
+
+    private void publishMinimalStatus(String type,String message,Exception error,String requestId,
+                                      boolean flushCompleted) {
         try {
             long now=System.currentTimeMillis();
             JSONObject state=new JSONObject();
@@ -4811,6 +4927,7 @@ public class MarketWatchService extends Service {
             state.put("marketDataSource",activeMarketDataSource);
             state.put("executionFeedAuthoritative",executionFeedAuthoritative);
             state.put("networkAvailable",isNetworkAvailable());
+            state.put("lastFeedError",lastFeedError==null?"":lastFeedError);
             state.put("type",type);state.put("message",message);
             state.put("statusSerializationFallback",true);
             state.put("statusError",error==null?"UNKNOWN":error.getClass().getSimpleName()
@@ -4853,12 +4970,12 @@ public class MarketWatchService extends Service {
             }
             state.put("activePlans",activePlans);
             state.put("realTradingAllowed",SignalSafetyPolicies.realTradingAllowed());
-            String output=state.toString();LAST_STATUS_JSON=output;
-            getSharedPreferences(STATE_PREFERENCES,MODE_PRIVATE).edit().putString(STATE_JSON,output).apply();
-            Intent broadcast=new Intent(BROADCAST_STATUS).setPackage(getPackageName());
-            broadcast.putExtra(EXTRA_PAYLOAD,output);sendBroadcast(broadcast);
+            SafeJsonNormalizer.Result normalized=SafeJsonNormalizer.normalizeAndSerialize(state);
+            publishValidatedStatus(normalized.serialized,"MINIMAL",requestId,flushCompleted,now);
         } catch(Exception fallbackError){
             Log.e("NMC_STATUS","Statut minimal impossible",fallbackError);
+            try{publishLastValidStatus(requestId,flushCompleted,System.currentTimeMillis());}
+            catch(Exception lastValidError){Log.e("NMC_STATUS","Aucun dernier statut valide",lastValidError);}
         }
     }
 

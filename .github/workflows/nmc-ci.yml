@@ -1,4 +1,4 @@
-name: NMC v2.34.3.8 Stable CI
+name: NMC v2.34.3.9 Stable CI
 
 on:
   push:
@@ -43,12 +43,18 @@ jobs:
           echo "NMC_SIGNING_STORE_FILE=$RUNNER_TEMP/nmc-stable-v1.jks" >> "$GITHUB_ENV"
       - name: Debug unit tests
         run: gradle testDebugUnitTest --rerun-tasks
+      - name: Stable unit tests
+        run: gradle testStableUnitTest --rerun-tasks
+      - name: Release unit tests
+        run: gradle testReleaseUnitTest --rerun-tasks
       - name: All unit tests
         run: gradle test --rerun-tasks
       - name: SOL profile validator tests
         run: python3 -m unittest tools/test_validate_sol_profile.py
       - name: Build stable APK
         run: gradle assembleStable
+      - name: Build debug APK
+        run: gradle assembleDebug
       - name: Build release APK
         run: gradle assembleRelease
       - name: Release lint
@@ -61,6 +67,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NMC-v2.34.3.8-stable-apk
+          name: NMC-v2.34.3.9-stable-apk
           path: app/build/outputs/apk/stable/app-stable.apk
           if-no-files-found: error

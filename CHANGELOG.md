@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.3.9 — statut, export et diagnostics fiabilisés
+
+- normalisation JSON récursive des nombres non finis, maps, listes, tableaux et valeurs Java inconnues ;
+- conservation stricte du dernier statut valide et statut minimal riche en cas d’échec d’une section optionnelle ;
+- export déclenché uniquement après acquittement du flush, avec snapshot unique et traçabilité SHA-256 ;
+- coalescence des diagnostics répétitifs sur des champs stables, sans perdre les événements métier ;
+- observabilité complète du canal sonore, de la ressource, du volume et des restrictions Android, sans modifier les réglages ;
+- aucune modification du moteur, des entrées, TP, SL, quantités ou lifecycles.
+
 ## 2.34.3.8 — diagnostic complet et alerte finale vérifiée
 
 - index recorder, événements récents, plans actifs et santé du canal conservés dans le statut de secours ;

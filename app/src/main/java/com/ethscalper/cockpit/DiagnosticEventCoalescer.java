@@ -35,24 +35,33 @@ public final class DiagnosticEventCoalescer {
         if(type.contains("CANDIDATE")||type.startsWith("P01")||type.startsWith("P02")
                 ||"CONFIRMATION_READY".equals(type)||"PLAN_CONFIRMED".equals(type)
                 ||"PLAN_RESTORED".equals(type)||"TP_TOUCHED".equals(type)||"SL_TOUCHED".equals(type)
-                ||"PERSISTENCE_FAILED".equals(type)||type.contains("RESET")||type.startsWith("REARM_"))return false;
+                ||type.contains("PERSISTENCE")||type.contains("ALERT")||type.contains("ERROR")
+                ||type.contains("EXCEPTION")||type.contains("RESET")||type.startsWith("REARM_")
+                ||type.contains("FEED_STATE")||type.contains("SOURCE_TRANSITION")
+                ||Boolean.TRUE.equals(event.get("important")))return false;
         if("RAW_DECISION".equals(type)||"ENGINE_DIAGNOSTIC".equals(type)||"ADMISSION_REJECTED".equals(type))return true;
         return code.contains("FEED_STALE")||code.contains("NO_EDGE")||code.contains("PRIX_DEJA_TROP_LOIN");
     }
     private static String identity(Map<String,Object> event){return string(event.get("symbol"))+"|"+string(event.get("eventType"))+"|"
             +string(event.get("reasonCode"))+"|"+string(event.get("classification"))+"|"+string(event.get("sleeve"))+"|"
-            +string(event.get("side"))+"|"+normalize(string(event.get("reasonText")));}
-    private static String normalize(String value){return value.trim().replaceAll("\\s+"," ");}
+            +string(event.get("side"))+"|"+string(event.get("family"));}
     private static LinkedHashMap<String,Object> copy(Map<String,Object> source){return new LinkedHashMap<>(source);}
     private static String string(Object value){return value==null?"":String.valueOf(value);}
 
     private static final class Pending {
-        final Map<String,Object> first;Map<String,Object> last;long firstAt,lastAt,lastSummaryAt,repeats;
-        Pending(Map<String,Object> event,long now){first=copy(event);last=copy(event);firstAt=lastAt=lastSummaryAt=now;}
-        void add(Map<String,Object> event,long now){last=copy(event);lastAt=now;repeats++;}
+        Map<String,Object> first,last;final Map<String,Double> minima=new LinkedHashMap<>(),maxima=new LinkedHashMap<>();
+        long firstAt,lastAt,lastSummaryAt,repeats;
+        Pending(Map<String,Object> event,long now){first=copy(event);last=copy(event);firstAt=lastAt=lastSummaryAt=now;metrics(event);}
+        void add(Map<String,Object> event,long now){last=copy(event);lastAt=now;repeats++;metrics(event);}
         Map<String,Object> summary(long now){LinkedHashMap<String,Object> out=copy(last);out.put("eventAt",Math.max(lastAt,now));
             out.put("coalesced",true);out.put("firstAt",firstAt);out.put("lastAt",lastAt);
-            out.put("repeatCount",repeats);out.put("firstPayload",first);out.put("lastPayload",last);return out;}
-        void afterSummary(long now){firstAt=lastAt;lastSummaryAt=now;repeats=0;}
+            out.put("repeatCount",repeats);out.put("firstPayload",first);out.put("lastPayload",last);
+            out.put("lastReasonText",string(last.get("reasonText")));out.put("metricMinimums",new LinkedHashMap<>(minima));
+            out.put("metricMaximums",new LinkedHashMap<>(maxima));return out;}
+        void afterSummary(long now){first=copy(last);firstAt=lastAt;lastSummaryAt=now;repeats=0;minima.clear();maxima.clear();metrics(last);}
+        void metrics(Map<String,Object> event){for(Map.Entry<String,Object> entry:event.entrySet())if(entry.getValue() instanceof Number){
+            double value=((Number)entry.getValue()).doubleValue();if(!Double.isFinite(value))continue;
+            String key=entry.getKey();if("eventAt".equals(key)||"candidateAgeMs".equals(key))continue;
+            minima.merge(key,value,Math::min);maxima.merge(key,value,Math::max);}}
     }
 }

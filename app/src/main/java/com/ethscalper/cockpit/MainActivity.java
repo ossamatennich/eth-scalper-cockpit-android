@@ -45,9 +45,12 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.UUID;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -73,6 +76,9 @@ public class MainActivity extends Activity {
     private Button exportButton;
     private int selectedSection=COCKPIT;
     private JSONObject latestState=new JSONObject();
+    private JSONObject latestValidState=new JSONObject();
+    private DiagnosticExportHandshake exportHandshake;
+    private static final long EXPORT_FLUSH_TIMEOUT_MS=12_000L;
     private final ExecutorService exportExecutor=Executors.newSingleThreadExecutor();
     private final AtomicBoolean exportRunning=new AtomicBoolean(false),exportCancelled=new AtomicBoolean(false);
     private final AtomicBoolean resetAfterExport=new AtomicBoolean(false);
@@ -89,7 +95,19 @@ public class MainActivity extends Activity {
     }};
 
     private final BroadcastReceiver statusReceiver=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){
-        String payload=intent.getStringExtra(MarketWatchService.EXTRA_PAYLOAD);if(payload!=null)render(payload);}};
+        String payload=intent.getStringExtra(MarketWatchService.EXTRA_PAYLOAD);if(payload!=null)render(payload);
+        DiagnosticExportHandshake pending=exportHandshake;String requestId=intent.getStringExtra(MarketWatchService.EXTRA_REQUEST_ID);
+        if(pending!=null&&pending.acknowledge(requestId,intent.getBooleanExtra(MarketWatchService.EXTRA_FLUSH_COMPLETED,false))){
+            exportHandshake=null;startupHandler.removeCallbacks(exportTimeout);JSONObject snapshot=validatedSnapshot(payload);
+            if(snapshot==null)snapshot=copy(latestValidState);startDiagnosticExport(snapshot,requestId,true,
+                    intent.getStringExtra(MarketWatchService.EXTRA_STATUS_MODE),
+                    intent.getLongExtra(MarketWatchService.EXTRA_SNAPSHOT_AT,System.currentTimeMillis()));}}
+    };
+    private final Runnable exportTimeout=()->{DiagnosticExportHandshake pending=exportHandshake;
+        if(pending==null||!pending.timeout(System.currentTimeMillis()))return;exportHandshake=null;
+        sendServiceAction(MarketWatchService.ACTION_RECORD_EXPORT_TIMEOUT,null,pending.requestId());
+        JSONObject snapshot=copy(latestValidState);if(!usableSnapshot(snapshot)){finishExportError("Timeout du flush · aucun statut valide");return;}
+        startDiagnosticExport(snapshot,pending.requestId(),false,"LAST_VALID",System.currentTimeMillis());};
 
     @Override protected void onCreate(Bundle savedInstanceState){
         setTheme(R.style.AppTheme);super.onCreate(savedInstanceState);
@@ -177,9 +195,10 @@ public class MainActivity extends Activity {
         ai.addView(actionButton("Réglages IA OpenAI",CYAN,this::showAiSettingsDialog));ai.addView(actionButton("Tester clé IA",AMBER,this::testAiKeyNow));
         LinearLayout tests=card(root,"TESTS LOCAUX",AMBER);tests.addView(actionButton("Tester alerte forte",RED,()->sendServiceAction(MarketWatchService.ACTION_TEST_ALERT,"ALERTE SONORE DE TEST ENVOYÉE")));
         tests.addView(actionButton("Tester vibration",CYAN,()->sendServiceAction(MarketWatchService.ACTION_TEST_VIBRATION,"Vibration testée")));
+        tests.addView(actionButton("Réglages Android de l’alerte sonore",AMBER,this::openAudibleChannelSettings));
         LinearLayout reset=card(root,"RECORDER",RED);reset.addView(actionButton("Réinitialiser diagnostic",RED,this::confirmDiagnosticReset));return wrap(root);}
 
-    private void render(String payload){try{latestState=new JSONObject(payload);UiState state=UiState.from(latestState);
+    private void render(String payload){try{latestState=new JSONObject(payload);if(usableSnapshot(latestState))latestValidState=copy(latestState);UiState state=UiState.from(latestState);
         if(MarketServiceRecoveryPolicy.isOperational(latestState.optBoolean("nativeActive",false),
                 latestState.optBoolean("connected",false),latestState.optLong("lastAgeSec",-1))){
             startupHandler.removeCallbacks(startupRecovery);startupRecoveryAttempt=0;}
@@ -223,23 +242,45 @@ public class MainActivity extends Activity {
             return new UiState(connected,connection,age<0?"—":age+" s",general);}}
 
     private void exportDiagnosticZip(){if(!exportRunning.compareAndSet(false,true))return;exportCancelled.set(false);exportButton.setEnabled(false);setChanged(exportProgress,"Préparation…");
-        sendServiceAction(MarketWatchService.ACTION_FLUSH_DIAGNOSTICS,null);final JSONObject snapshot=latestState;
+        String requestId=UUID.randomUUID().toString();exportHandshake=new DiagnosticExportHandshake(requestId,System.currentTimeMillis(),EXPORT_FLUSH_TIMEOUT_MS);
+        startupHandler.postDelayed(exportTimeout,EXPORT_FLUSH_TIMEOUT_MS);sendServiceAction(MarketWatchService.ACTION_FLUSH_DIAGNOSTICS,null,requestId);}
+
+    private void startDiagnosticExport(final JSONObject snapshot,String requestId,boolean flushCompleted,
+                                       String statusMode,long snapshotAt){
+        if(!usableSnapshot(snapshot)){finishExportError("Statut export invalide");return;}
         exportExecutor.execute(()->{Uri uri=null;String name=DiagnosticExportContract.zipPrefix(BuildConfig.VERSION_NAME)+new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.FRANCE).format(new Date())+".zip";
-            try{Thread.sleep(150);try(OutputTarget target=openExportTarget(name)){uri=target.uri;
-                Map<String,String> small=smallExportEntries(snapshot);DiagnosticStreamingExporter.export(target.output,
+            try{try(OutputTarget target=openExportTarget(name)){uri=target.uri;
+                Map<String,String> small=smallExportEntries(snapshot);String status=small.get("status.json");
+                DiagnosticStreamingExporter.ExportSnapshotMetadata metadata=new DiagnosticStreamingExporter.ExportSnapshotMetadata(
+                        snapshotAt,requestId,flushCompleted,statusMode==null?"LAST_VALID":statusMode,sha256(status));
+                DiagnosticStreamingExporter.export(target.output,
                         MarketWatchService.persistentEventsFile(this),MarketWatchService.persistentFramesFile(this),small,
-                        BuildConfig.VERSION_NAME,System.currentTimeMillis(),(percent,stage)->runOnUiThread(()->setChanged(exportProgress,stage+" · "+percent+" %")),exportCancelled::get);
+                        BuildConfig.VERSION_NAME,System.currentTimeMillis(),metadata,(percent,stage)->runOnUiThread(()->setChanged(exportProgress,stage+" · "+percent+" %")),exportCancelled::get);
                 }runOnUiThread(()->{setChanged(exportProgress,"Export terminé");Toast.makeText(this,"Diagnostic exporté : "+name,Toast.LENGTH_LONG).show();
                     if(resetAfterExport.getAndSet(false))sendServiceAction(MarketWatchService.ACTION_RESET_DIAGNOSTICS,"Diagnostic réinitialisé — plans actifs conservés");});
             }catch(Exception error){if(uri!=null)try{getContentResolver().delete(uri,null,null);}catch(Exception ignored){}resetAfterExport.set(false);
                 runOnUiThread(()->{setChanged(exportProgress,"Erreur d’export : "+error.getClass().getSimpleName());Toast.makeText(this,"Export impossible",Toast.LENGTH_LONG).show();});}
             finally{exportRunning.set(false);runOnUiThread(()->exportButton.setEnabled(true));}});}
 
+    private void finishExportError(String message){exportHandshake=null;startupHandler.removeCallbacks(exportTimeout);
+        exportRunning.set(false);exportButton.setEnabled(true);setChanged(exportProgress,message);Toast.makeText(this,message,Toast.LENGTH_LONG).show();}
+
     private Map<String,String> smallExportEntries(JSONObject state)throws Exception{LinkedHashMap<String,String> out=new LinkedHashMap<>();
-        out.put("status.json",state.toString(2));out.put("markets.json",json(state.optJSONObject("markets"),"{}"));out.put("active_plans.json",json(state.optJSONArray("activePlans"),"[]"));
-        out.put("profiles_manifest.json",profilesManifest().toString(2));JSONObject summary=state.optJSONObject("overnightRecorder");out.put("market_summary.json",json(summary,"{}"));
-        out.put("market_summary.txt",summaryText(summary));out.put("feed_health.json",feedHealth(state).toString(2));out.put("health_check.txt",healthCheck(state));
+        SafeJsonNormalizer.Result normalized=SafeJsonNormalizer.normalizeAndSerialize(state);JSONObject safe=normalized.value;
+        out.put("status.json",safe.toString(2));out.put("markets.json",json(safe.optJSONObject("markets"),"{}"));out.put("active_plans.json",json(safe.optJSONArray("activePlans"),"[]"));
+        out.put("profiles_manifest.json",profilesManifest().toString(2));JSONObject summary=safe.optJSONObject("overnightRecorder");out.put("market_summary.json",json(summary,"{}"));
+        out.put("market_summary.txt",summaryText(summary));out.put("feed_health.json",feedHealth(safe).toString(2));out.put("health_check.txt",healthCheck(safe));
         out.put("instructions.txt",DiagnosticExportContract.instructions(BuildConfig.VERSION_NAME));return out;}
+
+    private static JSONObject validatedSnapshot(String payload){try{if(!SafeJsonNormalizer.isValidObject(payload))return null;
+        JSONObject value=new JSONObject(payload);return usableSnapshot(value)?value:null;}catch(Exception ignored){return null;}}
+    private static boolean usableSnapshot(JSONObject value){return value!=null&&value.length()>0
+            &&value.optJSONObject("markets")!=null&&value.optJSONObject("referenceMarket")!=null;}
+    private static JSONObject copy(JSONObject value){try{return value==null?new JSONObject():new JSONObject(value.toString());}
+        catch(Exception ignored){return new JSONObject();}}
+    private static String sha256(String value)throws Exception{MessageDigest digest=MessageDigest.getInstance("SHA-256");
+        byte[] bytes=digest.digest((value==null?"":value).getBytes(StandardCharsets.UTF_8));StringBuilder out=new StringBuilder();
+        for(byte b:bytes)out.append(String.format(Locale.ROOT,"%02x",b));return out.toString();}
 
     private OutputTarget openExportTarget(String name)throws Exception{if(Build.VERSION.SDK_INT>=29){ContentValues values=new ContentValues();values.put(MediaStore.Downloads.DISPLAY_NAME,name);values.put(MediaStore.Downloads.MIME_TYPE,"application/zip");values.put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS);
             Uri uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);if(uri==null)throw new IllegalStateException("MediaStore");OutputStream out=getContentResolver().openOutputStream(uri);if(out==null)throw new IllegalStateException("output");return new OutputTarget(uri,out);}
@@ -260,7 +301,14 @@ public class MainActivity extends Activity {
             String value=key.getText().toString().trim();if(!value.isEmpty())SecureAiStore.saveKey(this,value);SecureAiStore.setEnabled(this,enabled.isChecked());setChanged(aiInfo,aiStatusText());}).show();}
 
     private String aiStatusText(){return "IA OpenAI : "+(SecureAiStore.isEnabled(this)?"ON · "+SecureAiStore.maskedKey(this):"OFF")+"\nAvis asynchrone, jamais décisionnel.";}
-    private void sendServiceAction(String action,String toast){try{Intent intent=new Intent(this,MarketWatchService.class);intent.setAction(action);ContextCompat.startForegroundService(this,intent);if(toast!=null)Toast.makeText(this,toast,Toast.LENGTH_SHORT).show();}catch(RuntimeException error){scheduleStartupRecovery();}}
+    private void sendServiceAction(String action,String toast){sendServiceAction(action,toast,"");}
+    private void sendServiceAction(String action,String toast,String requestId){try{Intent intent=new Intent(this,MarketWatchService.class);intent.setAction(action);
+        if(requestId!=null&&!requestId.isEmpty())intent.putExtra(MarketWatchService.EXTRA_REQUEST_ID,requestId);
+        ContextCompat.startForegroundService(this,intent);if(toast!=null)Toast.makeText(this,toast,Toast.LENGTH_SHORT).show();}catch(RuntimeException error){scheduleStartupRecovery();}}
+    private void openAudibleChannelSettings(){try{Intent intent=new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS);
+        intent.putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName());intent.putExtra(Settings.EXTRA_CHANNEL_ID,
+                MarketWatchService.FINAL_SIGNAL_LOUD_CHANNEL_ID);startActivity(intent);}catch(Exception error){
+        Toast.makeText(this,"Réglages du canal indisponibles",Toast.LENGTH_LONG).show();}}
     private boolean requestNotificationPermission(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=getPackageManager().PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},1001);return true;}return false;}
     private void scheduleStartupRecovery(){if(activityDestroyed)return;startupHandler.removeCallbacks(startupRecovery);long delay=MarketServiceRecoveryPolicy.delayForAttempt(startupRecoveryAttempt);startupHandler.postDelayed(startupRecovery,delay);}
     private void askBatteryOptimizationOnce(){if(Build.VERSION.SDK_INT<23)return;PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);if(power==null||power.isIgnoringBatteryOptimizations(getPackageName()))return;
@@ -270,7 +318,7 @@ public class MainActivity extends Activity {
     @Override protected void onStart(){super.onStart();if(!receiverRegistered){IntentFilter filter=new IntentFilter(MarketWatchService.BROADCAST_STATUS);ContextCompat.registerReceiver(this,statusReceiver,filter,ContextCompat.RECEIVER_NOT_EXPORTED);receiverRegistered=true;}sendServiceAction(MarketWatchService.ACTION_START,null);scheduleStartupRecovery();}
     @Override protected void onResume(){super.onResume();sendServiceAction(MarketWatchService.ACTION_START,null);scheduleStartupRecovery();}
     @Override protected void onStop(){startupHandler.removeCallbacks(startupRecovery);if(receiverRegistered){unregisterReceiver(statusReceiver);receiverRegistered=false;}super.onStop();}
-    @Override protected void onDestroy(){activityDestroyed=true;startupHandler.removeCallbacksAndMessages(null);exportCancelled.set(true);exportExecutor.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){activityDestroyed=true;startupHandler.removeCallbacksAndMessages(null);exportHandshake=null;exportCancelled.set(true);exportExecutor.shutdownNow();super.onDestroy();}
 
     private LinearLayout screenRoot(){LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(14),dp(16),dp(28));root.setBackgroundColor(BG);return root;}
     private ScrollView wrap(LinearLayout root){ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.addView(root,new ScrollView.LayoutParams(-1,-2));return scroll;}

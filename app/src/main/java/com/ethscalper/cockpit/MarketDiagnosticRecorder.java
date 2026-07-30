@@ -32,7 +32,9 @@ public final class MarketDiagnosticRecorder {
         LinkedHashMap<String,Object> value=base(at,type,reasonCode,reasonText,classification,
                 historicalDiagnosticCode,sleeve,signal,snapshot,candidateAgeMs,marketFresh,
                 btcFresh,adverse);
-        if(details!=null)value.putAll(details);
+        if(details!=null)for(Map.Entry<String,Object> entry:details.entrySet())
+            value.put(entry.getKey(),SafeJsonNormalizer.normalize(entry.getValue(),
+                    "$.details."+entry.getKey(),new ArrayList<>()));
         normalizeTerminal(value);
         Record record=new Record(++sequence,value);
         if("MARKET_FRAME".equals(type)){frames.addLast(record);trim(frames,MAX_FRAMES);}
