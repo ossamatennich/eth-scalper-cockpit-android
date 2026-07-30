@@ -102,7 +102,7 @@ public class V23430StructuralStopAndSizingTest {
     @Test public void stopExplanationFieldsReachUi(){PlanUiModel m=new PlanUiModel("ETHUSDT","ETH","LONG","P01","P01","ACTIVE","FRESH","",96,2,5,100,105,98,101,100,101,1.43,2.35,10,1,2,3,1,.2,1,98,8,.2,"STRUCTURE",StructuralStopPlanner.CONFIRMED,AdaptiveRiskSizing.STANDARD,3.35,2,5);assertEquals("STRUCTURE",m.stopCalculationType);assertEquals(8,m.structuralWindowMinutes);}
     @Test public void budgetAndSizingReachUi(){PlanUiModel m=new PlanUiModel("SOLUSDT","SOL","LONG","P02","P02","ACTIVE","FRESH","",90,50,2,75,76,74,75,75,75,0.06,.1,14.55,1,2,3,.04,.01,.04,74.9,8,.008,"COMBINAISON",StructuralStopPlanner.CONFIRMED,DynamicTradePlan.GROSS_RISK_BUDGET_CONFIRMED,.15,80,6);assertEquals(14.55,m.riskBudgetUsdt,0);assertEquals(80,m.riskQuantity);}
     @Test public void missingStopUiDataStaysNaN(){PlanUiModel m=new PlanUiModel("ETHUSDT","ETH","LONG","P01","P01","ACTIVE","FRESH","",90,2,5,100,105,98,101,100,101,1.43,2.35,10,1,2,3);assertTrue(Double.isNaN(m.baseStop));}
-    @Test public void loudAlertChannelUnchanged()throws Exception{String s=source("MarketWatchService.java");assertTrue(s.contains("nmc_final_signal_loud_v1"));}
+    @Test public void loudAlertUsesFreshValidatedChannel()throws Exception{String s=source("MarketWatchService.java");assertTrue(s.contains("nmc_final_signal_loud_v2"));}
     @Test public void exportStreamingUnchanged()throws Exception{String s=source("DiagnosticStreamingExporter.java");assertFalse(s.contains("ByteArrayOutputStream"));}
     @Test public void productionConfigurationIsSingleAndDeterministic(){assertEquals(5,StructuralStopPlanner.PRODUCTION.windowMinutes);assertEquals(.15,StructuralStopPlanner.PRODUCTION.bufferMultiplier,0);}
 }

@@ -86,7 +86,9 @@ public class NmcRuntimeOptimizationTest {
         Set<String> digests=new HashSet<>();for(DiagnosticStreamingExporter.EntryDigest digest:result.entries.values())assertTrue("strictly duplicated ZIP content",digests.add(digest.sha256));}
 
     @Test public void serviceHotStatusNeverReadsJsonl()throws Exception{String source=source("src/main/java/com/ethscalper/cockpit/MarketWatchService.java");int start=source.indexOf("private synchronized void broadcastStatus");int end=source.indexOf("private JSONObject marketStatusJson",start);String hot=source.substring(start,end);
-        assertFalse(hot.contains("readChronological"));assertFalse(hot.contains("getPersistentObservationJournalJson"));assertTrue(hot.contains("recorderIndex.snapshot()"));}
+        assertFalse(hot.contains("readChronological"));assertFalse(hot.contains("getPersistentObservationJournalJson"));assertTrue(hot.contains("currentRecorderSummaryJson()"));
+        int summaryStart=source.indexOf("private JSONObject currentRecorderSummaryJson");int summaryEnd=source.indexOf("private interface StatusObjectSupplier",summaryStart);String summary=source.substring(summaryStart,summaryEnd);
+        assertTrue(summary.contains("recorderIndex.snapshot()"));assertFalse(summary.contains("readChronological"));assertFalse(summary.contains("getPersistentObservationJournalJson"));}
 
     @Test public void sixtyFourMiBJournalExportsWithBoundedMemory()throws Exception{Path dir=Files.createTempDirectory("nmc-64m");File events=dir.resolve("events.jsonl").toFile(),frames=dir.resolve("frames.jsonl").toFile(),zipFile=dir.resolve("diagnostic.zip").toFile();
         String padding=String.join("",Collections.nCopies(900,"x"));byte[] line=(json(event("RAW_DECISION","ETHUSDT",1)).replace("No edge","No edge "+padding)+"\n").getBytes(StandardCharsets.UTF_8);

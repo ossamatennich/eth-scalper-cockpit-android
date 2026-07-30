@@ -37,7 +37,7 @@ public class AudibleFinalSignalAlertTest {
 
     @Test public void loudChannelIsNewAndFullyConfigured() throws Exception {
         String source=service();
-        assertEquals("nmc_final_signal_loud_v1",MarketWatchService.FINAL_SIGNAL_LOUD_CHANNEL_ID);
+        assertEquals("nmc_final_signal_loud_v2",MarketWatchService.FINAL_SIGNAL_LOUD_CHANNEL_ID);
         assertTrue(source.contains("NMC · Alertes de signaux confirmés"));
         assertTrue(source.contains("Alerte sonore forte uniquement lors d’un nouveau signal final confirmé."));
         assertTrue(source.contains("AudioAttributes.USAGE_ALARM"));
@@ -53,6 +53,7 @@ public class AudibleFinalSignalAlertTest {
     @Test public void testAlertNeverWritesBusinessDedupe() {
         assertFalse(FinalSignalAlertPolicy.shouldWriteBusinessDedupe(true,true));
         assertFalse(FinalSignalAlertPolicy.shouldWriteBusinessDedupe(true,false));
+        assertFalse(FinalSignalAlertPolicy.shouldWriteBusinessDedupe(true,true,true));
     }
 
     @Test public void twoSuccessiveTestsAreBothEligibleAndAudible() {
@@ -116,6 +117,8 @@ public class AudibleFinalSignalAlertTest {
 
     @Test public void failedDeliveryNeverConsumesTheSignature() throws Exception {
         assertFalse(FinalSignalAlertPolicy.shouldWriteBusinessDedupe(false,false));
+        assertFalse(FinalSignalAlertPolicy.shouldWriteBusinessDedupe(false,true,false));
+        assertTrue(FinalSignalAlertPolicy.shouldWriteBusinessDedupe(false,true,true));
         String method=method(service(),"private AudiblePostResult postAudibleFinalSignalAlert",
                 "private void postSilentSignalNotification");
         assertTrue(method.indexOf("manager.notify(notificationId,notification)")
@@ -123,6 +126,27 @@ public class AudibleFinalSignalAlertTest {
         String failure=method.substring(method.indexOf("catch(RuntimeException error)"));
         assertFalse(failure.contains("putBoolean"));
         assertTrue(failure.contains("AudiblePostResult.failed()"));
+    }
+
+    @Test public void unhealthyChannelCannotBeReportedAsAudibleDelivery() throws Exception {
+        String method=method(service(),"private AudiblePostResult postAudibleFinalSignalAlert",
+                "private void scheduleAudibleFinalSignalRetry");
+        assertTrue(method.contains("channelState!=FinalSignalAlertChannelStatus.State.CHANNEL_READY"));
+        assertTrue(method.indexOf("channelState!=FinalSignalAlertChannelStatus.State.CHANNEL_READY")
+                <method.indexOf("manager.notify(notificationId,notification)"));
+        assertTrue(method.contains("shouldWriteBusinessDedupe(test,true,"));
+    }
+
+    @Test public void failedRealAlertGetsBoundedRetriesWithoutMutatingPlan() throws Exception {
+        String source=service();
+        assertTrue(source.contains("AUDIBLE_RETRY_DELAYS_MS = {5_000L,30_000L,120_000L}"));
+        String retry=method(source,"private void scheduleAudibleFinalSignalRetry",
+                "private void postSilentSignalNotification");
+        assertTrue(retry.contains("postAudibleFinalSignalAlert"));
+        assertTrue(retry.contains("manager.cancel(notificationId)"));
+        assertTrue(retry.contains("postSilentSignalNotification(notificationId,title,body)"));
+        assertTrue(retry.contains("attempt+1"));
+        assertFalse(retry.contains("activePlan="));assertFalse(retry.contains(".stopLoss="));
     }
 
     @Test public void alertAttemptCannotMutatePublishedPlan() throws Exception {
