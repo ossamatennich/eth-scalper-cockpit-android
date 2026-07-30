@@ -43,6 +43,9 @@ public class V23439StatusExportDiagnosticsTest {
                 null,null,0,true,true,0,details);
         JSONObject encoded=new JSONObject(runtime.recorder.eventMaps().get(0));String text=encoded.toString();
         assertNotNull(text);assertTrue(new JSONObject(text).isNull("entry"));
+        JSONArray issues=encoded.getJSONArray("normalizationIssues");assertTrue(issues.length()>=2);
+        assertEquals("$.details.entry",issues.getJSONObject(0).getString("path"));
+        assertEquals("NON_FINITE_NUMBER",issues.getJSONObject(0).getString("code"));
     }
 
     @Test public void lastValidStatusIsNeverReplacedByNullOrInvalid(){
@@ -58,6 +61,21 @@ public class V23439StatusExportDiagnosticsTest {
             assertTrue(value.acknowledge("request",true));assertFalse(value.timeout(1_000+delay));}
         DiagnosticExportHandshake timeout=new DiagnosticExportHandshake("request",1_000,2_000);
         assertFalse(timeout.timeout(2_999));assertTrue(timeout.timeout(3_000));assertFalse(timeout.acknowledge("request",true));
+    }
+
+    @Test public void blockedDiagnosticQueueBeyondTenSecondsExportsLastValid()throws Exception{
+        DiagnosticExportHandshake blocked=new DiagnosticExportHandshake("blocked",1_000,10_000);
+        assertFalse(blocked.acknowledge("blocked",false));
+        assertFalse(blocked.timeout(10_999));assertTrue(blocked.timeout(11_001));
+        File dir=Files.createTempDirectory("v23439-blocked-flush").toFile();
+        File events=new File(dir,"events.jsonl"),frames=new File(dir,"frames.jsonl");
+        Files.write(events.toPath(),new byte[0]);Files.write(frames.toPath(),new byte[0]);
+        ByteArrayOutputStream output=new ByteArrayOutputStream();
+        DiagnosticStreamingExporter.export(output,events,frames,Map.of("status.json","{\"connected\":true}"),
+                "2.34.3.9",11_001,new DiagnosticStreamingExporter.ExportSnapshotMetadata(
+                        11_001,"blocked",false,"LAST_VALID","status-sha"),null,()->false);
+        JSONObject manifest=manifest(output.toByteArray());
+        assertFalse(manifest.getBoolean("flushCompleted"));assertEquals("LAST_VALID",manifest.getString("statusMode"));
     }
 
     @Test public void variableNoEdgeTextCoalescesByStableIdentityWithoutLifecycleLoss(){
@@ -100,7 +118,37 @@ public class V23439StatusExportDiagnosticsTest {
         assertTrue(service.contains("alarmVolume"));assertTrue(service.contains("interruptionFilter"));
         assertTrue(service.contains("backgroundRestricted"));assertTrue(service.contains("batteryOptimizationExempt"));
         assertTrue(service.contains("postAudibleFinalSignalAlert"));assertTrue(service.contains("nmc_final_signal_loud_v2"));
+        assertTrue(service.contains("boolean flushCompleted=flushDiagnosticsBlocking(10_000L)"));
+        assertTrue(service.contains("requestId==null?\"\":requestId,false"));
+        assertTrue(service.contains("requestId==null?\"\":requestId,true"));
     }
+
+    @Test public void hotStatusReadsOnlyCachedSoundResourcePrimitives()throws Exception{
+        String service=new String(Files.readAllBytes(java.nio.file.Path.of(
+                "src/main/java/com/ethscalper/cockpit/MarketWatchService.java")),StandardCharsets.UTF_8);
+        String hot=method(service,"private synchronized void broadcastStatus","private JSONObject marketStatusJson");
+        String channel=method(service,"private JSONObject audibleChannelJson","private JSONObject audibleObservabilityJson");
+        String observability=method(service,"private JSONObject audibleObservabilityJson",
+                "/** Schedules the expensive sound-resource probe");
+        for(String forbidden:List.of("openAssetFileDescriptor","MediaMetadataRetriever","probeAudibleSoundResource")){
+            assertFalse(hot.contains(forbidden));assertFalse(channel.contains(forbidden));assertFalse(observability.contains(forbidden));
+        }
+        String probe=method(service,"private AudibleSoundResourceSnapshot probeAudibleSoundResource",
+                "private void recordAudibleAlertDiagnostic");
+        assertTrue(probe.contains("openAssetFileDescriptor"));assertTrue(probe.contains("MediaMetadataRetriever"));
+        String scheduler=method(service,"private void scheduleAudibleSoundResourceProbe",
+                "/** Runs only on nmc-diagnostic-io");
+        assertTrue(scheduler.contains("diagnosticIoExecutor.execute"));
+    }
+
+    private static JSONObject manifest(byte[] zipBytes)throws Exception{try(ZipInputStream zip=new ZipInputStream(
+            new ByteArrayInputStream(zipBytes))){ZipEntry entry;while((entry=zip.getNextEntry())!=null)
+            if("export_manifest.json".equals(entry.getName()))return new JSONObject(
+                    new String(zip.readAllBytes(),StandardCharsets.UTF_8));}throw new AssertionError("manifest missing");}
+
+    private static String method(String source,String startToken,String endToken){int start=source.indexOf(startToken);
+        int end=source.indexOf(endToken,start+startToken.length());assertTrue(start>=0);assertTrue(end>start);
+        return source.substring(start,end);}
 
     private static Map<String,Object> event(String type,String code,long at,String text){Map<String,Object> out=new LinkedHashMap<>();
         out.put("symbol","SOLUSDT");out.put("eventType",type);out.put("reasonCode",code);out.put("classification","STRUCTURAL_SHARED");

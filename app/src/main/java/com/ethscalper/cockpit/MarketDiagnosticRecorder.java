@@ -32,9 +32,18 @@ public final class MarketDiagnosticRecorder {
         LinkedHashMap<String,Object> value=base(at,type,reasonCode,reasonText,classification,
                 historicalDiagnosticCode,sleeve,signal,snapshot,candidateAgeMs,marketFresh,
                 btcFresh,adverse);
+        List<SafeJsonNormalizer.Issue> normalizationIssues=new ArrayList<>();
         if(details!=null)for(Map.Entry<String,Object> entry:details.entrySet())
             value.put(entry.getKey(),SafeJsonNormalizer.normalize(entry.getValue(),
-                    "$.details."+entry.getKey(),new ArrayList<>()));
+                    "$.details."+entry.getKey(),normalizationIssues));
+        // Keep normalization evidence inside the original event. Creating another recorder event
+        // here would recursively normalize its own diagnostic payload and could loop forever.
+        if(!normalizationIssues.isEmpty()){
+            List<Map<String,Object>> boundedIssues=new ArrayList<>();
+            for(SafeJsonNormalizer.Issue issue:normalizationIssues)boundedIssues.add(issue.asMap());
+            value.put("normalizationIssueCount",normalizationIssues.size());
+            value.put("normalizationIssues",boundedIssues);
+        }
         normalizeTerminal(value);
         Record record=new Record(++sequence,value);
         if("MARKET_FRAME".equals(type)){frames.addLast(record);trim(frames,MAX_FRAMES);}

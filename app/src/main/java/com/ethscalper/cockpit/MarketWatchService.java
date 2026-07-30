@@ -53,6 +53,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -106,6 +107,10 @@ public class MarketWatchService extends Service {
         thread.setDaemon(true);
         return thread;
     });
+    private volatile AudibleSoundResourceSnapshot audibleSoundResourceSnapshot =
+            AudibleSoundResourceSnapshot.pending();
+    private volatile boolean audibleSoundProbeScheduled;
+    private volatile String lastDiagnosticFlushError="";
     private final MarketRegistry marketRegistry = MarketRegistry.production();
     private final MultiMarketCoordinator marketCoordinator =
             new MultiMarketCoordinator(marketRegistry);
@@ -385,6 +390,7 @@ public class MarketWatchService extends Service {
         // Android requires a foreground service to publish its notification immediately.
         // Never place recorder scans, migrations, REST calls or plan restoration before this.
         ensureChannels(this);
+        scheduleAudibleSoundResourceProbe("STARTUP");
         startForeground(NOTIF_WATCH_ID,
                 buildWatchNotification("Démarrage immédiat du moteur multi-marchés…"));
         p02SetupTracker.reset();
@@ -525,9 +531,15 @@ public class MarketWatchService extends Service {
             }
         } else if (ACTION_FLUSH_DIAGNOSTICS.equals(action)) {
             String requestId=intent==null?"":intent.getStringExtra(EXTRA_REQUEST_ID);
-            flushDiagnosticsBlocking(10_000L);
+            boolean flushCompleted=flushDiagnosticsBlocking(10_000L);
+            if(!flushCompleted)recordDiagnosticFlushFailure(requestId,10_000L,lastDiagnosticFlushError);
+            if(!flushCompleted){broadcastStatus("diagnostics_flush_failed",
+                    "Flush diagnostic incomplet : "+lastDiagnosticFlushError,
+                    requestId==null?"":requestId,false);
+            }else{
             broadcastStatus("diagnostics_flushed", "Diagnostic prêt pour export",
                     requestId==null?"":requestId,true);
+            }
         } else if (ACTION_RECORD_EXPORT_TIMEOUT.equals(action)) {
             String requestId=intent==null?"":intent.getStringExtra(EXTRA_REQUEST_ID);
             long now=System.currentTimeMillis();Map<String,Object> details=new LinkedHashMap<>();
@@ -2204,8 +2216,26 @@ public class MarketWatchService extends Service {
         try {
             Future<?> barrier=diagnosticIoExecutor.submit(this::flushCoalescedDiagnosticsNow);
             barrier.get(Math.max(1L,timeoutMs),TimeUnit.MILLISECONDS);
+            lastDiagnosticFlushError="";
             return true;
-        } catch (Exception ignored) { return false; }
+        } catch (TimeoutException error) {
+            lastDiagnosticFlushError="TIMEOUT_AFTER_"+Math.max(1L,timeoutMs)+"MS";
+            return false;
+        } catch (Exception error) {
+            lastDiagnosticFlushError=error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage());
+            return false;
+        }
+    }
+
+    private void recordDiagnosticFlushFailure(String requestId,long timeoutMs,String error){
+        try{long now=System.currentTimeMillis();Map<String,Object> details=new LinkedHashMap<>();
+            details.put("requestId",requestId==null?"":requestId);details.put("timeoutMs",timeoutMs);
+            details.put("flushCompleted",false);details.put("error",error==null?"UNKNOWN":error);
+            marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,
+                    "DIAGNOSTIC_FLUSH_FAILED","NMC_DIAGNOSTIC_FLUSH_FAILED",
+                    error==null?"Flush diagnostic incomplet":error,"DIAGNOSTIC_RUNTIME","","",
+                    null,null,0,ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,details);
+        }catch(Exception ignored){}
     }
 
     private void saveRecorderIndex(){if(recorderIndex==null)return;
@@ -4409,6 +4439,7 @@ public class MarketWatchService extends Service {
                                                             int notificationId,String symbol,
                                                             boolean test,String signature,int attempt) {
         ensureChannels(this);
+        scheduleAudibleSoundResourceProbe(test?"TEST_ALERT":"CHANNEL_RECREATED");
         String key=test?"":"signature_"+(signature==null?"":signature);
         boolean signatureAlreadyAlerted=!test&&getSharedPreferences(
                 ALERT_DEDUPE_PREFERENCES,MODE_PRIVATE).getBoolean(key,false);
@@ -4504,16 +4535,11 @@ public class MarketWatchService extends Service {
         value.put("soundUri",sound==null?JSONObject.NULL:sound.toString());
         value.put("vibrationEnabled",channel!=null&&channel.shouldVibrate());
         value.put("ready",audibleChannelState()==FinalSignalAlertChannelStatus.State.CHANNEL_READY);
-        boolean soundResolvable=false,soundOpenable=false;long soundBytes=-1,soundDurationMs=-1;
-        if(sound!=null)try{AssetFileDescriptor descriptor=getContentResolver().openAssetFileDescriptor(sound,"r");
-            soundResolvable=descriptor!=null;if(descriptor!=null){soundOpenable=true;soundBytes=descriptor.getLength();
-                try{MediaMetadataRetriever retriever=new MediaMetadataRetriever();retriever.setDataSource(
-                        descriptor.getFileDescriptor(),descriptor.getStartOffset(),descriptor.getLength());
-                    String duration=retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                    if(duration!=null)soundDurationMs=Long.parseLong(duration);retriever.release();}catch(Exception ignored){}
-                descriptor.close();}}catch(Exception ignored){}
-        value.put("soundUriResolvable",soundResolvable);value.put("soundResourceOpenable",soundOpenable);
-        value.put("soundResourceBytes",soundBytes);value.put("soundDurationMs",soundDurationMs);
+        AudibleSoundResourceSnapshot resource=audibleSoundResourceSnapshot;
+        value.put("soundUriResolvable",resource.resolvable);value.put("soundResourceOpenable",resource.openable);
+        value.put("soundResourceBytes",resource.bytes);value.put("soundDurationMs",resource.durationMs);
+        value.put("soundProbeCompleted",resource.completed);value.put("soundProbeAt",resource.probedAt);
+        value.put("soundProbeReason",resource.reason);value.put("soundProbeError",resource.error);
         AudioManager audio=(AudioManager)getSystemService(AUDIO_SERVICE);
         value.put("alarmVolume",audio==null?-1:audio.getStreamVolume(AudioManager.STREAM_ALARM));
         value.put("alarmMaxVolume",audio==null?-1:audio.getStreamMaxVolume(AudioManager.STREAM_ALARM));
@@ -4528,6 +4554,43 @@ public class MarketWatchService extends Service {
         value.put("posted",posted);value.put("dedupeWritten",dedupeWritten);
         value.put("failureReason",error==null?JSONObject.NULL:error);
         return value;
+    }
+
+    /** Schedules the expensive sound-resource probe off the synchronized market/status path. */
+    private void scheduleAudibleSoundResourceProbe(String reason){
+        synchronized(this){if(audibleSoundProbeScheduled)return;audibleSoundProbeScheduled=true;}
+        try{diagnosticIoExecutor.execute(()->{
+            try{audibleSoundResourceSnapshot=probeAudibleSoundResource(reason);}
+            finally{synchronized(MarketWatchService.this){audibleSoundProbeScheduled=false;}}
+        });}catch(RuntimeException error){
+            synchronized(this){audibleSoundProbeScheduled=false;}
+            audibleSoundResourceSnapshot=AudibleSoundResourceSnapshot.failed(reason,error);
+        }
+    }
+
+    /** Runs only on nmc-diagnostic-io; never call from broadcastStatus(). */
+    private AudibleSoundResourceSnapshot probeAudibleSoundResource(String reason){
+        NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        NotificationChannel channel=manager==null?null:
+                manager.getNotificationChannel(FINAL_SIGNAL_LOUD_CHANNEL_ID);
+        Uri sound=channel==null?null:channel.getSound();
+        if(sound==null)return AudibleSoundResourceSnapshot.failed(reason,
+                new IllegalStateException("CHANNEL_SOUND_MISSING"));
+        boolean resolvable=false,openable=false;long bytes=-1,durationMs=-1;String failure="";
+        try(AssetFileDescriptor descriptor=getContentResolver().openAssetFileDescriptor(sound,"r")){
+            resolvable=descriptor!=null;
+            if(descriptor!=null){openable=true;bytes=descriptor.getLength();MediaMetadataRetriever retriever=null;
+                try{retriever=new MediaMetadataRetriever();long length=descriptor.getLength();
+                    if(length>=0)retriever.setDataSource(descriptor.getFileDescriptor(),descriptor.getStartOffset(),length);
+                    else retriever.setDataSource(descriptor.getFileDescriptor());
+                    String duration=retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                    if(duration!=null)durationMs=Long.parseLong(duration);
+                }catch(Exception error){failure=error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage());}
+                finally{if(retriever!=null)try{retriever.release();}catch(RuntimeException ignored){}}
+            }
+        }catch(Exception error){failure=error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage());}
+        return new AudibleSoundResourceSnapshot(true,resolvable,openable,bytes,durationMs,
+                System.currentTimeMillis(),reason,failure);
     }
 
     private void recordAudibleAlertDiagnostic(boolean test,String symbol,int notificationId,
@@ -4582,6 +4645,22 @@ public class MarketWatchService extends Service {
 
     private String profileVersionForSymbol(String symbol) {
         try{return marketRegistry.require(symbol).profileVersion;}catch(Exception ignored){return "";}
+    }
+
+    private static final class AudibleSoundResourceSnapshot {
+        final boolean completed,resolvable,openable;final long bytes,durationMs,probedAt;
+        final String reason,error;
+        AudibleSoundResourceSnapshot(boolean completed,boolean resolvable,boolean openable,
+                                     long bytes,long durationMs,long probedAt,String reason,String error){
+            this.completed=completed;this.resolvable=resolvable;this.openable=openable;
+            this.bytes=bytes;this.durationMs=durationMs;this.probedAt=probedAt;
+            this.reason=reason==null?"":reason;this.error=error==null?"":error;
+        }
+        static AudibleSoundResourceSnapshot pending(){return new AudibleSoundResourceSnapshot(
+                false,false,false,-1,-1,0,"PENDING","");}
+        static AudibleSoundResourceSnapshot failed(String reason,Exception error){return new AudibleSoundResourceSnapshot(
+                true,false,false,-1,-1,System.currentTimeMillis(),reason,
+                error==null?"UNKNOWN":error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage()));}
     }
 
     private static final class AudiblePostResult {
