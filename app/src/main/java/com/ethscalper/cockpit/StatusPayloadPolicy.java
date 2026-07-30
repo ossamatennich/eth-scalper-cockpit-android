@@ -55,10 +55,11 @@ public final class StatusPayloadPolicy {
     public static List<Map<String,Object>> recentDiagnosticMaps(Collection<MarketRuntime> runtimes,
                                                                  int limit) {
         List<Map<String,Object>> values=new ArrayList<>();
+        int bounded=Math.max(0,Math.min(limit,MAX_RECENT_DIAGNOSTICS));
         if(runtimes!=null)for(MarketRuntime runtime:runtimes)
-            if(runtime!=null)values.addAll(runtime.recorder.eventMaps());
+            if(runtime!=null)values.addAll(runtime.recorder.recentEventMaps(bounded));
         values.sort(Comparator.comparingLong(StatusPayloadPolicy::eventAt));
-        int bounded=Math.max(0,Math.min(limit,MAX_RECENT_DIAGNOSTICS));List<Map<String,Object>> out=new ArrayList<>();
+        List<Map<String,Object>> out=new ArrayList<>();
         int start=Math.max(0,values.size()-bounded);
         for(int i=start;i<values.size();i++){Map<String,Object> item=new LinkedHashMap<>(values.get(i));
             item.put("at",eventAt(item));item.put("code",String.valueOf(item.get("reasonCode")));
