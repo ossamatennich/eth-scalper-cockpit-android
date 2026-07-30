@@ -15,6 +15,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.MediaStore;
 import android.provider.Settings;
@@ -75,6 +77,16 @@ public class MainActivity extends Activity {
     private final AtomicBoolean exportRunning=new AtomicBoolean(false),exportCancelled=new AtomicBoolean(false);
     private final AtomicBoolean resetAfterExport=new AtomicBoolean(false);
     private boolean receiverRegistered;
+    private final Handler startupHandler=new Handler(Looper.getMainLooper());
+    private int startupRecoveryAttempt;
+    private boolean activityDestroyed;
+    private final Runnable startupRecovery=new Runnable(){@Override public void run(){
+        if(activityDestroyed||MarketServiceRecoveryPolicy.isOperational(latestState.optBoolean("nativeActive",false),
+                latestState.optBoolean("connected",false),latestState.optLong("lastAgeSec",-1)))return;
+        sendServiceAction(MarketWatchService.ACTION_START,null);
+        startupRecoveryAttempt++;
+        scheduleStartupRecovery();
+    }};
 
     private final BroadcastReceiver statusReceiver=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){
         String payload=intent.getStringExtra(MarketWatchService.EXTRA_PAYLOAD);if(payload!=null)render(payload);}};
@@ -82,8 +94,11 @@ public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState){
         setTheme(R.style.AppTheme);super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
-        MarketWatchService.ensureChannels(this);buildNativeNavigation();requestNotificationPermission();
-        sendServiceAction(MarketWatchService.ACTION_START,null);askBatteryOptimizationOnce();
+        MarketWatchService.ensureChannels(this);buildNativeNavigation();
+        // Start the foreground service while the activity is unquestionably visible. On a fresh
+        // install Android may display the notification permission UI immediately afterwards.
+        sendServiceAction(MarketWatchService.ACTION_START,null);scheduleStartupRecovery();
+        if(!requestNotificationPermission())startupHandler.postDelayed(this::askBatteryOptimizationOnce,1500L);
         String state=MarketWatchService.getLastStatusJson(this);if(!state.isEmpty())render(state);
     }
 
@@ -165,6 +180,9 @@ public class MainActivity extends Activity {
         LinearLayout reset=card(root,"RECORDER",RED);reset.addView(actionButton("Réinitialiser diagnostic",RED,this::confirmDiagnosticReset));return wrap(root);}
 
     private void render(String payload){try{latestState=new JSONObject(payload);UiState state=UiState.from(latestState);
+        if(MarketServiceRecoveryPolicy.isOperational(latestState.optBoolean("nativeActive",false),
+                latestState.optBoolean("connected",false),latestState.optLong("lastAgeSec",-1))){
+            startupHandler.removeCallbacks(startupRecovery);startupRecoveryAttempt=0;}
         setChanged(connection,state.connection);connection.setTextColor(state.connected?CYAN:AMBER);
         setChanged(feedAge,"Âge du flux : "+state.feedAge);setChanged(generalState,state.generalState);
         JSONObject markets=latestState.optJSONObject("markets");if(markets!=null)for(Map.Entry<String,MarketViews> entry:marketViews.entrySet()){
@@ -241,14 +259,17 @@ public class MainActivity extends Activity {
             String value=key.getText().toString().trim();if(!value.isEmpty())SecureAiStore.saveKey(this,value);SecureAiStore.setEnabled(this,enabled.isChecked());setChanged(aiInfo,aiStatusText());}).show();}
 
     private String aiStatusText(){return "IA OpenAI : "+(SecureAiStore.isEnabled(this)?"ON · "+SecureAiStore.maskedKey(this):"OFF")+"\nAvis asynchrone, jamais décisionnel.";}
-    private void sendServiceAction(String action,String toast){Intent intent=new Intent(this,MarketWatchService.class);intent.setAction(action);ContextCompat.startForegroundService(this,intent);if(toast!=null)Toast.makeText(this,toast,Toast.LENGTH_SHORT).show();}
-    private void requestNotificationPermission(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=getPackageManager().PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},1001);}
+    private void sendServiceAction(String action,String toast){try{Intent intent=new Intent(this,MarketWatchService.class);intent.setAction(action);ContextCompat.startForegroundService(this,intent);if(toast!=null)Toast.makeText(this,toast,Toast.LENGTH_SHORT).show();}catch(RuntimeException error){scheduleStartupRecovery();}}
+    private boolean requestNotificationPermission(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=getPackageManager().PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},1001);return true;}return false;}
+    private void scheduleStartupRecovery(){if(activityDestroyed)return;startupHandler.removeCallbacks(startupRecovery);long delay=MarketServiceRecoveryPolicy.delayForAttempt(startupRecoveryAttempt);startupHandler.postDelayed(startupRecovery,delay);}
     private void askBatteryOptimizationOnce(){if(Build.VERSION.SDK_INT<23)return;PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);if(power==null||power.isIgnoringBatteryOptimizations(getPackageName()))return;
         try{Intent intent=new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:"+getPackageName()));startActivity(intent);}catch(Exception ignored){}}
 
-    @Override protected void onStart(){super.onStart();if(!receiverRegistered){IntentFilter filter=new IntentFilter(MarketWatchService.BROADCAST_STATUS);ContextCompat.registerReceiver(this,statusReceiver,filter,ContextCompat.RECEIVER_NOT_EXPORTED);receiverRegistered=true;}sendServiceAction(MarketWatchService.ACTION_SYNC_NOW,null);}
-    @Override protected void onStop(){if(receiverRegistered){unregisterReceiver(statusReceiver);receiverRegistered=false;}super.onStop();}
-    @Override protected void onDestroy(){exportCancelled.set(true);exportExecutor.shutdownNow();super.onDestroy();}
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==1001){sendServiceAction(MarketWatchService.ACTION_START,null);scheduleStartupRecovery();startupHandler.postDelayed(this::askBatteryOptimizationOnce,1200L);}}
+    @Override protected void onStart(){super.onStart();if(!receiverRegistered){IntentFilter filter=new IntentFilter(MarketWatchService.BROADCAST_STATUS);ContextCompat.registerReceiver(this,statusReceiver,filter,ContextCompat.RECEIVER_NOT_EXPORTED);receiverRegistered=true;}sendServiceAction(MarketWatchService.ACTION_START,null);scheduleStartupRecovery();}
+    @Override protected void onResume(){super.onResume();sendServiceAction(MarketWatchService.ACTION_START,null);scheduleStartupRecovery();}
+    @Override protected void onStop(){startupHandler.removeCallbacks(startupRecovery);if(receiverRegistered){unregisterReceiver(statusReceiver);receiverRegistered=false;}super.onStop();}
+    @Override protected void onDestroy(){activityDestroyed=true;startupHandler.removeCallbacksAndMessages(null);exportCancelled.set(true);exportExecutor.shutdownNow();super.onDestroy();}
 
     private LinearLayout screenRoot(){LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(14),dp(16),dp(28));root.setBackgroundColor(BG);return root;}
     private ScrollView wrap(LinearLayout root){ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.addView(root,new ScrollView.LayoutParams(-1,-2));return scroll;}

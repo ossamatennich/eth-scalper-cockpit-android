@@ -437,6 +437,9 @@ public class MarketWatchService extends Service {
         // can survive many upgrades; their state must never delay the first Futures request.
         connectIfNeeded();
         prefillHistoricalCandlesIfNeeded();
+        // Do not wait for the first 3-second health tick. A fresh install can briefly delay the
+        // WebSocket while Android is displaying permission UI, so request public REST quotes now.
+        maybeRefreshRestFallback(System.currentTimeMillis());
         scheduleHealthCheck();
         broadcastStatus("service_started", "Service actif — connexion Binance Futures en cours");
         if (ACTION_TEST_ALERT.equals(action)) {
