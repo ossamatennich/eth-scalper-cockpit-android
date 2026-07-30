@@ -123,6 +123,15 @@ public class MarketWatchService extends Service {
     private long observedSignalId;
     private long lastMarketFrameAt;
     private long lastMarketFrameJsonRefreshAt;
+    private long lastResearchSummaryRefreshAt;
+    private int legacyFrameSignals,legacyC1Long,legacyC1Short,legacyC2Long,legacyC2Short;
+
+    /** Serializes REST mutations with WebSocket ingestion and status snapshots. */
+    private void postMarketState(Runnable task) {
+        handler.post(() -> {
+            synchronized (MarketWatchService.this) { task.run(); }
+        });
+    }
 
     private OkHttpClient client;
     private WebSocket socket;
@@ -170,6 +179,8 @@ public class MarketWatchService extends Service {
     public static volatile String LAST_STATUS_JSON = "";
     public static volatile String LAST_MARKET_FRAMES_JSON = "[]";
     public static volatile String LAST_MARKET_SUMMARY_JSON = "{}";
+    public static volatile String LAST_OBSERVATION_SUMMARY_JSON = "{}";
+    public static volatile String LAST_CALIBRATION_SUMMARY_JSON = "{}";
     public static volatile String LAST_PERSISTENT_OBSERVATIONS_JSON = "[]";
     public static volatile String LAST_PERSISTENT_MARKET_FRAMES_JSON = "[]";
     public static volatile String LAST_OVERNIGHT_RECORDER_SUMMARY_JSON = "{}";
@@ -461,6 +472,11 @@ public class MarketWatchService extends Service {
             pendingCandidateIndex.clear();
             candidateTombstones.clear();
             marketFrames.clear();
+            legacyFrameSignals=legacyC1Long=legacyC1Short=legacyC2Long=legacyC2Short=0;
+            LAST_MARKET_FRAMES_JSON="[]";
+            LAST_MARKET_SUMMARY_JSON="{}";
+            LAST_OBSERVATION_SUMMARY_JSON="{}";
+            LAST_CALIBRATION_SUMMARY_JSON="{}";
             resetPersistentRecorder();
             for(MarketRuntime runtime:marketCoordinator.runtimes().values())
                 flushRuntimeRecorder(runtime,System.currentTimeMillis(),true);
@@ -736,7 +752,7 @@ public class MarketWatchService extends Service {
             if (connectivityManager == null || networkCallback != null) return;
             networkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override public void onAvailable(Network network) {
-                    handler.post(() -> {
+                    postMarketState(() -> {
                         lastNetworkAvailableAt = System.currentTimeMillis();
                         if (!running) return;
                         reconnectAttempt = 0;
@@ -753,7 +769,7 @@ public class MarketWatchService extends Service {
                 }
 
                 @Override public void onLost(Network network) {
-                    handler.post(() -> {
+                    postMarketState(() -> {
                         if (!running || isNetworkAvailable()) return;
                         stopSocket();
                         activeMarketDataSource = "NONE";
@@ -995,7 +1011,7 @@ public class MarketWatchService extends Service {
                         ));
                     }
 
-                    handler.post(() -> {
+                    postMarketState(() -> {
                         Deque<Candle> target = isEth ? ethCandles : btcCandles;
                         for (Candle candle : loaded) upsert(target, candle, 180);
 
@@ -1032,7 +1048,7 @@ public class MarketWatchService extends Service {
                 try {
                     String raw = response.body() == null ? "" : response.body().string();
 
-                    handler.post(() -> {
+                    postMarketState(() -> {
                         try {
                             JSONArray rows = new JSONArray(raw);
                             int added = 0;
@@ -1125,7 +1141,7 @@ public class MarketWatchService extends Service {
                         ));
                     }
 
-                    handler.post(() -> {
+                    postMarketState(() -> {
                         Deque<Candle> target = isEth ? ethCandles : btcCandles;
                         target.clear();
                         for (Candle candle : loaded) upsert(target, candle, 180);
@@ -1170,7 +1186,7 @@ public class MarketWatchService extends Service {
                 double bid=value.optDouble("bidPrice",value.optDouble("b",0));
                 double ask=value.optDouble("askPrice",value.optDouble("a",0));
                 if(!(bid>0&&ask>=bid))throw new IOException("INVALID_BOOK_TICKER");
-                handler.post(()->{long receivedAt=System.currentTimeMillis();
+                postMarketState(()->{long receivedAt=System.currentTimeMillis();
                     marketDataRouter.routeBookTicker(runtime.profile.symbol,bid,ask,receivedAt);
                     if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L) {
                         activeMarketDataSource="REST:"+endpoint.name;
@@ -1202,7 +1218,7 @@ public class MarketWatchService extends Service {
                 double bid=value.optDouble("bidPrice",value.optDouble("b",0));
                 double ask=value.optDouble("askPrice",value.optDouble("a",0));
                 if(!(bid>0&&ask>=bid))throw new IOException("INVALID_BTC_BOOK_TICKER");
-                handler.post(()->{long receivedAt=System.currentTimeMillis();btcBid=bid;btcAsk=ask;
+                postMarketState(()->{long receivedAt=System.currentTimeMillis();btcBid=bid;btcAsk=ask;
                     btcLast=(bid+ask)/2.0;sharedBtc.bid=bid;sharedBtc.ask=ask;sharedBtc.last=btcLast;
                     sharedBtc.lastTickerAt=receivedAt;if(socket==null||lastMessageAt==0
                             ||receivedAt-lastMessageAt>70_000L) {
@@ -1244,7 +1260,7 @@ public class MarketWatchService extends Service {
                     JSONArray rows=new JSONArray(raw);List<Candle> loaded=new ArrayList<>();
                     for(int i=0;i<rows.length();i++){JSONArray row=rows.optJSONArray(i);if(row!=null&&row.length()>=6)loaded.add(new Candle(row.optLong(0),row.optDouble(1),row.optDouble(2),row.optDouble(3),row.optDouble(4),row.optDouble(5)));}
                     if(loaded.isEmpty())throw new IOException("EMPTY_KLINES");
-                    handler.post(()->{long receivedAt=System.currentTimeMillis();
+                    postMarketState(()->{long receivedAt=System.currentTimeMillis();
                         List<MarketRuntime.MarketBar> bars=new ArrayList<>();
                         for(Candle candle:loaded)bars.add(toRuntimeBar(candle));
                         if(replace)marketDataRouter.replacePreloadedCandles(
@@ -1289,7 +1305,7 @@ public class MarketWatchService extends Service {
                 JSONArray rows=new JSONArray(raw);List<MarketRuntime.AggTrade> trades=new ArrayList<>();
                 for(int i=0;i<rows.length();i++){JSONObject row=rows.optJSONObject(i);if(row==null)continue;long id=row.optLong("a",-1);double q=row.optDouble("q",0),price=row.optDouble("p",runtime.last);long at=row.optLong("T",System.currentTimeMillis());if(id>=0&&q>0&&price>0)trades.add(new MarketRuntime.AggTrade(id,at,price,q,row.optBoolean("m",false)));}
                 if(trades.isEmpty())throw new IOException("EMPTY_TRADES");
-                handler.post(()->{long receivedAt=System.currentTimeMillis();marketDataRouter.mergeFallbackAggTrades(runtime.profile.symbol,trades,receivedAt);if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L){activeMarketDataSource="REST:"+endpoint.name;executionFeedAuthoritative=!endpoint.spotFallback;}lastFeedError="";evaluateSignal(receivedAt);});
+                postMarketState(()->{long receivedAt=System.currentTimeMillis();marketDataRouter.mergeFallbackAggTrades(runtime.profile.symbol,trades,receivedAt);if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L){activeMarketDataSource="REST:"+endpoint.name;executionFeedAuthoritative=!endpoint.spotFallback;}lastFeedError="";evaluateSignal(receivedAt);});
             }catch(Exception error){lastFeedError=endpoint.name+":REST_TRADES:"
                     +safeError(error);fetchRuntimeAggTrades(runtime,endpointIndex+1);
             }finally{try{response.close();}catch(Exception ignored){}}}
@@ -1323,14 +1339,14 @@ public class MarketWatchService extends Service {
                 JSONArray rows=new JSONArray(raw);List<Candle> loaded=new ArrayList<>();
                 for(int i=0;i<rows.length();i++){JSONArray row=rows.optJSONArray(i);if(row!=null&&row.length()>=6)loaded.add(new Candle(row.optLong(0),row.optDouble(1),row.optDouble(2),row.optDouble(3),row.optDouble(4),row.optDouble(5)));}
                 if(loaded.isEmpty())throw new IOException("EMPTY_BTC_KLINES");
-                handler.post(()->{long receivedAt=System.currentTimeMillis();if(replace)btcCandles.clear();for(Candle candle:loaded)upsert(btcCandles,candle,180);Candle last=loaded.get(loaded.size()-1);btcLast=last.close;sharedBtc.last=btcLast;sharedBtc.candles.clear();for(Candle candle:loaded)sharedBtc.candles.addLast(toRuntimeBar(candle));sharedBtc.lastKlineAt=receivedAt;lastRestKlineOkAt=receivedAt;restKlineRefreshes++;if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L){activeMarketDataSource="REST:"+endpoint.name;executionFeedAuthoritative=!endpoint.spotFallback;}lastFeedError="";evaluateSignal(receivedAt);});
+                postMarketState(()->{long receivedAt=System.currentTimeMillis();if(replace)btcCandles.clear();for(Candle candle:loaded)upsert(btcCandles,candle,180);Candle last=loaded.get(loaded.size()-1);btcLast=last.close;sharedBtc.last=btcLast;sharedBtc.candles.clear();for(Candle candle:loaded)sharedBtc.candles.addLast(toRuntimeBar(candle));sharedBtc.lastKlineAt=receivedAt;lastRestKlineOkAt=receivedAt;restKlineRefreshes++;if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L){activeMarketDataSource="REST:"+endpoint.name;executionFeedAuthoritative=!endpoint.spotFallback;}lastFeedError="";evaluateSignal(receivedAt);});
             }catch(Exception error){lastFeedError=endpoint.name+":REST_BTC:"
                     +safeError(error);fetchReferenceKlines(limit,replace,endpointIndex+1);
             }finally{try{response.close();}catch(Exception ignored){}}}
         });
     }
 
-    private void handleMessage(String text) {
+    private synchronized void handleMessage(String text) {
         try {
             JSONObject root = new JSONObject(text);
             String stream = root.optString("stream", "");
@@ -2410,21 +2426,37 @@ public class MarketWatchService extends Service {
 
         MarketFrame frame = new MarketFrame(now, snapshot, decision, setupCandidateFor(snapshot));
         marketFrames.addLast(frame);
+        updateLegacyFrameCounters(frame,1);
         MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
         ethRuntime.recorder.frame(now,decision,snapshot,
                 ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
         flushRuntimeRecorder(ethRuntime,now,false);
         updateMarketFrameFutureLabels(snapshot.ethLast, now);
 
-        while (marketFrames.size() > 7200) marketFrames.removeFirst();
+        while (marketFrames.size() > 7200)updateLegacyFrameCounters(marketFrames.removeFirst(),-1);
 
         if (now - lastMarketFrameJsonRefreshAt >= 5000) {
             try {
-                LAST_MARKET_FRAMES_JSON = marketFramesJson().toString();
                 LAST_MARKET_SUMMARY_JSON = marketRecorderSummaryJson().toString();
                 lastMarketFrameJsonRefreshAt = now;
             } catch (Exception ignored) {}
         }
+        if(now-lastResearchSummaryRefreshAt>=60_000L){
+            try{
+                LAST_OBSERVATION_SUMMARY_JSON=observationSummaryJson().toString();
+                LAST_CALIBRATION_SUMMARY_JSON=calibrationSummaryJson().toString();
+                lastResearchSummaryRefreshAt=now;
+            }catch(Exception ignored){}
+        }
+    }
+
+    private void updateLegacyFrameCounters(MarketFrame frame,int delta){
+        if(frame==null)return;
+        if(frame.isSignal)legacyFrameSignals+=delta;
+        if("C1_LONG".equals(frame.setupCandidate))legacyC1Long+=delta;
+        else if("C1_SHORT".equals(frame.setupCandidate))legacyC1Short+=delta;
+        else if("C2_LONG".equals(frame.setupCandidate))legacyC2Long+=delta;
+        else if("C2_SHORT".equals(frame.setupCandidate))legacyC2Short+=delta;
     }
 
     private String setupCandidateFor(MarketSnapshot s) {
@@ -2667,32 +2699,20 @@ public class MarketWatchService extends Service {
 
     private JSONObject marketRecorderSummaryJson() throws Exception {
         JSONObject o = new JSONObject();
-        long oldest = 0, newest = 0;
-        int frames = 0, signals = 0;
-        int c1Long = 0, c1Short = 0, c2Long = 0, c2Short = 0;
-
-        for (MarketFrame f : marketFrames) {
-            frames++;
-            if (oldest == 0) oldest = f.at;
-            newest = f.at;
-            if (f.isSignal) signals++;
-            if ("C1_LONG".equals(f.setupCandidate)) c1Long++;
-            else if ("C1_SHORT".equals(f.setupCandidate)) c1Short++;
-            else if ("C2_LONG".equals(f.setupCandidate)) c2Long++;
-            else if ("C2_SHORT".equals(f.setupCandidate)) c2Short++;
-        }
+        MarketFrame first=marketFrames.peekFirst(),last=marketFrames.peekLast();
+        long oldest=first==null?0:first.at,newest=last==null?0:last.at;
 
         o.put("mode", "PLAYBACK_LAB");
-        o.put("frames", frames);
-        o.put("signals", signals);
+        o.put("frames", marketFrames.size());
+        o.put("signals", legacyFrameSignals);
         o.put("oldestAt", oldest);
         o.put("newestAt", newest);
         o.put("durationSec", oldest > 0 && newest > oldest ? (newest - oldest) / 1000 : 0);
         o.put("maxStoredFrames", 7200);
-        o.put("c1LongCandidates", c1Long);
-        o.put("c1ShortCandidates", c1Short);
-        o.put("c2LongCandidates", c2Long);
-        o.put("c2ShortCandidates", c2Short);
+        o.put("c1LongCandidates", legacyC1Long);
+        o.put("c1ShortCandidates", legacyC1Short);
+        o.put("c2LongCandidates", legacyC2Long);
+        o.put("c2ShortCandidates", legacyC2Short);
         o.put("purpose", "Full market playback: find missed LONG/SHORT opportunities and false entries");
         return o;
     }
@@ -4513,7 +4533,7 @@ public class MarketWatchService extends Service {
         if (manager != null) manager.notify(NOTIF_WATCH_ID, buildWatchNotification(text));
     }
 
-    private void broadcastStatus(String type, String message) {
+    private synchronized void broadcastStatus(String type, String message) {
         try {
             long now = System.currentTimeMillis();
             recordFeedTransitions(now);
@@ -4620,9 +4640,11 @@ public class MarketWatchService extends Service {
             recorderSummary.put("version",BuildConfig.VERSION_NAME);
             recorderSummary.put("marketSampleIntervalSec",PERSISTENT_MARKET_FRAME_INTERVAL_MS/1000);
             state.put("overnightRecorder",recorderSummary);
-            state.put("marketRecorderSummary", marketRecorderSummaryJson());
-            state.put("observationSummary", observationSummaryJson());
-            state.put("calibrationSummary", calibrationSummaryJson());
+            // The live status is a bounded current-state payload. Full research collections are
+            // exported from their persistent journals and must never block market connectivity.
+            state.put("marketRecorderSummary", new JSONObject(LAST_MARKET_SUMMARY_JSON));
+            state.put("observationSummary", new JSONObject(LAST_OBSERVATION_SUMMARY_JSON));
+            state.put("calibrationSummary", new JSONObject(LAST_CALIBRATION_SUMMARY_JSON));
             state.put("engineMetrics", engineMetricsJson(snapshot, decision));
             state.put("lastSignalAt", lastSignalAt);
             state.put("lastTerminalAt", lastTerminalAt > 0 ? lastTerminalAt : JSONObject.NULL);
@@ -4678,7 +4700,51 @@ public class MarketWatchService extends Service {
             Intent broadcast = new Intent(BROADCAST_STATUS).setPackage(getPackageName());
             broadcast.putExtra(EXTRA_PAYLOAD, output);
             sendBroadcast(broadcast);
-        } catch (Exception ignored) {}
+        } catch (Exception error) {
+            Log.e("NMC_STATUS","Status complet impossible; publication du statut minimal",error);
+            publishMinimalStatus(type,message,error);
+        }
+    }
+
+    /** A status serialization problem must never leave the UI blank or affect market ingestion. */
+    private void publishMinimalStatus(String type,String message,Exception error) {
+        try {
+            long now=System.currentTimeMillis();
+            JSONObject state=new JSONObject();
+            state.put("version",BuildConfig.VERSION_NAME+"-minimal-safe-status");
+            state.put("nativeActive",running);
+            state.put("connected",marketFeedsOperational(now));
+            state.put("websocketConnected",socket!=null&&lastMessageAt>0&&now-lastMessageAt<70_000L);
+            state.put("lastAgeSec",marketFeedAgeMs(now)==Long.MAX_VALUE?-1:marketFeedAgeMs(now)/1000L);
+            state.put("marketDataSource",activeMarketDataSource);
+            state.put("executionFeedAuthoritative",executionFeedAuthoritative);
+            state.put("networkAvailable",isNetworkAvailable());
+            state.put("type",type);state.put("message",message);
+            state.put("statusSerializationFallback",true);
+            state.put("statusError",error==null?"UNKNOWN":error.getClass().getSimpleName());
+            putPrice(state,"eth",ethLast);putPrice(state,"bid",ethBid);putPrice(state,"ask",ethAsk);
+            putPrice(state,"btc",btcLast);putPrice(state,"btcBid",btcBid);putPrice(state,"btcAsk",btcAsk);
+            JSONObject markets=new JSONObject();
+            for(MarketProfile profile:marketRegistry.tradedMarkets()){
+                MarketRuntime runtime=marketCoordinator.runtime(profile.symbol);
+                markets.put(profile.symbol,marketStatusJson(profile,runtime.last,runtime.bid,
+                        runtime.ask,runtime.candles.size(),runtime.lastTickerAt,runtime.lastSignal,
+                        runtime.hasActivePlan(),runtime.lastTerminalAt,runtime.lastTerminalStatus,now));
+            }
+            state.put("markets",markets);
+            JSONObject reference=new JSONObject();reference.put("symbol",MarketProfile.BTC_SYMBOL);
+            putPrice(reference,"last",btcLast);putPrice(reference,"bid",btcBid);putPrice(reference,"ask",btcAsk);
+            reference.put("feedAgeSec",ageSeconds(now,sharedBtc.lastTickerAt));reference.put("tradable",false);
+            state.put("referenceMarket",reference);
+            state.put("activePlans",new JSONArray());
+            state.put("realTradingAllowed",SignalSafetyPolicies.realTradingAllowed());
+            String output=state.toString();LAST_STATUS_JSON=output;
+            getSharedPreferences(STATE_PREFERENCES,MODE_PRIVATE).edit().putString(STATE_JSON,output).apply();
+            Intent broadcast=new Intent(BROADCAST_STATUS).setPackage(getPackageName());
+            broadcast.putExtra(EXTRA_PAYLOAD,output);sendBroadcast(broadcast);
+        } catch(Exception fallbackError){
+            Log.e("NMC_STATUS","Statut minimal impossible",fallbackError);
+        }
     }
 
     private JSONObject marketStatusJson(MarketProfile profile,double last,double bid,double ask,

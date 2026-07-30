@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.34.3.7 — flux découplé du statut et des diagnostics
+
+- Binance Futures public reste la source principale et prioritaire ;
+- sérialisation complète des 7 200 frames supprimée du chemin d’analyse temps réel ;
+- statut Android construit à partir de résumés incrémentaux et de 20 événements récents au maximum ;
+- mutations REST, ingestion WebSocket, évaluation et statut sérialisés de façon sûre ;
+- statut minimal de secours publié si une donnée diagnostic détaillée est invalide ;
+- édition installable clairement nommée `NMC Stable 3.7` afin de la distinguer d’une ancienne installation parallèle ;
+- aucune modification des signaux, entrées, TP, SL, quantités ou règles de marché.
+
 ## 2.34.3.6 — démarrage automatique des flux
 
 - démarrage du service avant les dialogues de permission Android ;

@@ -16,6 +16,8 @@ public final class MarketDiagnosticRecorder {
     private final Deque<Record> events = new ArrayDeque<>();
     private final Deque<Record> frames = new ArrayDeque<>();
     private long sequence;
+    private int candidates,rejected,confirmed,restored,tp,sl;
+    private long fullEventMapReads,recentEventMapReads;
 
     public MarketDiagnosticRecorder(MarketProfile profile) {
         if (profile == null) throw new IllegalArgumentException("profile");
@@ -34,7 +36,11 @@ public final class MarketDiagnosticRecorder {
         normalizeTerminal(value);
         Record record=new Record(++sequence,value);
         if("MARKET_FRAME".equals(type)){frames.addLast(record);trim(frames,MAX_FRAMES);}
-        else {events.addLast(record);trim(events,MAX_EVENTS);}
+        else {
+            events.addLast(record);
+            updateSummaryCounters(record,1);
+            while(events.size()>MAX_EVENTS)updateSummaryCounters(events.removeFirst(),-1);
+        }
         return record;
     }
 
@@ -51,20 +57,24 @@ public final class MarketDiagnosticRecorder {
                 &&!"MARKET_FRAME".equals(record.values.get("eventType")))out.add(record);
         return Collections.unmodifiableList(out);
     }
-    public synchronized List<Map<String,Object>> eventMaps(){return maps(events);}
+    public synchronized List<Map<String,Object>> eventMaps(){fullEventMapReads++;return maps(events);}
+    /** Returns only the bounded tail needed by the Android status payload. */
+    public synchronized List<Map<String,Object>> recentEventMaps(int limit){
+        recentEventMapReads++;
+        int bounded=Math.max(0,Math.min(limit,MAX_EVENTS));
+        ArrayList<Map<String,Object>> out=new ArrayList<>(bounded);
+        java.util.Iterator<Record> iterator=events.descendingIterator();
+        while(iterator.hasNext()&&out.size()<bounded)out.add(iterator.next().values);
+        Collections.reverse(out);
+        return Collections.unmodifiableList(out);
+    }
     public synchronized List<Map<String,Object>> frameMaps(){return maps(frames);}
     public synchronized long latestSequence(){return sequence;}
-    public synchronized void reset(){events.clear();frames.clear();}
+    public synchronized void reset(){events.clear();frames.clear();candidates=rejected=confirmed=restored=tp=sl=0;}
+    synchronized long fullEventMapReads(){return fullEventMapReads;}
+    synchronized long recentEventMapReads(){return recentEventMapReads;}
 
     public synchronized Map<String,Object> summary() {
-        int candidates=0,rejected=0,confirmed=0,restored=0,tp=0,sl=0;
-        for(Record record:events){String type=String.valueOf(record.values.get("eventType"));
-            if(type.contains("CANDIDATE"))candidates++;
-            if(type.contains("REJECT")||type.contains("TOMBSTONE")||type.contains("MISSED"))rejected++;
-            if("PLAN_CONFIRMED".equals(type))confirmed++;
-            if("PLAN_RESTORED".equals(type))restored++;
-            if("TP_TOUCHED".equals(type))tp++;if("SL_TOUCHED".equals(type))sl++;
-        }
         LinkedHashMap<String,Object> out=new LinkedHashMap<>();
         out.put("symbol",profile.symbol);out.put("asset",profile.asset);
         out.put("profileVersion",profile.profileVersion);out.put("events",events.size());
@@ -72,6 +82,16 @@ public final class MarketDiagnosticRecorder {
         out.put("rejectedCandidates",rejected);out.put("confirmedTrades",confirmed);
         out.put("restoredActivePlans",restored);out.put("tp",tp);out.put("sl",sl);
         return Collections.unmodifiableMap(out);
+    }
+
+    private void updateSummaryCounters(Record record,int delta){
+        String type=String.valueOf(record.values.get("eventType"));
+        if(type.contains("CANDIDATE"))candidates+=delta;
+        if(type.contains("REJECT")||type.contains("TOMBSTONE")||type.contains("MISSED"))rejected+=delta;
+        if("PLAN_CONFIRMED".equals(type))confirmed+=delta;
+        if("PLAN_RESTORED".equals(type))restored+=delta;
+        if("TP_TOUCHED".equals(type))tp+=delta;
+        if("SL_TOUCHED".equals(type))sl+=delta;
     }
 
     private LinkedHashMap<String,Object> base(long at,String type,String code,String text,
