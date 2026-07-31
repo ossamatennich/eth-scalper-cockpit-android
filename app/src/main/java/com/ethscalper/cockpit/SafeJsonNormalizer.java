@@ -33,7 +33,8 @@ public final class SafeJsonNormalizer {
 
     public static Object normalize(Object value,String path,List<Issue> issues) {
         if(value==null||value==JSONObject.NULL)return JSONObject.NULL;
-        if(value instanceof CharSequence||value instanceof Character||value instanceof Boolean)
+        if(value instanceof Boolean)return value;
+        if(value instanceof CharSequence||value instanceof Character)
             return String.class.isInstance(value)?value:String.valueOf(value);
         if(value instanceof Number){
             double number=((Number)value).doubleValue();
