@@ -31,7 +31,8 @@ public final class ShadowPlanFactory {
         ShadowPlanState state=new ShadowPlanState(id,component,signature,profile,candidate.side,
                 sleeve,createdAt,now,candidate.entry,plan.takeProfit,plan.stopLoss,
                 plan.roundedStopDistance,plan.roundedTargetDistance,plan.finalQuantity,
-                plan.qualityCap,plan.qualityRiskBudget,plan.resultCostPerUnit);
+                plan.qualityCap,plan.qualityRiskBudget,plan.resultCostPerUnit,
+                plan.a,plan.adverseExcursion60);
         ShadowNetEconomics.Result economics=ShadowNetEconomics.calculate(profile,candidate.entry,
                 plan.roundedStopDistance,plan.roundedTargetDistance,plan.finalQuantity,
                 plan.qualityRiskBudget,plan.qualityCap);
@@ -47,7 +48,8 @@ public final class ShadowPlanFactory {
         int quality=p.qualityCap;
         ShadowPlanState state=new ShadowPlanState(profile.symbol+"|PUBLIC|"+now,component,signature,
                 profile,d.side,sleeve,createdAt,now,d.entry,d.takeProfit,d.stopLoss,
-                d.stopDistance,d.targetMove,d.quantity,quality,p.qualityRiskBudget,p.resultCostPerUnit);
+                d.stopDistance,d.targetMove,d.quantity,quality,p.qualityRiskBudget,p.resultCostPerUnit,
+                p.a,p.adverseExcursion60);
         ShadowNetEconomics.Result economics=ShadowNetEconomics.calculate(profile,d.entry,
                 d.stopDistance,d.targetMove,d.quantity,p.qualityRiskBudget,quality);
         return new Result(true,"SHADOW_PRODUCTION_GEOMETRY_READY",state,p,fill.sizing,economics);

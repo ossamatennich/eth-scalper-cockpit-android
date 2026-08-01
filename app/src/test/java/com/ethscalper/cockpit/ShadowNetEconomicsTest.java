@@ -5,8 +5,10 @@ import static org.junit.Assert.*;
 
 public class ShadowNetEconomicsTest {
     @Test public void ethAndSolUseTheirOwnCostsAndStepsWithoutChangingActiveQuantity(){
+        int activeQuantity=3;
         ShadowNetEconomics.Result eth=ShadowNetEconomics.calculate(MarketProfile.eth(),2000,2,5,3,14.55,7);
-        assertTrue(eth.valid);assertEquals(3,3);assertEquals(1.43,eth.estimatedRoundTripCostPerUnit,1e-12);
+        assertTrue(eth.valid);assertEquals(3,activeQuantity);
+        assertEquals(1.43,eth.estimatedRoundTripCostPerUnit,1e-12);
         ShadowNetEconomics.Result sol=ShadowNetEconomics.calculate(MarketProfile.sol(),75.8,.08,.18,50,14.55,120);
         assertTrue(sol.valid);assertEquals(1,MarketProfile.sol().quantityStep);
         assertNotEquals(eth.estimatedRoundTripCostPerUnit,sol.estimatedRoundTripCostPerUnit,1e-12);

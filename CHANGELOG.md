@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.4.1 — durcissement de l’observabilité shadow
+
+- isolation de toutes les exceptions shadow afin qu’elles ne puissent jamais interrompre le moteur public ;
+- terminaux shadow acceptés uniquement sur une cotation tradée fraîche et valide ;
+- schéma `SHADOW_SCHEMA_V2` avec `E60` absolu et `eNormalized` séparés ;
+- `resultR` calculé sur le risque net planifié, frais inclus ;
+- protection causale contre une cible déjà touchée avant l’ouverture shadow ;
+- tests fonctionnels renforcés sans modification des seuils ni des plans publics.
+
 ## 2.34.4.0 — calibration A/B shadow isolée
 
 - garde P01 finale et anti-épuisement P02 mesurés sans modifier les confirmations publiques ;

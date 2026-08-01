@@ -1,6 +1,8 @@
 package com.ethscalper.cockpit;
 
 import org.junit.Test;
+import org.json.JSONObject;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import static org.junit.Assert.*;
 
@@ -34,5 +36,19 @@ public class ShadowResearchCoordinatorTest {
                 java.util.Collections.emptyMap());
         assertEquals("SHADOW_TP_TOUCHED",r.eventMaps().get(1).get("terminalStatus"));
         assertEquals(0,r.summary().get("tp"));
+    }
+    @Test public void absoluteE60AndNormalizedEStayDistinctAndNumericAfterJsonSerialization() throws Exception {
+        SignalDecision signal=ShadowTestFixtures.candidate(MarketProfile.eth(),"LONG",95);
+        MarketSnapshot snapshot=ShadowTestFixtures.snapshot(MarketProfile.eth(),"LONG",30_000,
+                2,1,2,2,.4,.6,1,.5,2);
+        NormalizedSignalMetrics.Result metrics=NormalizedSignalMetrics.calculate(MarketProfile.eth(),
+                "LONG",signal,snapshot,.50);
+        LinkedHashMap<String,Object> values=new LinkedHashMap<>();
+        MarketPlanOrchestrator.putMetrics(values,metrics,.50);
+        assertTrue(values.get("E60") instanceof Number);assertTrue(values.get("eNormalized") instanceof Number);
+        assertEquals(.50,((Number)values.get("E60")).doubleValue(),0);
+        assertEquals(.25,((Number)values.get("eNormalized")).doubleValue(),0);
+        JSONObject json=new JSONObject(values);String serialized=json.toString();JSONObject restored=new JSONObject(serialized);
+        assertEquals(.50,restored.getDouble("E60"),0);assertEquals(.25,restored.getDouble("eNormalized"),0);
     }
 }

@@ -92,6 +92,7 @@ public final class MarketRuntime {
                 null,null,0,true,true,0,java.util.Collections.emptyMap());
         java.util.LinkedHashMap<String,Object> shadowDetails=new java.util.LinkedHashMap<>();
         shadowDetails.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);
+        shadowDetails.put("shadowSchemaVersion",ShadowCalibrationPolicy.SCHEMA_VERSION);
         shadowDetails.put("component",resetShadow==null?"ALL":resetShadow.component);
         shadowDetails.put("decision","RESET");shadowDetails.put("shadowReasonCode","SHADOW_STATE_RESET");
         shadowDetails.put("shadowPlanId",resetShadow==null?"":resetShadow.shadowPlanId);

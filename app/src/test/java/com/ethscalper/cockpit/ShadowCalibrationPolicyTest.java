@@ -59,6 +59,24 @@ public class ShadowCalibrationPolicyTest {
                 ShadowTestFixtures.metrics(MarketProfile.sol(),"LONG",10_000,.02,0,2,0,.22,.6,1,.5,2)).keep);
     }
 
+    @Test public void currentRevalidationRecognizesRealFrenchAndEnglishFamilies(){
+        String[] critical={ContinuationConfirmation.P01_MOVE1_REJECT,
+                ContinuationConfirmation.P01_MOVE3_REJECT,ContinuationConfirmation.C04_REJECT,
+                ContinuationConfirmation.C07_REJECT,ContinuationConfirmation.C08_REJECT,
+                ContinuationConfirmation.P01_FLOW_REJECT,"FEED_STALE_AT_FILL",
+                "REPLAY_QUALITY_TOO_LOW","REPLAY_QUALITÉ_INSUFFISANTE",
+                "DIVERGENCE_FLOW_PRIX_ACTUELLE","MOUVEMENT_CONSOMMÉ"};
+        for(String code:critical)assertTrue(code,ShadowCalibrationPolicy.isCriticalCurrentRevalidation(code));
+        assertFalse(ShadowCalibrationPolicy.isCriticalCurrentRevalidation("PRIX_DEJA_TROP_LOIN"));
+    }
+
+    @Test public void historicalTargetTouchBlocksOpeningEvenAfterPriceReturns(){
+        SignalDecision candidate=ShadowTestFixtures.candidate(MarketProfile.eth(),"LONG",95);
+        assertTrue(ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate,candidate.targetMove-.01));
+        assertFalse(ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate,candidate.targetMove));
+        assertFalse(ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate,candidate.targetMove+1));
+    }
+
     private static ShadowCalibrationPolicy.Decision guard(MarketProfile p,long n,int score,double m1,
             double m3,double m8,double f30,double f60,double vr,double edge,double room,String code){
         NormalizedSignalMetrics.Result m=ShadowTestFixtures.metrics(p,"LONG",n,1,m1,m3,m8,f30,f60,vr,edge,room);

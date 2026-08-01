@@ -2,7 +2,8 @@ package com.ethscalper.cockpit;
 
 /** Pure thresholds for the v2.34.4.0 shadow-only calibration experiment. */
 public final class ShadowCalibrationPolicy {
-    public static final String VERSION = "SHADOW_V23440_20260801";
+    public static final String VERSION = "SHADOW_V23441_20260801";
+    public static final String SCHEMA_VERSION = "SHADOW_SCHEMA_V2";
     public static final String P01_GUARD = "P01_FINAL_CONFIRMATION_GUARD";
     public static final String P02_GUARD = "P02_ANTI_EXHAUSTION";
     public static final String PULLBACK = "P01_PULLBACK_RESUMPTION";
@@ -77,10 +78,25 @@ public final class ShadowCalibrationPolicy {
 
     public static boolean isCriticalCurrentRevalidation(String code) {
         if (code == null || code.isEmpty() || "PRIX_DEJA_TROP_LOIN".equals(code)) return false;
-        String c = code.toUpperCase(java.util.Locale.ROOT);
+        if (ContinuationConfirmation.P01_MOVE1_REJECT.equals(code)
+                || ContinuationConfirmation.P01_MOVE3_REJECT.equals(code)
+                || ContinuationConfirmation.C04_REJECT.equals(code)
+                || ContinuationConfirmation.C07_REJECT.equals(code)
+                || ContinuationConfirmation.C08_REJECT.equals(code)
+                || ContinuationConfirmation.P01_FLOW_REJECT.equals(code)) return true;
+        String c = java.text.Normalizer.normalize(code, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "").toUpperCase(java.util.Locale.ROOT);
         return c.contains("MOVE1") || c.contains("MOVE3") || c.contains("FRAICHEUR")
-                || c.contains("STALE") || c.contains("CONFLIT_1M_8M")
-                || c.contains("FLOW_OPPOSE") || c.contains("REPLAY_QUALITY");
+                || c.contains("FEED_STALE") || c.contains("STALE")
+                || c.contains("CONFLIT_1M_8M") || c.contains("FLOW_OPPOSE")
+                || c.contains("REPLAY_QUALITY") || c.contains("REPLAY_QUALITE")
+                || c.contains("MOUVEMENT_CONSOMME") || c.contains("CONTINUATION_CONSOMMEE")
+                || c.contains("DIVERGENCE_FLOW_PRIX");
+    }
+
+    public static boolean targetUntouchedBeforeOpen(SignalDecision candidate,double favorable) {
+        return candidate!=null&&Double.isFinite(candidate.targetMove)&&candidate.targetMove>0
+                &&Double.isFinite(favorable)&&favorable+EPS<candidate.targetMove;
     }
 
     private static Decision keep(String reason) { return new Decision(true, "KEEP", reason); }

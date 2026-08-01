@@ -19,7 +19,7 @@ public final class ShadowResearchCoordinator {
                 && signature!=null&&!openedSignatures.contains(signature);
     }
     public synchronized boolean open(ShadowPlanState plan) {
-        if(plan==null||active!=null||openedSignatures.contains(plan.candidateSignature))return false;
+        if(plan==null||!canOpen(plan.candidateSignature,plan.openedAt))return false;
         active=plan;openedSignatures.add(plan.candidateSignature);
         signatureOrder.addLast(plan.candidateSignature);
         while(signatureOrder.size()>MAX_SIGNATURES){String old=signatureOrder.removeFirst();
@@ -27,8 +27,11 @@ public final class ShadowResearchCoordinator {
         return true;
     }
     public synchronized ShadowPlanState active(){return active;}
-    public synchronized ShadowPlanState.Terminal observe(long now,double bid,double ask) {
-        if(active==null)return null;ShadowPlanState.Terminal terminal=active.observe(now,bid,ask);
+    public synchronized ShadowPlanState.Terminal observe(long now,double bid,double ask,
+                                                         boolean marketFresh) {
+        if(active==null||!marketFresh||!Double.isFinite(bid)||bid<=0
+                ||!Double.isFinite(ask)||ask<=0)return null;
+        ShadowPlanState.Terminal terminal=active.observe(now,bid,ask);
         if(terminal!=null){active=null;lastTerminalAt=now;}return terminal;
     }
     public synchronized ShadowPlanState reset() {

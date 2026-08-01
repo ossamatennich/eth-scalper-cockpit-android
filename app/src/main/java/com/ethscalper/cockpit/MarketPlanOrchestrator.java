@@ -12,12 +12,22 @@ import java.util.Collections;
 public final class MarketPlanOrchestrator {
     public static final String BTC_STALE="V2340_BTC_REFERENCE_FEED_STALE";
     public static final String RANGE_DIAGNOSTIC=CandidateLifecycle.RANGE_FADE_DIAGNOSTIC_ONLY;
+    @FunctionalInterface public interface ShadowObserver {
+        void execute(String operation,Runnable action);
+    }
+    private final ShadowObserver shadowObserver;
+
+    public MarketPlanOrchestrator(){this((operation,action)->action.run());}
+    public MarketPlanOrchestrator(ShadowObserver observer){
+        shadowObserver=observer==null?(operation,action)->action.run():observer;
+    }
+    public static ShadowObserver noOpShadowObserver(){return (operation,action)->{};}
 
     public Event evaluate(MarketRuntime runtime, SharedReferenceContext btc, long now,
                           boolean marketFeedFresh, boolean btcFeedFresh) {
         MarketSnapshot snapshot=MarketSnapshotFactory.build(runtime,btc,now);
         runtime.recorder.frame(now,runtime.lastDecision,snapshot,marketFeedFresh,btcFeedFresh);
-        observeShadowTerminal(runtime,snapshot,now,marketFeedFresh,btcFeedFresh);
+        safeObserveShadowTerminal(runtime,snapshot,now,marketFeedFresh,btcFeedFresh);
         Event terminal=terminalIfTouched(runtime,snapshot,now);
         if(terminal!=null){record(runtime,snapshot,terminal.plan,null,now,terminal.status,
                 terminal.reasonCode,"Plan terminé au "+terminal.status,"STRUCTURAL_SHARED","",
@@ -88,7 +98,7 @@ public final class MarketPlanOrchestrator {
                 c.resetEarly();continue;
             }
             if(CandidateLifecycle.SLEEVE_P01.equals(c.sleeve))
-                considerAddedShadowPlan(runtime,c,snapshot,now,marketFresh,btcFresh);
+                safeConsiderAddedShadowPlan(runtime,c,snapshot,now,marketFresh,btcFresh);
             CandidateLifecycle.FillResult result;
             if(CandidateLifecycle.SLEEVE_P01.equals(c.sleeve)&&age<15_000L) {
                 CandidateLifecycle.FillResult quality=CandidateLifecycle.processEarlyP01Candidate(
@@ -135,7 +145,6 @@ public final class MarketPlanOrchestrator {
                         c.historicalReplayRiskVeto,c.sleeve,trend,runtime.candles);
             }
             if(result.confirmed) {
-                observeProductionConfirmation(runtime,c,snapshot,result,now,marketFresh,btcFresh);
                 iterator.remove();
                 if(CandidateLifecycle.SLEEVE_P01.equals(c.sleeve))
                     runtime.lastP01ConfirmedAt=now;
@@ -145,6 +154,7 @@ public final class MarketPlanOrchestrator {
                         result.publishedSignal.reasonCode,result.publishedSignal.reasonText,
                         "STRUCTURAL_SHARED",c.historicalDiagnosticCode,c.sleeve,age,fresh,fresh,
                         c.adverse,planDetails(result.dynamicPlan));
+                safeObserveProductionConfirmation(runtime,c,snapshot,result,now,marketFresh,btcFresh);
                 return Event.confirmed(result.publishedSignal,state,result);
             }
             record(runtime,snapshot,null,c.signal,now,"CONFIRMATION_REJECTED",
@@ -153,6 +163,51 @@ public final class MarketPlanOrchestrator {
                     result.dynamicPlan==null?Collections.emptyMap():planDetails(result.dynamicPlan));
         }
         return null;
+    }
+
+    private void safeObserveShadowTerminal(MarketRuntime runtime,MarketSnapshot snapshot,long now,
+                                           boolean marketFresh,boolean btcFresh) {
+        safeShadow(runtime,snapshot,now,marketFresh,btcFresh,"SHADOW_LIFECYCLE",
+                "OBSERVE_TERMINAL",()->observeShadowTerminal(runtime,snapshot,now,marketFresh,btcFresh));
+    }
+
+    private void safeConsiderAddedShadowPlan(MarketRuntime runtime,RuntimeCandidate candidate,
+                                             MarketSnapshot snapshot,long now,
+                                             boolean marketFresh,boolean btcFresh) {
+        safeShadow(runtime,snapshot,now,marketFresh,btcFresh,"SHADOW_ADDED_LANES",
+                "CONSIDER_OPEN",()->considerAddedShadowPlan(runtime,candidate,snapshot,now,
+                        marketFresh,btcFresh));
+    }
+
+    private void safeObserveProductionConfirmation(MarketRuntime runtime,RuntimeCandidate candidate,
+                                                   MarketSnapshot snapshot,
+                                                   CandidateLifecycle.FillResult result,long now,
+                                                   boolean marketFresh,boolean btcFresh) {
+        safeShadow(runtime,snapshot,now,marketFresh,btcFresh,"SHADOW_AB_GUARD",
+                "OBSERVE_CONFIRMATION",()->observeProductionConfirmation(runtime,candidate,snapshot,
+                        result,now,marketFresh,btcFresh));
+    }
+
+    private void safeShadow(MarketRuntime runtime,MarketSnapshot snapshot,long now,
+                            boolean marketFresh,boolean btcFresh,String component,
+                            String operation,Runnable action) {
+        try { shadowObserver.execute(operation,action); }
+        catch(RuntimeException failure) {
+            try {
+                LinkedHashMap<String,Object> d=new LinkedHashMap<>();
+                d.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);
+                d.put("shadowSchemaVersion",ShadowCalibrationPolicy.SCHEMA_VERSION);
+                d.put("component",component);d.put("operation",operation);
+                d.put("exceptionClass",failure.getClass().getName());
+                String message=failure.getMessage()==null?"":failure.getMessage();
+                d.put("message",message.substring(0,Math.min(256,message.length())));
+                d.put("observedAt",now);d.put("symbol",runtime.profile.symbol);
+                d.put("marketFeedFresh",marketFresh);d.put("btcFeedFresh",btcFresh);
+                runtime.recorder.record(now,"SHADOW_INTERNAL_ERROR","SHADOW_INTERNAL_ERROR",
+                        "Erreur shadow isolee; moteur public poursuivi.","SHADOW_OBSERVABILITY","",
+                        "",null,snapshot,0,marketFresh,btcFresh,0,d);
+            } catch(RuntimeException ignored) { /* recorder failure must not reach public logic */ }
+        }
     }
 
     private void observeProductionConfirmation(MarketRuntime runtime,RuntimeCandidate c,
@@ -170,7 +225,7 @@ public final class MarketPlanOrchestrator {
         LinkedHashMap<String,Object> details=shadowBase(runtime,c,now,component,marketFresh,btcFresh);
         details.put("decision",decision.decision);details.put("shadowReasonCode",decision.reasonCode);
         details.put("productionConfirmed",true);details.put("score",c.signal.score);
-        putMetrics(details,m);details.put("entryRevalidationCode",revalidation);
+        putMetrics(details,m,c.adverse);details.put("entryRevalidationCode",revalidation);
         details.put("entryRevalidationAlreadyBlocksProduction",!revalidation.isEmpty());
         details.put("entryRevalidationHistoricalDiagnostic",false);
         details.put("recordedHistoricalDiagnosticCode",c.historicalDiagnosticCode);
@@ -212,6 +267,10 @@ public final class MarketPlanOrchestrator {
                 marketFresh,btcFresh,component,"SHADOW_CANDIDATE_TOMBSTONED");return;}
         if(!CandidateLifecycle.currentlyExecutable(c.signal,snapshot)){recordShadowSkipOnce(runtime,c,
                 snapshot,now,marketFresh,btcFresh,component,"SHADOW_LIMIT_NOT_EXECUTABLE");return;}
+        if(!ShadowCalibrationPolicy.targetUntouchedBeforeOpen(c.signal,c.favorable)) {
+            recordShadowSkipOnce(runtime,c,snapshot,now,marketFresh,btcFresh,component,
+                    "SHADOW_TARGET_ALREADY_TOUCHED_BEFORE_OPEN");return;
+        }
         if(!runtime.shadowResearch.canOpen(c.signature,now)){recordShadowSkipOnce(runtime,c,snapshot,now,
                 marketFresh,btcFresh,component,runtime.shadowResearch.active()!=null
                         ?"SHADOW_PLAN_ALREADY_ACTIVE":"SHADOW_DEDUP_OR_COOLDOWN");return;}
@@ -230,7 +289,7 @@ public final class MarketPlanOrchestrator {
         c.shadowOpened=true;
         LinkedHashMap<String,Object> details=shadowBase(runtime,c,now,component,marketFresh,btcFresh);
         details.put("decision","OPEN");details.put("shadowReasonCode","SHADOW_PLAN_OPENED");
-        addPlan(details,built.state);putMetrics(details,metrics);
+        addPlan(details,built.state);putMetrics(details,metrics,c.adverse);
         recordShadow(runtime,snapshot,c.signal,now,"SHADOW_PLAN_OPENED","SHADOW_PLAN_OPENED",
                 "Plan shadow ouvert sans publication ni alerte.",c.sleeve,now-c.createdAt,
                 marketFresh,btcFresh,c.adverse,details);
@@ -242,10 +301,11 @@ public final class MarketPlanOrchestrator {
                                        boolean marketFresh,boolean btcFresh) {
         ShadowPlanState active=runtime.shadowResearch.active();
         ShadowPlanState.Terminal terminal=runtime.shadowResearch.observe(now,snapshot.marketBid,
-                snapshot.marketAsk);
+                snapshot.marketAsk,marketFresh);
         if(active==null||terminal==null)return;
         LinkedHashMap<String,Object> details=new LinkedHashMap<>();
         details.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);
+        details.put("shadowSchemaVersion",ShadowCalibrationPolicy.SCHEMA_VERSION);
         details.put("component",active.component);details.put("decision","TERMINAL");
         details.put("shadowReasonCode",terminal.status);details.put("shadowPlanId",active.shadowPlanId);
         details.put("candidateSignature",active.candidateSignature);
@@ -258,7 +318,11 @@ public final class MarketPlanOrchestrator {
         details.put("durationMs",terminal.at-active.openedAt);details.put("exitQuote",terminal.exitQuote);
         details.put("grossResultUsdt",terminal.grossResultUsdt);
         details.put("estimatedFeesUsdt",terminal.estimatedFeesUsdt);
-        details.put("netResultUsdt",terminal.netResultUsdt);details.put("resultR",terminal.resultR);
+        details.put("plannedGrossStopUsdt",terminal.plannedGrossStopUsdt);
+        details.put("plannedFeesUsdt",terminal.plannedFeesUsdt);
+        details.put("plannedNetStopUsdt",terminal.plannedNetStopUsdt);
+        details.put("netResultUsdt",terminal.netResultUsdt);
+        details.put("resultR",Double.isFinite(terminal.resultR)?terminal.resultR:null);
         details.put("terminalStatus",terminal.status);
         recordShadow(runtime,snapshot,null,now,terminal.status,terminal.status,
                 "Terminal shadow observe; compteurs publics inchanges.",active.sleeve,
@@ -270,6 +334,7 @@ public final class MarketPlanOrchestrator {
                                 boolean marketFresh,boolean btcFresh,boolean productionConfirmed) {
         if(e==null||!e.valid)return;LinkedHashMap<String,Object> d=new LinkedHashMap<>();
         d.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);d.put("component",state.component);
+        d.put("shadowSchemaVersion",ShadowCalibrationPolicy.SCHEMA_VERSION);
         d.put("decision","MEASURE");d.put("shadowReasonCode","SHADOW_FEE_AWARE_SIZING");
         d.put("shadowPlanId",state.shadowPlanId);d.put("candidateSignature",state.candidateSignature);
         d.put("sourceCandidateCreatedAt",state.sourceCandidateCreatedAt);d.put("observedAt",now);
@@ -287,6 +352,8 @@ public final class MarketPlanOrchestrator {
         d.put("netTargetUsdt",e.netTargetUsdt);d.put("netStopUsdt",e.netStopUsdt);
         d.put("netRewardRisk",e.netRewardRisk);
         d.put("activeExceedsBudgetAfterFees",e.activeExceedsBudgetAfterFees);
+        d.put("A",finiteOrNull(state.a));d.put("E60",finiteOrNull(state.adverseExcursion60));
+        d.put("eNormalized",finiteOrNull(state.eNormalized));
         recordShadow(runtime,snapshot,signal,now,"SHADOW_FEE_AWARE_SIZING",
                 "SHADOW_FEE_AWARE_SIZING","Sonde de sizing frais inclus; quantite publique inchangee.",
                 state.sleeve,now-state.sourceCandidateCreatedAt,marketFresh,btcFresh,0,d);
@@ -298,6 +365,8 @@ public final class MarketPlanOrchestrator {
         String key=component+"|"+reason;if(key.equals(c.lastShadowLaneReason))return;
         c.lastShadowLaneReason=key;LinkedHashMap<String,Object> d=shadowBase(runtime,c,now,component,
                 marketFresh,btcFresh);d.put("decision","SKIP");d.put("shadowReasonCode",reason);
+        putMetrics(d,NormalizedSignalMetrics.calculate(runtime.profile,c.signal.side,c.signal,
+                snapshot,c.adverse),c.adverse);
         recordShadow(runtime,snapshot,c.signal,now,"SHADOW_PLAN_SKIPPED",reason,
                 "Voie shadow ignoree sans effet public.",c.sleeve,now-c.createdAt,
                 marketFresh,btcFresh,c.adverse,d);
@@ -307,6 +376,7 @@ public final class MarketPlanOrchestrator {
             long now,String component,boolean marketFresh,boolean btcFresh) {
         LinkedHashMap<String,Object> d=new LinkedHashMap<>();
         d.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);d.put("component",component);
+        d.put("shadowSchemaVersion",ShadowCalibrationPolicy.SCHEMA_VERSION);
         d.put("candidateSignature",c.signature);d.put("sourceCandidateCreatedAt",c.createdAt);
         d.put("observedAt",now);d.put("productionActivePlan",runtime.hasActivePlan());
         d.put("productionConfirmed",false);d.put("marketFeedFresh",marketFresh);
@@ -315,16 +385,24 @@ public final class MarketPlanOrchestrator {
     }
     private static void addPlan(Map<String,Object> d,ShadowPlanState p){d.put("shadowPlanId",p.shadowPlanId);
         d.put("entry",p.entry);d.put("tp",p.tp);d.put("sl",p.sl);d.put("quantity",p.quantity);
-        d.put("roundedStopDistance",p.stopDistance);d.put("roundedTargetDistance",p.targetDistance);}
-    private static void putMetrics(Map<String,Object> d,NormalizedSignalMetrics.Result m){if(m==null)return;
-        d.put("A",m.a);d.put("E60",m.e);d.put("room",m.room);d.put("m1",m.m1);
+        d.put("roundedStopDistance",p.stopDistance);d.put("roundedTargetDistance",p.targetDistance);
+        d.put("A",finiteOrNull(p.a));d.put("E60",finiteOrNull(p.adverseExcursion60));
+        d.put("eNormalized",finiteOrNull(p.eNormalized));}
+    static void putMetrics(Map<String,Object> d,NormalizedSignalMetrics.Result m,double adverse){if(m==null)return;
+        d.put("A",finiteOrNull(m.a));d.put("E60",finiteOrNull(adverse));
+        d.put("eNormalized",finiteOrNull(m.e));d.put("room",finiteOrNull(m.room));d.put("m1",finiteOrNull(m.m1));
         d.put("m3",m.m3);d.put("m8",m.m8);d.put("f30",m.f30);d.put("f60",m.f60);
         d.put("volumeRatio",m.volumeRatio);d.put("directionalEdge",m.directionalEdge);}
+    private static Object finiteOrNull(double value){return Double.isFinite(value)?value:null;}
     private static void recordShadow(MarketRuntime runtime,MarketSnapshot snapshot,SignalDecision signal,
             long now,String type,String code,String text,String sleeve,long age,boolean marketFresh,
-            boolean btcFresh,double adverse,Map<String,Object> details){runtime.recorder.record(now,type,
+            boolean btcFresh,double adverse,Map<String,Object> details){
+        LinkedHashMap<String,Object> normalized=new LinkedHashMap<>(details);
+        normalized.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);
+        normalized.put("shadowSchemaVersion",ShadowCalibrationPolicy.SCHEMA_VERSION);
+        runtime.recorder.record(now,type,
                 code,text,"SHADOW_OBSERVABILITY","",sleeve,signal,snapshot,age,marketFresh,btcFresh,
-                adverse,details);}
+                adverse,normalized);}
 
     private void addP02(MarketRuntime runtime,MarketSnapshot s,String setup,long now,
                         boolean marketFeedFresh,boolean btcFeedFresh) {
