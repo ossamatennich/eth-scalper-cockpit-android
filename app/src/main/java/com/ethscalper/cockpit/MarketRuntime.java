@@ -16,6 +16,8 @@ public final class MarketRuntime {
     public final Deque<MarketSnapshot> marketFrames = new ArrayDeque<>();
     private final Deque<String> recordedEngineDiagnosticKeys = new ArrayDeque<>();
     public final MarketDiagnosticRecorder recorder;
+    /** Independent, bounded research state; never aliases a public plan or lifecycle field. */
+    public final ShadowResearchCoordinator shadowResearch = new ShadowResearchCoordinator();
 
     public double last = Double.NaN, bid = Double.NaN, ask = Double.NaN;
     public long lastTickerAt, lastKlineAt, lastAggTradeAt, lastRestTickerAt, lastRestKlineAt;
@@ -76,6 +78,7 @@ public final class MarketRuntime {
 
     /** Clears diagnostics and pending state while preserving and re-inserting an active plan. */
     public void resetDiagnosticsPreservingActivePlan() {
+        ShadowPlanState resetShadow=shadowResearch.reset();
         p02SetupTracker.reset();
         signalEngine.clearDiagnostics();
         observedSignals.clear();
@@ -87,6 +90,23 @@ public final class MarketRuntime {
         recorder.record(System.currentTimeMillis(),"DIAGNOSTICS_RESET","V23402_DIAGNOSTICS_RESET",
                 "Diagnostics et frames non actifs réinitialisés.","STRUCTURAL_SHARED","","",
                 null,null,0,true,true,0,java.util.Collections.emptyMap());
+        java.util.LinkedHashMap<String,Object> shadowDetails=new java.util.LinkedHashMap<>();
+        shadowDetails.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);
+        shadowDetails.put("component",resetShadow==null?"ALL":resetShadow.component);
+        shadowDetails.put("decision","RESET");shadowDetails.put("shadowReasonCode","SHADOW_STATE_RESET");
+        shadowDetails.put("shadowPlanId",resetShadow==null?"":resetShadow.shadowPlanId);
+        shadowDetails.put("candidateSignature",resetShadow==null?"":resetShadow.candidateSignature);
+        shadowDetails.put("sourceCandidateCreatedAt",resetShadow==null?0L:resetShadow.sourceCandidateCreatedAt);
+        shadowDetails.put("observedAt",System.currentTimeMillis());
+        shadowDetails.put("productionActivePlan",hasActivePlan());
+        shadowDetails.put("productionConfirmed",false);
+        shadowDetails.put("symbol",profile.symbol);
+        shadowDetails.put("side",resetShadow==null?"":resetShadow.side);
+        shadowDetails.put("sleeve",resetShadow==null?"":resetShadow.sleeve);
+        shadowDetails.put("marketFeedFresh",false);shadowDetails.put("btcFeedFresh",false);
+        recorder.record(System.currentTimeMillis(),"SHADOW_STATE_RESET","SHADOW_STATE_RESET",
+                "Etat de recherche shadow reinitialise sans modifier le plan public.",
+                "SHADOW_OBSERVABILITY","","",null,null,0,false,false,0,shadowDetails);
         if (hasActivePlan()) {
             observedSignals.addLast(activePlan);
             recorder.record(System.currentTimeMillis(),"RESET_ACTIVE_PLAN_REINSERTED",

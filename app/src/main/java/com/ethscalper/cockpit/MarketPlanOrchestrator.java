@@ -17,13 +17,14 @@ public final class MarketPlanOrchestrator {
                           boolean marketFeedFresh, boolean btcFeedFresh) {
         MarketSnapshot snapshot=MarketSnapshotFactory.build(runtime,btc,now);
         runtime.recorder.frame(now,runtime.lastDecision,snapshot,marketFeedFresh,btcFeedFresh);
+        observeShadowTerminal(runtime,snapshot,now,marketFeedFresh,btcFeedFresh);
         Event terminal=terminalIfTouched(runtime,snapshot,now);
         if(terminal!=null){record(runtime,snapshot,terminal.plan,null,now,terminal.status,
                 terminal.reasonCode,"Plan terminé au "+terminal.status,"STRUCTURAL_SHARED","",
                 "",0,marketFeedFresh,btcFeedFresh,0,Map.of("exitPrice",terminal.exitPrice));return terminal;}
         if(runtime.hasActivePlan())return Event.none(runtime.lastSignal);
         boolean fresh=marketFeedFresh&&btcFeedFresh;
-        Event confirmed=advanceCandidates(runtime,snapshot,now,fresh);
+        Event confirmed=advanceCandidates(runtime,snapshot,now,marketFeedFresh,btcFeedFresh);
         if(confirmed!=null)return confirmed;
         if(!fresh||!runtime.allowsNewPlan(now)) {
             runtime.lastDecision=SignalDecision.waiting(runtime.profile,
@@ -58,7 +59,8 @@ public final class MarketPlanOrchestrator {
     }
 
     private Event advanceCandidates(MarketRuntime runtime,MarketSnapshot snapshot,long now,
-                                    boolean fresh) {
+                                    boolean marketFresh,boolean btcFresh) {
+        boolean fresh=marketFresh&&btcFresh;
         Iterator<Object> iterator=runtime.observedSignals.iterator();
         while(iterator.hasNext()) {
             Object value=iterator.next(); if(!(value instanceof RuntimeCandidate))continue;
@@ -85,6 +87,8 @@ public final class MarketPlanOrchestrator {
             if(!fresh||!CandidateLifecycle.currentlyExecutable(c.signal,snapshot)) {
                 c.resetEarly();continue;
             }
+            if(CandidateLifecycle.SLEEVE_P01.equals(c.sleeve))
+                considerAddedShadowPlan(runtime,c,snapshot,now,marketFresh,btcFresh);
             CandidateLifecycle.FillResult result;
             if(CandidateLifecycle.SLEEVE_P01.equals(c.sleeve)&&age<15_000L) {
                 CandidateLifecycle.FillResult quality=CandidateLifecycle.processEarlyP01Candidate(
@@ -131,6 +135,7 @@ public final class MarketPlanOrchestrator {
                         c.historicalReplayRiskVeto,c.sleeve,trend,runtime.candles);
             }
             if(result.confirmed) {
+                observeProductionConfirmation(runtime,c,snapshot,result,now,marketFresh,btcFresh);
                 iterator.remove();
                 if(CandidateLifecycle.SLEEVE_P01.equals(c.sleeve))
                     runtime.lastP01ConfirmedAt=now;
@@ -149,6 +154,177 @@ public final class MarketPlanOrchestrator {
         }
         return null;
     }
+
+    private void observeProductionConfirmation(MarketRuntime runtime,RuntimeCandidate c,
+            MarketSnapshot snapshot,CandidateLifecycle.FillResult result,long now,
+            boolean marketFresh,boolean btcFresh) {
+        NormalizedSignalMetrics.Result m=result.normalizedMetrics;
+        String revalidation=CandidateLifecycle.entryRevalidationCode(runtime.profile,c.signal,
+                snapshot,snapshot.marketLast);
+        ShadowCalibrationPolicy.Decision decision=CandidateLifecycle.SLEEVE_P02.equals(c.sleeve)
+                ?ShadowCalibrationPolicy.p02AntiExhaustion(c.signal.score,m)
+                :ShadowCalibrationPolicy.p01FinalGuard(c.signal.score,m,result.p01SleeveFilter,
+                        revalidation);
+        String component=CandidateLifecycle.SLEEVE_P02.equals(c.sleeve)
+                ?ShadowCalibrationPolicy.P02_GUARD:ShadowCalibrationPolicy.P01_GUARD;
+        LinkedHashMap<String,Object> details=shadowBase(runtime,c,now,component,marketFresh,btcFresh);
+        details.put("decision",decision.decision);details.put("shadowReasonCode",decision.reasonCode);
+        details.put("productionConfirmed",true);details.put("score",c.signal.score);
+        putMetrics(details,m);details.put("entryRevalidationCode",revalidation);
+        details.put("entryRevalidationAlreadyBlocksProduction",!revalidation.isEmpty());
+        details.put("entryRevalidationHistoricalDiagnostic",false);
+        details.put("recordedHistoricalDiagnosticCode",c.historicalDiagnosticCode);
+        if(result.p01SleeveFilter!=null){details.put("p01Phase",result.p01SleeveFilter.phase);
+            details.put("flowBacked",result.p01SleeveFilter.flowBacked);
+            details.put("priceLed",result.p01SleeveFilter.priceLed);}
+        else {details.put("p01Phase","");details.put("flowBacked",false);details.put("priceLed",false);}
+        SignalDecision published=result.publishedSignal;
+        details.put("entry",published.entry);details.put("tp",published.takeProfit);
+        details.put("sl",published.stopLoss);details.put("quantity",published.quantity);
+        recordShadow(runtime,snapshot,published,now,"SHADOW_AB_DECISION",decision.reasonCode,
+                "Decision A/B shadow sur confirmation publique.",c.sleeve,now-c.createdAt,
+                marketFresh,btcFresh,c.adverse,details);
+
+        ShadowPlanFactory.Result geometry=ShadowPlanFactory.fromProduction(runtime.profile,
+                c.signature,component,c.sleeve,c.createdAt,now,result);
+        if(geometry.valid)recordFeeAware(runtime,snapshot,published,geometry.state,
+                geometry.economics,now,marketFresh,btcFresh,true);
+    }
+
+    private void considerAddedShadowPlan(MarketRuntime runtime,RuntimeCandidate c,
+            MarketSnapshot snapshot,long now,boolean marketFresh,boolean btcFresh) {
+        NormalizedSignalMetrics.Result metrics=NormalizedSignalMetrics.calculate(runtime.profile,
+                c.signal.side,c.signal,snapshot,c.adverse);
+        ShadowCalibrationPolicy.Decision pullback=ShadowCalibrationPolicy.pullback(c.signal.score,metrics);
+        ShadowCalibrationPolicy.Decision mid=ShadowCalibrationPolicy.ethMidVol(runtime.profile,
+                c.signal.score,metrics);
+        if(!pullback.keep&&!mid.keep)return;
+        String component=pullback.keep?ShadowCalibrationPolicy.PULLBACK:ShadowCalibrationPolicy.ETH_MID_VOL;
+        if(pullback.keep&&mid.keep)recordShadowSkipOnce(runtime,c,snapshot,now,marketFresh,btcFresh,
+                ShadowCalibrationPolicy.ETH_MID_VOL,"SHADOW_DUPLICATE_HIGHER_PRIORITY_LANE");
+        if(!marketFresh||!btcFresh){recordShadowSkipOnce(runtime,c,snapshot,now,marketFresh,btcFresh,
+                component,"SHADOW_FEED_STALE");return;}
+        if(runtime.hasActivePlan()){recordShadowSkipOnce(runtime,c,snapshot,now,marketFresh,btcFresh,
+                component,"SHADOW_PRODUCTION_PLAN_ACTIVE");return;}
+        if(runtime.rearmRemainingMs(now)>0){recordShadowSkipOnce(runtime,c,snapshot,now,marketFresh,btcFresh,
+                component,"SHADOW_PRODUCTION_REARM_ACTIVE");return;}
+        if(runtime.candidateTombstones.blocks(c.signature)){recordShadowSkipOnce(runtime,c,snapshot,now,
+                marketFresh,btcFresh,component,"SHADOW_CANDIDATE_TOMBSTONED");return;}
+        if(!CandidateLifecycle.currentlyExecutable(c.signal,snapshot)){recordShadowSkipOnce(runtime,c,
+                snapshot,now,marketFresh,btcFresh,component,"SHADOW_LIMIT_NOT_EXECUTABLE");return;}
+        if(!runtime.shadowResearch.canOpen(c.signature,now)){recordShadowSkipOnce(runtime,c,snapshot,now,
+                marketFresh,btcFresh,component,runtime.shadowResearch.active()!=null
+                        ?"SHADOW_PLAN_ALREADY_ACTIVE":"SHADOW_DEDUP_OR_COOLDOWN");return;}
+        ShadowPlanFactory.Result built=ShadowPlanFactory.build(runtime.profile,c.signal,c.sleeve,
+                c.signature,component,snapshot,c.adverse,c.historicalReplayRiskVeto,runtime.candles,
+                c.createdAt,now);
+        if(!built.valid){recordShadowSkipOnce(runtime,c,snapshot,now,marketFresh,btcFresh,
+                component,built.reasonCode);return;}
+        if(ShadowCalibrationPolicy.ETH_MID_VOL.equals(component)
+                &&(!built.economics.valid||!(built.economics.netTargetUsdt>0)
+                ||!(built.economics.netStopUsdt>0)||built.economics.netRewardRisk+1e-12<.40)){
+            recordShadowSkipOnce(runtime,c,snapshot,now,marketFresh,btcFresh,component,
+                    "SHADOW_NET_REWARD_RISK_TOO_LOW");return;}
+        if(!runtime.shadowResearch.open(built.state)){recordShadowSkipOnce(runtime,c,snapshot,now,
+                marketFresh,btcFresh,component,"SHADOW_DEDUP_OR_COOLDOWN");return;}
+        c.shadowOpened=true;
+        LinkedHashMap<String,Object> details=shadowBase(runtime,c,now,component,marketFresh,btcFresh);
+        details.put("decision","OPEN");details.put("shadowReasonCode","SHADOW_PLAN_OPENED");
+        addPlan(details,built.state);putMetrics(details,metrics);
+        recordShadow(runtime,snapshot,c.signal,now,"SHADOW_PLAN_OPENED","SHADOW_PLAN_OPENED",
+                "Plan shadow ouvert sans publication ni alerte.",c.sleeve,now-c.createdAt,
+                marketFresh,btcFresh,c.adverse,details);
+        recordFeeAware(runtime,snapshot,c.signal,built.state,built.economics,now,
+                marketFresh,btcFresh,false);
+    }
+
+    private void observeShadowTerminal(MarketRuntime runtime,MarketSnapshot snapshot,long now,
+                                       boolean marketFresh,boolean btcFresh) {
+        ShadowPlanState active=runtime.shadowResearch.active();
+        ShadowPlanState.Terminal terminal=runtime.shadowResearch.observe(now,snapshot.marketBid,
+                snapshot.marketAsk);
+        if(active==null||terminal==null)return;
+        LinkedHashMap<String,Object> details=new LinkedHashMap<>();
+        details.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);
+        details.put("component",active.component);details.put("decision","TERMINAL");
+        details.put("shadowReasonCode",terminal.status);details.put("shadowPlanId",active.shadowPlanId);
+        details.put("candidateSignature",active.candidateSignature);
+        details.put("sourceCandidateCreatedAt",active.sourceCandidateCreatedAt);
+        details.put("observedAt",now);details.put("productionActivePlan",runtime.hasActivePlan());
+        details.put("productionConfirmed",false);details.put("marketFeedFresh",marketFresh);
+        details.put("btcFeedFresh",btcFresh);details.put("side",active.side);
+        details.put("sleeve",active.sleeve);addPlan(details,active);
+        details.put("openedAt",active.openedAt);details.put("terminalAt",terminal.at);
+        details.put("durationMs",terminal.at-active.openedAt);details.put("exitQuote",terminal.exitQuote);
+        details.put("grossResultUsdt",terminal.grossResultUsdt);
+        details.put("estimatedFeesUsdt",terminal.estimatedFeesUsdt);
+        details.put("netResultUsdt",terminal.netResultUsdt);details.put("resultR",terminal.resultR);
+        details.put("terminalStatus",terminal.status);
+        recordShadow(runtime,snapshot,null,now,terminal.status,terminal.status,
+                "Terminal shadow observe; compteurs publics inchanges.",active.sleeve,
+                now-active.sourceCandidateCreatedAt,marketFresh,btcFresh,0,details);
+    }
+
+    private void recordFeeAware(MarketRuntime runtime,MarketSnapshot snapshot,SignalDecision signal,
+                                ShadowPlanState state,ShadowNetEconomics.Result e,long now,
+                                boolean marketFresh,boolean btcFresh,boolean productionConfirmed) {
+        if(e==null||!e.valid)return;LinkedHashMap<String,Object> d=new LinkedHashMap<>();
+        d.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);d.put("component",state.component);
+        d.put("decision","MEASURE");d.put("shadowReasonCode","SHADOW_FEE_AWARE_SIZING");
+        d.put("shadowPlanId",state.shadowPlanId);d.put("candidateSignature",state.candidateSignature);
+        d.put("sourceCandidateCreatedAt",state.sourceCandidateCreatedAt);d.put("observedAt",now);
+        d.put("productionActivePlan",runtime.hasActivePlan());d.put("productionConfirmed",productionConfirmed);
+        d.put("marketFeedFresh",marketFresh);d.put("btcFeedFresh",btcFresh);
+        d.put("activeQuantity",state.quantity);d.put("feeAwareQuantity",e.feeAwareQuantity);
+        d.put("riskBudgetUsdt",state.riskBudgetUsdt);d.put("roundedStopDistance",state.stopDistance);
+        d.put("estimatedRoundTripCostPerUnit",e.estimatedRoundTripCostPerUnit);
+        d.put("activeGrossStopLossUsdt",e.activeGrossStopLossUsdt);
+        d.put("activeEstimatedFeesUsdt",e.activeEstimatedFeesUsdt);
+        d.put("activeTotalStopLossUsdt",e.activeTotalStopLossUsdt);
+        d.put("feeAwareGrossStopLossUsdt",e.feeAwareGrossStopLossUsdt);
+        d.put("feeAwareEstimatedFeesUsdt",e.feeAwareEstimatedFeesUsdt);
+        d.put("feeAwareTotalStopLossUsdt",e.feeAwareTotalStopLossUsdt);
+        d.put("netTargetUsdt",e.netTargetUsdt);d.put("netStopUsdt",e.netStopUsdt);
+        d.put("netRewardRisk",e.netRewardRisk);
+        d.put("activeExceedsBudgetAfterFees",e.activeExceedsBudgetAfterFees);
+        recordShadow(runtime,snapshot,signal,now,"SHADOW_FEE_AWARE_SIZING",
+                "SHADOW_FEE_AWARE_SIZING","Sonde de sizing frais inclus; quantite publique inchangee.",
+                state.sleeve,now-state.sourceCandidateCreatedAt,marketFresh,btcFresh,0,d);
+    }
+
+    private void recordShadowSkipOnce(MarketRuntime runtime,RuntimeCandidate c,MarketSnapshot snapshot,
+                                      long now,boolean marketFresh,boolean btcFresh,
+                                      String component,String reason) {
+        String key=component+"|"+reason;if(key.equals(c.lastShadowLaneReason))return;
+        c.lastShadowLaneReason=key;LinkedHashMap<String,Object> d=shadowBase(runtime,c,now,component,
+                marketFresh,btcFresh);d.put("decision","SKIP");d.put("shadowReasonCode",reason);
+        recordShadow(runtime,snapshot,c.signal,now,"SHADOW_PLAN_SKIPPED",reason,
+                "Voie shadow ignoree sans effet public.",c.sleeve,now-c.createdAt,
+                marketFresh,btcFresh,c.adverse,d);
+    }
+
+    private static LinkedHashMap<String,Object> shadowBase(MarketRuntime runtime,RuntimeCandidate c,
+            long now,String component,boolean marketFresh,boolean btcFresh) {
+        LinkedHashMap<String,Object> d=new LinkedHashMap<>();
+        d.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);d.put("component",component);
+        d.put("candidateSignature",c.signature);d.put("sourceCandidateCreatedAt",c.createdAt);
+        d.put("observedAt",now);d.put("productionActivePlan",runtime.hasActivePlan());
+        d.put("productionConfirmed",false);d.put("marketFeedFresh",marketFresh);
+        d.put("btcFeedFresh",btcFresh);d.put("symbol",runtime.profile.symbol);
+        d.put("side",c.signal.side);d.put("sleeve",c.sleeve);return d;
+    }
+    private static void addPlan(Map<String,Object> d,ShadowPlanState p){d.put("shadowPlanId",p.shadowPlanId);
+        d.put("entry",p.entry);d.put("tp",p.tp);d.put("sl",p.sl);d.put("quantity",p.quantity);
+        d.put("roundedStopDistance",p.stopDistance);d.put("roundedTargetDistance",p.targetDistance);}
+    private static void putMetrics(Map<String,Object> d,NormalizedSignalMetrics.Result m){if(m==null)return;
+        d.put("A",m.a);d.put("E60",m.e);d.put("room",m.room);d.put("m1",m.m1);
+        d.put("m3",m.m3);d.put("m8",m.m8);d.put("f30",m.f30);d.put("f60",m.f60);
+        d.put("volumeRatio",m.volumeRatio);d.put("directionalEdge",m.directionalEdge);}
+    private static void recordShadow(MarketRuntime runtime,MarketSnapshot snapshot,SignalDecision signal,
+            long now,String type,String code,String text,String sleeve,long age,boolean marketFresh,
+            boolean btcFresh,double adverse,Map<String,Object> details){runtime.recorder.record(now,type,
+                code,text,"SHADOW_OBSERVABILITY","",sleeve,signal,snapshot,age,marketFresh,btcFresh,
+                adverse,details);}
 
     private void addP02(MarketRuntime runtime,MarketSnapshot s,String setup,long now,
                         boolean marketFeedFresh,boolean btcFeedFresh) {
@@ -319,6 +495,8 @@ public final class MarketPlanOrchestrator {
         public double adverse,favorable;public long earlySince;public String earlyMode="",lastEarlyShadowEventType="";
         public boolean historicalReplayRiskVeto;
         public String historicalDiagnosticCode="";
+        public boolean shadowOpened;
+        public String lastShadowLaneReason="";
         RuntimeCandidate(SignalDecision signal,String sleeve,long createdAt){this.signal=signal;this.sleeve=sleeve;this.createdAt=createdAt;this.signature=signal.symbol+"|"+signal.side+"|"+signal.family+"|"+signal.entry+"|"+signal.takeProfit+"|"+signal.stopLoss;}
         void resetEarly(){earlySince=0;earlyMode="";}
     }

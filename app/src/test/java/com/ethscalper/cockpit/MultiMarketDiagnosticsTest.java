@@ -75,8 +75,9 @@ public final class MultiMarketDiagnosticsTest {
         ActivePlanState eth=state(MarketProfile.eth(),3),sol=state(MarketProfile.sol(),70);
         c.publish("ETHUSDT",eth,1);c.publish("SOLUSDT",sol,1);
         for(MarketRuntime r:c.runtimes().values()){r.resetDiagnosticsPreservingActivePlan();
-            assertEquals(2,r.recorder.eventMaps().size());assertTrue(r.hasActivePlan());
-            assertEquals(r.profile.symbol,r.recorder.eventMaps().get(1).get("symbol"));}
+            assertEquals(3,r.recorder.eventMaps().size());assertTrue(r.hasActivePlan());
+            assertEquals("SHADOW_STATE_RESET",r.recorder.eventMaps().get(1).get("eventType"));
+            assertEquals(r.profile.symbol,r.recorder.eventMaps().get(2).get("symbol"));}
         assertEquals(eth.notificationId,c.runtime("ETHUSDT").activePlan.notificationId);
         assertEquals(sol.notificationId,c.runtime("SOLUSDT").activePlan.notificationId);
     }

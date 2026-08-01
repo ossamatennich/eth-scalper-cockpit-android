@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.4.0 — calibration A/B shadow isolée
+
+- garde P01 finale et anti-épuisement P02 mesurés sans modifier les confirmations publiques ;
+- deux voies de recherche shadow causales, dédupliquées et silencieuses ;
+- suivi shadow immuable jusqu’au TP ou au SL, indépendant des compteurs et plans publics ;
+- sonde de sizing tenant compte des frais, sans modifier la quantité active ;
+- événements shadow typés et exportables sous la politique `SHADOW_V23440_20260801` ;
+- aucune modification des filtres, timings, TP, SL, quantités, alertes ou lifecycles publics.
+
 ## 2.34.3.9 — statut, export et diagnostics fiabilisés
 
 - normalisation JSON récursive des nombres non finis, maps, listes, tableaux et valeurs Java inconnues ;

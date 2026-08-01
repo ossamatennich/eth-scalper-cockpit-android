@@ -2,7 +2,7 @@
 
 Application Android de recherche qui analyse en continu **ETHUSDT** et **SOLUSDT**. **BTCUSDT** sert uniquement de contexte partagé.
 
-La version courante est **2.34.3.9** (`versionCode 23439`). L’APK recommandée est l’édition **NMC Stable 3.9**, signée durablement afin que ses mises à jour Android remplacent réellement la version stable précédente. Le flux Binance Futures et le fallback REST public sont indépendants du volume des diagnostics. Le statut Android normalise récursivement les détails non sérialisables, l’export attend désormais un acquittement du service et les diagnostics analytiques répétitifs sont regroupés sur une identité stable. Le diagnostic du canal sonore v2 mesure son environnement Android sans modifier les réglages de l’utilisateur. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
+La version courante est **2.34.4.0** (`versionCode 23440`). L’APK recommandée est l’édition **NMC Stable 4.0**, signée durablement afin que ses mises à jour Android remplacent réellement la version stable précédente. Elle ajoute une comparaison A/B strictement shadow : les nouvelles politiques sont mesurées dans les diagnostics, sans bloquer, publier ou modifier le moindre plan public. Le flux Binance Futures et le fallback REST public restent indépendants du volume des diagnostics. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
 
 ## Principes essentiels
 
@@ -14,6 +14,7 @@ La version courante est **2.34.3.9** (`versionCode 23439`). L’APK recommandée
 - après publication, le plan est immuable et se termine uniquement au TP ou au SL ;
 - `realTradingAllowed=false` ;
 - SOL reste un profil de recherche.
+- la politique `SHADOW_V23440_20260801` reste silencieuse et purement observationnelle.
 
 ## Construire et tester
 
