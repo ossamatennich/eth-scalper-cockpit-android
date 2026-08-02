@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.4.2 — bridge shadow ETH et politiques symboliques
+
+- pont fail-open entre le moteur ETH historique et la couche d’observation shadow commune à SOL ;
+- une décision A/B et une sonde de sizing possibles pour chaque confirmation publique ETH ou SOL ;
+- quarantaine shadow des P02 SOL et score shadow minimal de 85 pour les P02 ETH, sans veto public ;
+- nouvelle voie de recherche silencieuse `ETH_FLOW_EXPANSION_EXTENDED`, avec mesure de latence et déduplication ;
+- télémétrie bornée des mouvements ETH BTC-led manqués, sans ouverture de plan ;
+- politique `SHADOW_V23442_20260802`, schéma `SHADOW_SCHEMA_V3`, aucun changement du moteur public.
+
 ## 2.34.4.1 — durcissement de l’observabilité shadow
 
 - isolation de toutes les exceptions shadow afin qu’elles ne puissent jamais interrompre le moteur public ;

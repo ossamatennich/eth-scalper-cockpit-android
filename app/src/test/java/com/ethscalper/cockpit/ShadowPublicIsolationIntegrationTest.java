@@ -25,6 +25,7 @@ public final class ShadowPublicIsolationIntegrationTest {
                 "SHADOW_AB_DECISION".equals(e.get("eventType"))).count());
         assertEquals(Boolean.TRUE,decision.get("productionConfirmed"));
         assertEquals(Boolean.TRUE,decision.get("productionActivePlan"));
+        assertEquals("SHADOW_SOL_P02_QUARANTINE",decision.get("shadowReasonCode"));
         for(Map<String,Object> event:real.runtime.recorder.eventMaps())if("SHADOW_OBSERVABILITY".equals(event.get("classification"))){
             assertEquals(ShadowCalibrationPolicy.VERSION,event.get("shadowPolicyVersion"));
             assertEquals(ShadowCalibrationPolicy.SCHEMA_VERSION,event.get("shadowSchemaVersion"));

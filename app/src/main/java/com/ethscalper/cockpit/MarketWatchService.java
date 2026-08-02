@@ -116,6 +116,7 @@ public class MarketWatchService extends Service {
             new MultiMarketCoordinator(marketRegistry);
     private final SharedReferenceContext sharedBtc = new SharedReferenceContext();
     private final MarketPlanOrchestrator marketOrchestrator = new MarketPlanOrchestrator();
+    private final LegacyEthShadowBridge legacyEthShadowBridge = new LegacyEthShadowBridge();
     private MarketDataRouter marketDataRouter;
     private final Deque<Candle> ethCandles = new ArrayDeque<>();
     private final Deque<Candle> btcCandles = new ArrayDeque<>();
@@ -484,6 +485,7 @@ public class MarketWatchService extends Service {
             broadcastStatus("test_vibration", "Vibration longue testée");
         } else if (ACTION_RESET_DIAGNOSTICS.equals(action)) {
             ObservedSignal activePlan = activeFinalSignal();
+            legacyEthShadowBridge.resetResearchMemory();
             for(MarketRuntime runtime:marketCoordinator.runtimes().values()) {
                 runtime.resetDiagnosticsPreservingActivePlan();
             }
@@ -1458,6 +1460,10 @@ public class MarketWatchService extends Service {
         evaluateSecondaryMarkets(now);
         MarketSnapshot snapshot = buildSnapshot(now);
         boolean feedFresh = ethExecutionFeedFresh(now);
+        MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+        legacyEthShadowBridge.observeTerminal(ethRuntime,snapshot,now,ethMarketFeedFresh(now),
+                sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),activeFinalSignal()!=null,lastTerminalAt,
+                structuralEthBars(now));
 
         // C01: an old feed blocks only creation; existing candidates and risks still advance.
         updateObservedSignals(snapshot, now, feedFresh);
@@ -2227,6 +2233,11 @@ public class MarketWatchService extends Service {
         }
     }
 
+    private boolean ethMarketFeedFresh(long now) {
+        return executionFeedAuthoritative&&ethBid>0&&ethAsk>0&&ethLast>0
+                &&lastEthBookTickerAt>0&&now-lastEthBookTickerAt<=ETH_BOOK_MAX_AGE_MS;
+    }
+
     private void recordDiagnosticFlushFailure(String requestId,long timeoutMs,String error){
         try{long now=System.currentTimeMillis();Map<String,Object> details=new LinkedHashMap<>();
             details.put("requestId",requestId==null?"":requestId);details.put("timeoutMs",timeoutMs);
@@ -2853,7 +2864,17 @@ public class MarketWatchService extends Service {
             if ("LIMIT_PENDING".equals(item.status)) {
                 item.normalizedMetrics = NormalizedSignalMetrics.calculate(
                         item.signal.side, item.signal, snapshot, item.adverseExcursion60);
+                MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+                legacyEthShadowBridge.observeCandidate(ethRuntime,item,snapshot,now,
+                        ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                        activeFinalSignal()!=null,lastTerminalAt,
+                        candidateTombstones.blocks(item.candidateSignature),structuralEthBars(now));
                 if (feedFresh && CandidateLifecycle.targetReachedBeforeConfirmedFill(item.signal, snapshot)) {
+                    legacyEthShadowBridge.observeMissedMove(ethRuntime,item,snapshot,now,
+                            ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                            activeFinalSignal()!=null,lastTerminalAt,structuralEthBars(now),
+                            Map.of("creationBid",item.creationBid,"creationAsk",item.creationAsk,
+                                    "creationLast",item.creationLast,"score",item.signal.score));
                     resetEarlyP01Stability(item, CandidateLifecycle.TARGET_BEFORE_FILL);
                     if (item.departureAt <= 0) item.departureAt = now;
                     item.lastConfirmationCode = CandidateLifecycle.TARGET_BEFORE_FILL;
@@ -3187,6 +3208,10 @@ public class MarketWatchService extends Service {
         notifyObservationSignal(item);
         requestPostPublicationAiAdvisory(snapshot, published);
         broadcastStatus("signal_final_confirmed", fill.reasonCode);
+        legacyEthShadowBridge.observeConfirmation(
+                marketCoordinator.runtime(MarketProfile.ETH_SYMBOL),item,candidate,snapshot,now,
+                ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),lastTerminalAt,
+                fill,structuralEthBars(now));
         return true;
     }
 
@@ -5809,6 +5834,9 @@ public class MarketWatchService extends Service {
         double p01EarlyTriggerAsk = Double.NaN;
         double p01EarlyQuoteDistance = Double.NaN;
         double p01EarlySecondsSaved = Double.NaN;
+        String lastShadowLaneReason = "";
+        long shadowExtendedQualificationAt;
+        long shadowExtendedFirstExecutableAt;
 
         final double signalEthLast;
         final double signalBid;

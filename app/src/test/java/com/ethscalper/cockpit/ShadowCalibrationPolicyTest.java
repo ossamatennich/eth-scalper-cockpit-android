@@ -48,6 +48,47 @@ public class ShadowCalibrationPolicyTest {
                 ShadowTestFixtures.metrics(p,"LONG",30_000,1,1,2,2,.3,0,.3,.8,.29)).keep);
     }
 
+    @Test public void p02PolicyIsSymbolAwareWithoutChangingPublicScore(){
+        NormalizedSignalMetrics.Result ok=ShadowTestFixtures.metrics(MarketProfile.eth(),"LONG",
+                30_000,1,1,2,2,.3,.4,.5,.5,1);
+        assertEquals("SHADOW_SOL_P02_QUARANTINE",
+                ShadowCalibrationPolicy.p02Symbolic(MarketProfile.sol(),80,ok).reasonCode);
+        assertEquals("SHADOW_ETH_P02_SCORE_TOO_LOW",
+                ShadowCalibrationPolicy.p02Symbolic(MarketProfile.eth(),84,ok).reasonCode);
+        assertTrue(ShadowCalibrationPolicy.p02Symbolic(MarketProfile.eth(),85,ok).keep);
+    }
+
+    @Test public void offSampleNumericProfilesHaveDeterministicShadowDecisions(){
+        NormalizedSignalMetrics.Result sol=ShadowTestFixtures.metrics(MarketProfile.sol(),"LONG",
+                30_000,.038,.789474,2.894737,1.842105,.516234,.939451,.621643,.730769,.789474);
+        assertEquals("SHADOW_SOL_P02_QUARANTINE",
+                ShadowCalibrationPolicy.p02Symbolic(MarketProfile.sol(),80,sol).reasonCode);
+        NormalizedSignalMetrics.Result exhausted=ShadowTestFixtures.metrics(MarketProfile.eth(),"SHORT",
+                30_000,.548,.547445,2.189781,5.145985,.268345,.989300,2.007345,.958333,0);
+        assertEquals("SHADOW_P02_ROOM_TOO_LOW",
+                ShadowCalibrationPolicy.p02Symbolic(MarketProfile.eth(),87,exhausted).reasonCode);
+        NormalizedSignalMetrics.Result weakFlow=ShadowTestFixtures.metrics(MarketProfile.eth(),"SHORT",
+                20_000,1.179,.890585,1.882952,-1.348601,.207444,.172561,.428817,.445248,2.188295);
+        assertEquals("SHADOW_P01_FLOW60_TOO_LOW",ShadowCalibrationPolicy.p01FinalGuard(96,weakFlow,
+                P01SleeveFilter.evaluate(weakFlow,20_000),"").reasonCode);
+        NormalizedSignalMetrics.Result extended=ShadowTestFixtures.metrics(MarketProfile.eth(),"LONG",
+                20_000,.996,-.281124,2.228916,3.644578,.655920,.865977,.815324,.649688,2);
+        assertTrue(ShadowCalibrationPolicy.ethFlowExpansionExtended(MarketProfile.eth(),96,extended).keep);
+        assertFalse(ShadowCalibrationPolicy.ethFlowExpansionExtended(MarketProfile.sol(),96,extended).keep);
+    }
+
+    @Test public void extendedLaneBoundariesAreExact(){
+        MarketProfile p=MarketProfile.eth();
+        assertTrue(ShadowCalibrationPolicy.ethFlowExpansionExtended(p,95,
+                ShadowTestFixtures.metrics(p,"LONG",20_000,.80,-.299,1,0,.22,.70,.5,.5,2)).keep);
+        assertTrue(ShadowCalibrationPolicy.ethFlowExpansionExtended(p,95,
+                ShadowTestFixtures.metrics(p,"LONG",20_000,1.65,-.299,1,0,.22,.70,.5,.5,2)).keep);
+        assertFalse(ShadowCalibrationPolicy.ethFlowExpansionExtended(p,94,
+                ShadowTestFixtures.metrics(p,"LONG",20_000,1,-.299,1,0,.22,.70,.5,.5,2)).keep);
+        assertFalse(ShadowCalibrationPolicy.ethFlowExpansionExtended(p,95,
+                ShadowTestFixtures.metrics(p,"LONG",20_000,1,-.30,1,0,.22,.70,.5,.5,2)).keep);
+    }
+
     @Test public void pullbackAndMidVolAreSymmetricAndProfileBound(){
         for(String side:new String[]{"LONG","SHORT"})assertTrue(ShadowCalibrationPolicy.pullback(95,
                 ShadowTestFixtures.metrics(MarketProfile.eth(),side,10_000,1,1,2,-2,.5,.6,1,.5,2)).keep);

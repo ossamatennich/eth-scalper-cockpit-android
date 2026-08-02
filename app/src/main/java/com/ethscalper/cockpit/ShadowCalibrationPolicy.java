@@ -1,13 +1,14 @@
 package com.ethscalper.cockpit;
 
-/** Pure thresholds for the v2.34.4.0 shadow-only calibration experiment. */
+/** Pure thresholds for the v2.34.4.2 shadow-only calibration experiment. */
 public final class ShadowCalibrationPolicy {
-    public static final String VERSION = "SHADOW_V23441_20260801";
-    public static final String SCHEMA_VERSION = "SHADOW_SCHEMA_V2";
+    public static final String VERSION = "SHADOW_V23442_20260802";
+    public static final String SCHEMA_VERSION = "SHADOW_SCHEMA_V3";
     public static final String P01_GUARD = "P01_FINAL_CONFIRMATION_GUARD";
     public static final String P02_GUARD = "P02_ANTI_EXHAUSTION";
     public static final String PULLBACK = "P01_PULLBACK_RESUMPTION";
     public static final String ETH_MID_VOL = "ETH_MID_VOL_TREND_EXPANSION";
+    public static final String ETH_FLOW_EXTENDED = "ETH_FLOW_EXPANSION_EXTENDED";
 
     private static final double EPS = 1e-12;
     private ShadowCalibrationPolicy() {}
@@ -44,6 +45,16 @@ public final class ShadowCalibrationPolicy {
         return keep("SHADOW_P02_KEEP");
     }
 
+    /** Symbol-aware shadow classification. It never changes the public P02 result. */
+    public static Decision p02Symbolic(MarketProfile profile, int score,
+                                       NormalizedSignalMetrics.Result m) {
+        if (profile != null && MarketProfile.SOL_SYMBOL.equals(profile.symbol))
+            return block("SHADOW_SOL_P02_QUARANTINE");
+        if (profile != null && MarketProfile.ETH_SYMBOL.equals(profile.symbol) && score < 85)
+            return block("SHADOW_ETH_P02_SCORE_TOO_LOW");
+        return p02AntiExhaustion(score, m);
+    }
+
     public static Decision pullback(int score, NormalizedSignalMetrics.Result m) {
         if (score < 95) return block("SHADOW_PULLBACK_SCORE_TOO_LOW");
         if (m == null || !m.valid) return block("SHADOW_PULLBACK_METRICS_INVALID");
@@ -74,6 +85,22 @@ public final class ShadowCalibrationPolicy {
         if (m.f30 + EPS < .22) return block("SHADOW_MID_VOL_FLOW30_TOO_LOW");
         if (m.f60 + EPS < .60) return block("SHADOW_MID_VOL_FLOW60_TOO_LOW");
         return keep("SHADOW_MID_VOL_KEEP");
+    }
+
+    public static Decision ethFlowExpansionExtended(MarketProfile profile, int score,
+                                                     NormalizedSignalMetrics.Result m) {
+        if (profile == null || !MarketProfile.ETH_SYMBOL.equals(profile.symbol))
+            return block("SHADOW_FLOW_EXTENDED_ETH_ONLY");
+        if (score < 95) return block("SHADOW_FLOW_EXTENDED_SCORE_TOO_LOW");
+        if (m == null || !m.valid) return block("SHADOW_FLOW_EXTENDED_METRICS_INVALID");
+        if (m.a + EPS < .80 || m.a > 1.65 + EPS)
+            return block("SHADOW_FLOW_EXTENDED_A_OUTSIDE_RANGE");
+        if (m.m1 <= -.30 + EPS) return block("SHADOW_FLOW_EXTENDED_MOVE1_TOO_LOW");
+        if (m.m3 + EPS < 1.00) return block("SHADOW_FLOW_EXTENDED_MOVE3_TOO_LOW");
+        if (m.m8 + EPS < 0.0) return block("SHADOW_FLOW_EXTENDED_MOVE8_TOO_LOW");
+        if (m.f30 + EPS < .22) return block("SHADOW_FLOW_EXTENDED_FLOW30_TOO_LOW");
+        if (m.f60 + EPS < .70) return block("SHADOW_FLOW_EXTENDED_FLOW60_TOO_LOW");
+        return keep("SHADOW_FLOW_EXTENDED_KEEP");
     }
 
     public static boolean isCriticalCurrentRevalidation(String code) {

@@ -2,7 +2,7 @@
 
 Application Android de recherche qui analyse en continu **ETHUSDT** et **SOLUSDT**. **BTCUSDT** sert uniquement de contexte partagé.
 
-La version courante est **2.34.4.1** (`versionCode 23441`). L’APK recommandée est l’édition **NMC Stable 4.1**, signée durablement afin que ses mises à jour Android remplacent réellement la version stable précédente. Elle ajoute une comparaison A/B strictement shadow : les nouvelles politiques sont mesurées dans les diagnostics, sans bloquer, publier ou modifier le moindre plan public. Le flux Binance Futures et le fallback REST public restent indépendants du volume des diagnostics. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
+La version courante est **2.34.4.2** (`versionCode 23442`). L’APK recommandée est l’édition **NMC Stable 4.2**, signée durablement afin que ses mises à jour Android remplacent réellement la version stable précédente. Elle raccorde la comparaison A/B strictement shadow aux moteurs publics ETH legacy et SOL, sans bloquer, publier ou modifier le moindre plan public. Le flux Binance Futures et le fallback REST public restent indépendants du volume des diagnostics. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
 
 ## Principes essentiels
 
@@ -14,7 +14,7 @@ La version courante est **2.34.4.1** (`versionCode 23441`). L’APK recommandée
 - après publication, le plan est immuable et se termine uniquement au TP ou au SL ;
 - `realTradingAllowed=false` ;
 - SOL reste un profil de recherche.
-- la politique `SHADOW_V23441_20260801` et le schéma `SHADOW_SCHEMA_V2` restent silencieux et purement observationnels.
+- la politique `SHADOW_V23442_20260802` et le schéma `SHADOW_SCHEMA_V3` restent silencieux et purement observationnels.
 
 ## Construire et tester
 
