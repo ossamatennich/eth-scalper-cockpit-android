@@ -68,13 +68,15 @@ public final class V23443QualityFrequencyShadowTest {
         LinkedHashMap<String,Object> open=new LinkedHashMap<>();
         open.put("component",ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE);
         open.put("decision","OPEN");open.put("movementKey","ETH|LONG|CONTINUATION|1|100");
+        open.put("candidateSignature","public-signature");
         summary.observe("SHADOW_PLAN_OPENED",open);summary.observe("SHADOW_AB_DECISION",open);
         summary.observe("SHADOW_PUBLIC_OVERLAP",open);
         Map<String,Object> out=summary.snapshot(System.currentTimeMillis()+3_600_000L);
-        assertEquals(1L,out.get("publicPlans"));assertEquals(1L,out.get("uniqueShadowOpened"));
-        assertEquals(1L,out.get("publicShadowOverlaps"));
+        assertEquals(1,((Number)out.get("publicPlans")).intValue());
+        assertEquals(1,((Number)out.get("uniqueShadowOpened")).intValue());
+        assertEquals(1,((Number)out.get("publicShadowOverlaps")).intValue());
         assertTrue(out.get("combinedSignalsPerHour") instanceof Number);
-        assertEquals("SHADOW_SCHEMA_V4",out.get("shadowSchemaVersion"));
+        assertEquals("SHADOW_SCHEMA_V5",out.get("shadowSchemaVersion"));
     }
 
     @Test public void shadowStateDedupIsComponentIndependentAndBoundedByContract(){

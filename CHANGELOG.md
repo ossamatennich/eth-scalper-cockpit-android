@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.4.4 — comptabilité shadow qualité/fréquence corrigée
+
+- qualifications, occasions exécutables et ouvertures comptées séparément, sans double incrément ;
+- unions exactes public/shadow et agrégat `ALL` ETH+SOL ;
+- registre FIFO borné à 256 plans permettant les overlaps après TP ou SL shadow ;
+- quantité des lanes shadow réellement calculée avec frais, pas, minimum, maximum et plafond qualité ;
+- résumé et terminaux publics entièrement isolés en fail-open ;
+- politique `SHADOW_V23444_20260802`, schéma `SHADOW_SCHEMA_V5`, moteur public inchangé.
+
 ## 2.34.4.3 — architecture shadow qualité + fréquence
 
 - garde P01 symbolique : strict sur ETH, baseline publique conservée sur SOL ;

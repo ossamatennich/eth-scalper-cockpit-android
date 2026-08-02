@@ -82,9 +82,7 @@ public final class ShadowObservationEngine {
     private final EventSink sink;
     private final Deque<String> missedOrder=new ArrayDeque<>();
     private final Set<String> missedMovements=new HashSet<>();
-    private final Deque<String> researchMovementOrder=new ArrayDeque<>();
-    private final Set<String> researchMovements=new HashSet<>();
-    private final LinkedHashMap<String,String> movementBySignature=new LinkedHashMap<>();
+    private final ShadowOpenedPlanRegistry openedRegistry=new ShadowOpenedPlanRegistry();
 
     public ShadowObservationEngine(){this((operation,action)->action.run(),defaultSink());}
     public ShadowObservationEngine(OperationRunner runner){this(runner,defaultSink());}
@@ -112,8 +110,11 @@ public final class ShadowObservationEngine {
             ETH_BTC_LED_BREAKOUT_RESEARCH,"OBSERVE_MISSED_MOVE",()->observeMissedMove(
                     context,candidate,creationContext));}
 
-    public synchronized void resetResearchMemory(){missedOrder.clear();missedMovements.clear();
-        researchMovementOrder.clear();researchMovements.clear();movementBySignature.clear();}
+    public synchronized void resetResearchMemory(){
+        try{missedOrder.clear();missedMovements.clear();openedRegistry.reset();}
+        catch(RuntimeException ignored){/* reset is shadow-only and fail-open */}
+    }
+    public ShadowOpenedPlanRegistry openedRegistry(){return openedRegistry;}
 
     private void safe(Context c,String component,String operation,Runnable action){
         try{runner.execute(operation,action);}catch(RuntimeException failure){
@@ -139,6 +140,8 @@ public final class ShadowObservationEngine {
                 c.snapshot==null?Double.NaN:c.snapshot.marketBid,
                 c.snapshot==null?Double.NaN:c.snapshot.marketAsk,c.marketFresh);
         if(active==null||terminal==null)return;
+        ShadowOpenedPlanRegistry.Record record=openedRegistry.markTerminal(active.shadowPlanId,
+                terminal.at,terminal.status);
         LinkedHashMap<String,Object>d=base(c,null,active.component);
         d.put("decision","TERMINAL");d.put("shadowReasonCode",terminal.status);
         addPlan(d,active);d.put("candidateSignature",active.candidateSignature);
@@ -153,6 +156,7 @@ public final class ShadowObservationEngine {
         d.put("estimatedFeesUsdt",terminal.estimatedFeesUsdt);
         d.put("netResultUsdt",terminal.netResultUsdt);
         d.put("resultR",finiteOrNull(terminal.resultR));d.put("terminalStatus",terminal.status);
+        addRegistryRecord(d,record);c.runtime.shadowExperiment.safeRegistryStats(openedRegistry.snapshotStats());
         write(c,null,terminal.status,terminal.status,"Terminal shadow observé; compteurs publics inchangés.",
                 active.sleeve,c.now-active.sourceCandidateCreatedAt,0,d);
     }
@@ -187,12 +191,15 @@ public final class ShadowObservationEngine {
                 c.now-candidate.createdAt,candidate.adverse,d);
         ShadowPlanFactory.Result geometry=ShadowPlanFactory.fromProduction(c.runtime.profile,
                 candidate.signature,component,candidate.sleeve,candidate.createdAt,c.now,result);
-        if(geometry.valid)recordFeeAware(c,published,geometry.state,geometry.economics,true);
-        ShadowPlanState shadow=c.runtime.shadowResearch.active();
-        if(shadow!=null&&sameMovement(c,candidate,shadow.candidateSignature)){
+        if(geometry.valid)recordFeeAware(c,published,geometry.state,geometry.economics,true,
+                geometry.baselineQuantity);
+        String candidateMovement=movementKey(c,candidate);
+        ShadowOpenedPlanRegistry.Record shadow=openedRegistry.findOverlap(candidate.signature,candidateMovement);
+        if(shadow!=null&&openedRegistry.markPublicOverlap(shadow.shadowPlanId)){
+            shadow=openedRegistry.findOverlap(candidate.signature,candidateMovement);
             LinkedHashMap<String,Object> overlap=base(c,candidate,shadow.component);
             overlap.put("decision","OVERLAP");overlap.put("shadowReasonCode","SHADOW_PUBLIC_OVERLAP");
-            overlap.put("publicOverlap",true);addPlan(overlap,shadow);
+            overlap.put("publicOverlap",true);addRegistryRecord(overlap,shadow);
             write(c,published,"SHADOW_PUBLIC_OVERLAP","SHADOW_PUBLIC_OVERLAP",
                     "Confirmation publique recouvrant une occasion shadow.",candidate.sleeve,
                     c.now-candidate.createdAt,candidate.adverse,overlap);
@@ -221,6 +228,8 @@ public final class ShadowObservationEngine {
                 :pullback.keep?ShadowCalibrationPolicy.PULLBACK
                 :flow.keep?ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE
                 :ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG;
+        String candidateMovement=movementKey(c,candidate);
+        c.runtime.shadowExperiment.safeQualified(selected,candidateMovement,c.now);
         if(pullback.keep&&flow.keep)recordWouldQualify(c,candidate,metrics,
                 ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE);
         if((pullback.keep||flow.keep)&&range.keep)recordWouldQualify(c,candidate,metrics,
@@ -238,12 +247,6 @@ public final class ShadowObservationEngine {
         if(!ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate.signal,candidate.favorable)){
             recordSkipOnce(c,candidate,metrics,selected,
                     "SHADOW_TARGET_ALREADY_TOUCHED_BEFORE_OPEN","SKIP");return;}
-        String candidateMovement=movementKey(c,candidate);
-        if(researchMovements.contains(candidateMovement)){
-            recordSkipOnce(c,candidate,metrics,selected,"SHADOW_MOVEMENT_ALREADY_OBSERVED","SKIP");return;}
-        if(!c.runtime.shadowResearch.canOpen(candidate.signature,c.now)){
-            recordSkipOnce(c,candidate,metrics,selected,c.runtime.shadowResearch.active()!=null
-                    ?"SHADOW_PLAN_ALREADY_ACTIVE":"SHADOW_DEDUP_OR_COOLDOWN","SKIP");return;}
         boolean reanchored=ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(selected)
                 ||ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG.equals(selected);
         ShadowPlanFactory.Result built=reanchored
@@ -257,20 +260,30 @@ public final class ShadowObservationEngine {
         if(!built.economics.valid||!(built.economics.netTargetUsdt>0)
                 ||!(built.economics.netStopUsdt>0)||built.economics.netRewardRisk+1e-12<.40){
             recordSkipOnce(c,candidate,metrics,selected,"SHADOW_NET_REWARD_RISK_TOO_LOW","SKIP");return;}
+        c.runtime.shadowExperiment.safeOpportunity(selected,candidateMovement);
+        if(openedRegistry.findOverlap(candidate.signature,candidateMovement)!=null){
+            recordSkipOnce(c,candidate,metrics,selected,"SHADOW_MOVEMENT_ALREADY_OBSERVED","SKIP");return;}
+        if(!c.runtime.shadowResearch.canOpen(candidate.signature,c.now)){
+            recordSkipOnce(c,candidate,metrics,selected,c.runtime.shadowResearch.active()!=null
+                    ?"SHADOW_PLAN_ALREADY_ACTIVE":"SHADOW_DEDUP_OR_COOLDOWN","SKIP");return;}
         if(!c.runtime.shadowResearch.open(built.state)){recordSkipOnce(c,candidate,metrics,selected,
                 "SHADOW_DEDUP_OR_COOLDOWN","SKIP");return;}
-        rememberResearchMovement(candidate.signature,candidateMovement);
+        boolean higherPriority=(pullback.keep&&flow.keep)||((pullback.keep||flow.keep)&&range.keep);
+        ShadowOpenedPlanRegistry.Record opened=openedRegistry.registerOpen(built.state,candidateMovement,
+                candidate.signal.family,higherPriority);
+        c.runtime.shadowExperiment.safeRegistryStats(openedRegistry.snapshotStats());
         LinkedHashMap<String,Object>d=base(c,candidate,selected);
         d.put("decision","OPEN");d.put("shadowReasonCode","SHADOW_PLAN_OPENED");
         addPlan(d,built.state);putMetrics(d,metrics,candidate.adverse);
         d.put("movementKey",movementKey(c,candidate));d.put("publicOverlap",false);
+        d.put("higherPriorityOverlap",higherPriority);
         if(reanchored){d.put("originalCandidateEntry",candidate.signal.entry);
             d.put("currentExecutableQuote","LONG".equals(candidate.signal.side)
                     ?c.snapshot.marketAsk:c.snapshot.marketBid);
             d.put("reanchoredEntry",built.state.entry);d.put("reanchoredTp",built.state.tp);
             d.put("reanchoredSl",built.state.sl);
             d.put("quoteDriftFromOriginal",Math.abs(built.state.entry-candidate.signal.entry));}
-        if(ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(selected))putLatency(d,candidate,c.now);
+        putQualificationLatency(d,candidate,selected,c.now);
         if(ShadowCalibrationPolicy.SOL_EARLY.equals(selected)){
             d.put("solEarlyQualitySince",candidate.solEarlyQualitySince);
             d.put("solEarlyQualityMode",candidate.solEarlyQualityMode);
@@ -279,15 +292,27 @@ public final class ShadowObservationEngine {
         write(c,candidate.signal,"SHADOW_PLAN_OPENED","SHADOW_PLAN_OPENED",
                 "Plan shadow ouvert sans publication ni alerte.",candidate.sleeve,
                 c.now-candidate.createdAt,candidate.adverse,d);
-        recordFeeAware(c,candidate.signal,built.state,built.economics,false);
+        recordFeeAware(c,candidate.signal,built.state,built.economics,false,built.baselineQuantity);
     }
 
     private CandidateLifecycle.FillResult solEarlyResult(Context c,Candidate candidate){
-        if(!MarketProfile.SOL_SYMBOL.equals(c.runtime.profile.symbol)
-                ||candidate.signal.score<95||candidate.signal.family==null
-                ||!candidate.signal.family.contains("CONTINUATION"))return null;
+        if(!MarketProfile.SOL_SYMBOL.equals(c.runtime.profile.symbol))return null;
+        if(candidate.signal.score<95||candidate.signal.family==null
+                ||!candidate.signal.family.contains("CONTINUATION")){
+            resetSolEarly(candidate,"SHADOW_SOL_EARLY_PROFILE_REJECTED");return null;}
         long age=c.now-candidate.createdAt;
-        if(age<0||age>=P01EarlyConfirmation.MAX_EARLY_AGE_MS)return null;
+        if(age<0||age>=P01EarlyConfirmation.MAX_EARLY_AGE_MS){resetSolEarly(candidate,
+                "SHADOW_SOL_EARLY_AGE_OUTSIDE_WINDOW");return null;}
+        if(c.snapshot==null||c.snapshot.now!=c.now){resetSolEarly(candidate,"SHADOW_SOL_EARLY_SNAPSHOT_NOT_CAUSAL");return null;}
+        if(!c.marketFresh){resetSolEarly(candidate,"SHADOW_SOL_EARLY_MARKET_STALE");return null;}
+        if(!c.btcFresh){resetSolEarly(candidate,"SHADOW_SOL_EARLY_BTC_STALE");return null;}
+        if(c.productionActivePlan){resetSolEarly(candidate,"SHADOW_SOL_EARLY_PUBLIC_PLAN_ACTIVE");return null;}
+        if(!c.rearmComplete){resetSolEarly(candidate,"SHADOW_SOL_EARLY_REARM_ACTIVE");return null;}
+        if(c.tombstoned){resetSolEarly(candidate,"SHADOW_SOL_EARLY_TOMBSTONED");return null;}
+        if(!CandidateLifecycle.currentlyExecutable(candidate.signal,c.snapshot)){
+            resetSolEarly(candidate,"SHADOW_SOL_EARLY_NOT_EXECUTABLE");return null;}
+        if(!ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate.signal,candidate.favorable)){
+            resetSolEarly(candidate,"SHADOW_SOL_EARLY_TARGET_ALREADY_TOUCHED");return null;}
         double progress=Double.isFinite(candidate.signal.targetMove)&&candidate.signal.targetMove>0
                 ?Math.max(0,candidate.favorable/candidate.signal.targetMove):0;
         CandidateLifecycle.FillResult probe=CandidateLifecycle.processEarlyP01Candidate(
@@ -309,15 +334,21 @@ public final class ShadowObservationEngine {
         return confirmed;
     }
 
+    private static void resetSolEarly(Candidate candidate,String reason){candidate.solEarlyQualitySince=0;
+        candidate.solEarlyQualityMode="";candidate.solEarlyStabilityMs=0;
+        candidate.solEarlyLastReasonCode=reason;candidate.solEarlyConfirmedAt=0;}
+
     private void recordWouldQualify(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
                                     String component){
+        c.runtime.shadowExperiment.safeQualified(component,movementKey(c,candidate),c.now);
         recordSkipOnce(c,candidate,metrics,component,DUPLICATE_HIGHER,"WOULD_QUALIFY");
     }
 
     private void recordSkipOnce(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
                                 String component,String reason,String decision){
         String key=decision+"|"+reason;String previous=candidate.lastShadowStateByComponent.get(component);
-        if(key.equals(previous)){candidate.shadowDuplicateEventsSuppressed++;return;}
+        if(key.equals(previous)){candidate.shadowDuplicateEventsSuppressed++;
+            c.runtime.shadowExperiment.safeDuplicateSuppressed(component,candidate.signature);return;}
         if(!candidate.lastShadowStateByComponent.containsKey(component)
                 &&candidate.lastShadowStateByComponent.size()>=16){
             String eldest=candidate.lastShadowStateByComponent.keySet().iterator().next();
@@ -358,23 +389,39 @@ public final class ShadowObservationEngine {
     }
 
     private void recordFeeAware(Context c,SignalDecision signal,ShadowPlanState state,
-                                ShadowNetEconomics.Result e,boolean productionConfirmed){
-        if(e==null||!e.valid)return;LinkedHashMap<String,Object>d=base(c,null,state.component);
+                                ShadowNetEconomics.Result e,boolean productionConfirmed,
+                                int baselineQuantity){
+        if(e==null||!e.valid)return;LinkedHashMap<String,Object>d=base(c,null,"SHADOW_FEE_AWARE_SIZING");
         d.put("decision","MEASURE");d.put("shadowReasonCode","SHADOW_FEE_AWARE_SIZING");
+        d.put("sourceComponent",state.component);
         addPlan(d,state);d.put("candidateSignature",state.candidateSignature);
+        addRegistryRecord(d,openedRegistry.findOverlap(state.candidateSignature,""));
         d.put("sourceCandidateCreatedAt",state.sourceCandidateCreatedAt);
         d.put("productionConfirmed",productionConfirmed);
-        d.put("activeQuantity",state.quantity);d.put("feeAwareQuantity",e.feeAwareQuantity);
+        if(productionConfirmed)d.put("activeQuantity",state.quantity);
+        else{d.put("baselineGrossQuantity",baselineQuantity);d.put("shadowQuantity",state.quantity);}
+        d.put("feeAwareQuantity",e.feeAwareQuantity);
         d.put("riskBudgetUsdt",state.riskBudgetUsdt);d.put("roundedStopDistance",state.stopDistance);
         d.put("estimatedRoundTripCostPerUnit",e.estimatedRoundTripCostPerUnit);
-        d.put("activeGrossStopLossUsdt",e.activeGrossStopLossUsdt);
-        d.put("activeEstimatedFeesUsdt",e.activeEstimatedFeesUsdt);
-        d.put("activeTotalStopLossUsdt",e.activeTotalStopLossUsdt);
+        if(productionConfirmed){
+            d.put("activeGrossStopLossUsdt",e.activeGrossStopLossUsdt);
+            d.put("activeEstimatedFeesUsdt",e.activeEstimatedFeesUsdt);
+            d.put("activeTotalStopLossUsdt",e.activeTotalStopLossUsdt);
+        }else{
+            d.put("baselineGrossStopLossUsdt",baselineQuantity*state.stopDistance);
+            d.put("baselineEstimatedFeesUsdt",baselineQuantity*e.estimatedRoundTripCostPerUnit);
+        }
         d.put("feeAwareGrossStopLossUsdt",e.feeAwareGrossStopLossUsdt);
         d.put("feeAwareEstimatedFeesUsdt",e.feeAwareEstimatedFeesUsdt);
         d.put("feeAwareTotalStopLossUsdt",e.feeAwareTotalStopLossUsdt);
         d.put("netTargetUsdt",e.netTargetUsdt);d.put("netStopUsdt",e.netStopUsdt);
         d.put("netRewardRisk",e.netRewardRisk);
+        d.put("shadowGrossTargetUsdt",state.quantity*state.targetDistance);
+        d.put("shadowEstimatedFeesUsdt",state.quantity*e.estimatedRoundTripCostPerUnit);
+        d.put("shadowNetTargetUsdt",state.quantity*(state.targetDistance-e.estimatedRoundTripCostPerUnit));
+        d.put("shadowGrossStopUsdt",state.quantity*state.stopDistance);
+        d.put("shadowNetStopUsdt",state.quantity*(state.stopDistance+e.estimatedRoundTripCostPerUnit));
+        d.put("shadowNetRewardRisk",e.netRewardRisk);
         d.put("activeExceedsBudgetAfterFees",e.activeExceedsBudgetAfterFees);
         write(c,signal,"SHADOW_FEE_AWARE_SIZING","SHADOW_FEE_AWARE_SIZING",
                 "Sonde de sizing frais inclus; quantité publique inchangée.",state.sleeve,
@@ -411,25 +458,18 @@ public final class ShadowObservationEngine {
                 +(candidate.createdAt/MISSED_MOVEMENT_BUCKET_MS)+"|"+rounded;
     }
 
-    private boolean sameMovement(Context c,Candidate candidate,String signature){
-        if(candidate==null)return false;if(candidate.signature.equals(signature))return true;
-        String known=movementBySignature.get(signature);return known!=null&&known.equals(movementKey(c,candidate));
-    }
-
-    private synchronized void rememberResearchMovement(String signature,String movement){
-        if(movement==null||movement.isEmpty())return;
-        if(researchMovements.add(movement))researchMovementOrder.addLast(movement);
-        movementBySignature.put(signature,movement);
-        while(researchMovementOrder.size()>256){String old=researchMovementOrder.removeFirst();
-            researchMovements.remove(old);movementBySignature.entrySet().removeIf(e->old.equals(e.getValue()));}
-    }
-
     private static void addPlan(Map<String,Object>d,ShadowPlanState p){
         d.put("shadowPlanId",p.shadowPlanId);d.put("entry",p.entry);d.put("tp",p.tp);
         d.put("sl",p.sl);d.put("quantity",p.quantity);d.put("roundedStopDistance",p.stopDistance);
         d.put("roundedTargetDistance",p.targetDistance);d.put("A",finiteOrNull(p.a));
         d.put("E60",finiteOrNull(p.adverseExcursion60));d.put("eNormalized",finiteOrNull(p.eNormalized));
     }
+    private static void addRegistryRecord(Map<String,Object>d,ShadowOpenedPlanRegistry.Record r){if(r==null)return;
+        d.put("shadowPlanId",r.shadowPlanId);d.put("candidateSignature",r.candidateSignature);
+        d.put("movementKey",r.movementKey);d.put("component",r.component);d.put("family",r.family);
+        d.put("openedAt",r.openedAt);d.put("terminalAt",r.terminalAt>0?r.terminalAt:null);
+        d.put("terminalStatus",r.terminalStatus);d.put("publicOverlap",r.publicOverlap);
+        d.put("higherPriorityOverlap",r.higherPriorityOverlap);}
     static void putMetrics(Map<String,Object>d,NormalizedSignalMetrics.Result m,double adverse){
         if(m==null)return;d.put("A",finiteOrNull(m.a));d.put("E60",finiteOrNull(adverse));
         d.put("eNormalized",finiteOrNull(m.e));d.put("room",finiteOrNull(m.room));
@@ -444,12 +484,22 @@ public final class ShadowObservationEngine {
         d.put("executableDelayMs",c.extendedQualificationAt>0&&c.extendedFirstExecutableAt>0
                 ?Math.max(0,c.extendedFirstExecutableAt-c.extendedQualificationAt):null);
     }
+    private static void putQualificationLatency(Map<String,Object>d,Candidate c,String component,long openedAt){
+        long qualified=ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(component)
+                ?c.extendedQualificationAt:ShadowCalibrationPolicy.SOL_EARLY.equals(component)
+                ?c.solEarlyQualitySince:openedAt;
+        d.put("qualificationAt",qualified>0?qualified:null);d.put("shadowOpenedAt",openedAt);
+        d.put("qualificationToOpenMs",qualified>0?Math.max(0,openedAt-qualified):null);
+        if(ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(component))
+            d.put("executableDelayMs",c.extendedQualificationAt>0&&c.extendedFirstExecutableAt>0
+                    ?Math.max(0,c.extendedFirstExecutableAt-c.extendedQualificationAt):null);
+    }
     private void write(Context c,SignalDecision signal,String type,String code,String text,
                        String sleeve,long age,double adverse,Map<String,Object> details){
         LinkedHashMap<String,Object> normalized=new LinkedHashMap<>(details);
         normalized.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);
         normalized.put("shadowSchemaVersion",ShadowCalibrationPolicy.SCHEMA_VERSION);
-        c.runtime.shadowExperiment.observe(type,normalized);
+        c.runtime.shadowExperiment.safeObserve(type,normalized);
         sink.record(new ShadowEvent(c,signal,type,code,text,sleeve,Math.max(0,age),adverse,normalized));
     }
     private static Object finiteOrNull(double value){return Double.isFinite(value)?value:null;}

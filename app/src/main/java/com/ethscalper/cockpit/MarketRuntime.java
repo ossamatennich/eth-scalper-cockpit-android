@@ -18,7 +18,7 @@ public final class MarketRuntime {
     public final MarketDiagnosticRecorder recorder;
     /** Independent, bounded research state; never aliases a public plan or lifecycle field. */
     public final ShadowResearchCoordinator shadowResearch = new ShadowResearchCoordinator();
-    public final ShadowExperimentSummary shadowExperiment = new ShadowExperimentSummary();
+    public final ShadowExperimentSummary shadowExperiment;
 
     public double last = Double.NaN, bid = Double.NaN, ask = Double.NaN;
     public long lastTickerAt, lastKlineAt, lastAggTradeAt, lastRestTickerAt, lastRestKlineAt;
@@ -34,9 +34,11 @@ public final class MarketRuntime {
     public ActivePlanState activePlan;
     public String aiStatus = "AI_OFF_ENGINE_COMPLETE";
 
-    public MarketRuntime(MarketProfile profile) {
+    public MarketRuntime(MarketProfile profile) {this(profile,new ShadowExperimentSummary());}
+    public MarketRuntime(MarketProfile profile,ShadowExperimentSummary summary) {
         if (profile == null) throw new IllegalArgumentException("profile");
         this.profile = profile;
+        this.shadowExperiment=summary==null?new ShadowExperimentSummary():summary;
         this.recorder = new MarketDiagnosticRecorder(profile);
     }
 
@@ -80,7 +82,7 @@ public final class MarketRuntime {
     /** Clears diagnostics and pending state while preserving and re-inserting an active plan. */
     public void resetDiagnosticsPreservingActivePlan() {
         ShadowPlanState resetShadow=shadowResearch.reset();
-        shadowExperiment.reset(System.currentTimeMillis());
+        shadowExperiment.safeReset(System.currentTimeMillis(),hasActivePlan());
         p02SetupTracker.reset();
         signalEngine.clearDiagnostics();
         observedSignals.clear();

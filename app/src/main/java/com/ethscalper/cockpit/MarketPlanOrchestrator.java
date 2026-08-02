@@ -25,6 +25,7 @@ public final class MarketPlanOrchestrator {
                 shadowObserver.execute(operation,action));
     }
     public static ShadowObserver noOpShadowObserver(){return (operation,action)->{};}
+    public void resetShadowResearchMemory(){shadowEngine.resetResearchMemory();}
 
     public Event evaluate(MarketRuntime runtime, SharedReferenceContext btc, long now,
                           boolean marketFeedFresh, boolean btcFeedFresh) {
@@ -32,9 +33,13 @@ public final class MarketPlanOrchestrator {
         runtime.recorder.frame(now,runtime.lastDecision,snapshot,marketFeedFresh,btcFeedFresh);
         safeObserveShadowTerminal(runtime,snapshot,now,marketFeedFresh,btcFeedFresh);
         Event terminal=terminalIfTouched(runtime,snapshot,now);
-        if(terminal!=null){runtime.shadowExperiment.publicTerminal(terminal.status);record(runtime,snapshot,terminal.plan,null,now,terminal.status,
-                terminal.reasonCode,"Plan terminé au "+terminal.status,"STRUCTURAL_SHARED","",
-                "",0,marketFeedFresh,btcFeedFresh,0,Map.of("exitPrice",terminal.exitPrice));return terminal;}
+        if(terminal!=null){
+            record(runtime,snapshot,terminal.plan,null,now,terminal.status,
+                    terminal.reasonCode,"Plan terminé au "+terminal.status,"STRUCTURAL_SHARED","",
+                    "",0,marketFeedFresh,btcFeedFresh,0,Map.of("exitPrice",terminal.exitPrice));
+            runtime.shadowExperiment.safePublicTerminal(terminal.status);
+            return terminal;
+        }
         if(runtime.hasActivePlan())return Event.none(runtime.lastSignal);
         boolean fresh=marketFeedFresh&&btcFeedFresh;
         Event confirmed=advanceCandidates(runtime,snapshot,now,marketFeedFresh,btcFeedFresh);

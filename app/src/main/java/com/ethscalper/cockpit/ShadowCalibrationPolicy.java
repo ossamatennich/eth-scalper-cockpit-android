@@ -1,9 +1,9 @@
 package com.ethscalper.cockpit;
 
-/** Pure thresholds for the v2.34.4.3 shadow-only quality/frequency experiment. */
+/** Pure thresholds for the v2.34.4.4 shadow-only quality/frequency experiment. */
 public final class ShadowCalibrationPolicy {
-    public static final String VERSION = "SHADOW_V23443_20260802";
-    public static final String SCHEMA_VERSION = "SHADOW_SCHEMA_V4";
+    public static final String VERSION = "SHADOW_V23444_20260802";
+    public static final String SCHEMA_VERSION = "SHADOW_SCHEMA_V5";
     public static final String ETH_P01_GUARD = "ETH_P01_FINAL_CONFIRMATION_GUARD";
     public static final String SOL_P01_MONITOR = "SOL_P01_PUBLIC_BASELINE_MONITOR";
     public static final String P02_GUARD = "P02_ANTI_EXHAUSTION";

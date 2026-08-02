@@ -486,6 +486,7 @@ public class MarketWatchService extends Service {
         } else if (ACTION_RESET_DIAGNOSTICS.equals(action)) {
             ObservedSignal activePlan = activeFinalSignal();
             legacyEthShadowBridge.resetResearchMemory();
+            marketOrchestrator.resetShadowResearchMemory();
             for(MarketRuntime runtime:marketCoordinator.runtimes().values()) {
                 runtime.resetDiagnosticsPreservingActivePlan();
             }
@@ -2781,10 +2782,7 @@ public class MarketWatchService extends Service {
         o.put("c2LongCandidates", legacyC2Long);
         o.put("c2ShortCandidates", legacyC2Short);
         o.put("purpose", "Full market playback: find missed LONG/SHORT opportunities and false entries");
-        JSONObject shadow=new JSONObject();long summaryNow=System.currentTimeMillis();
-        for(Map.Entry<String,MarketRuntime> entry:marketCoordinator.runtimes().entrySet())
-            shadow.put(entry.getKey(),new JSONObject(entry.getValue().shadowExperiment.snapshot(summaryNow)));
-        o.put("SHADOW_EXPERIMENT_SUMMARY",shadow);
+        o.put("SHADOW_EXPERIMENT_SUMMARY",shadowExperimentSummaryJson(System.currentTimeMillis()));
         return o;
     }
 
@@ -2965,7 +2963,6 @@ public class MarketWatchService extends Service {
             }
             if (SignalSafetyPolicies.isTerminalStatus(status)) {
                 closeObservedSignal(item, status, snapshot, now);
-                marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).shadowExperiment.publicTerminal(status);
                 p02SetupTracker.reset();
                 lastTerminalAt = now;
                 if (!terminalRearmPersistence.save(MarketProfile.ETH_SYMBOL,lastTerminalAt)) {
@@ -2982,6 +2979,9 @@ public class MarketWatchService extends Service {
                 } else {
                     lastActivePlanPersistAt = 0;
                 }
+                // Complete every public side effect before fail-open shadow accounting.
+                marketCoordinator.runtime(MarketProfile.ETH_SYMBOL)
+                        .shadowExperiment.safePublicTerminal(status);
             }
         }
     }
@@ -4782,11 +4782,20 @@ public class MarketWatchService extends Service {
         summary.put("version",BuildConfig.VERSION_NAME);
         summary.put("marketSampleIntervalSec",PERSISTENT_MARKET_FRAME_INTERVAL_MS/1000);
         summary.put("available",recorderIndex!=null);
-        JSONObject shadow=new JSONObject();long summaryNow=System.currentTimeMillis();
-        for(Map.Entry<String,MarketRuntime> entry:marketCoordinator.runtimes().entrySet())
-            shadow.put(entry.getKey(),new JSONObject(entry.getValue().shadowExperiment.snapshot(summaryNow)));
-        summary.put("SHADOW_EXPERIMENT_SUMMARY",shadow);
+        summary.put("SHADOW_EXPERIMENT_SUMMARY",shadowExperimentSummaryJson(System.currentTimeMillis()));
         return summary;
+    }
+
+    private JSONObject shadowExperimentSummaryJson(long now) throws Exception {
+        JSONObject shadow=new JSONObject();
+        List<ShadowExperimentSummary> all=new ArrayList<>();
+        for(Map.Entry<String,MarketRuntime> entry:marketCoordinator.runtimes().entrySet()){
+            ShadowExperimentSummary experiment=entry.getValue().shadowExperiment;
+            all.add(experiment);
+            shadow.put(entry.getKey(),new JSONObject(experiment.safeSnapshot(now)));
+        }
+        shadow.put("ALL",new JSONObject(ShadowExperimentSummary.aggregate(all,now)));
+        return shadow;
     }
 
     private interface StatusObjectSupplier { JSONObject get() throws Exception; }
