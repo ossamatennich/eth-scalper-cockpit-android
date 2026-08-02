@@ -18,6 +18,7 @@ public final class MarketRuntime {
     public final MarketDiagnosticRecorder recorder;
     /** Independent, bounded research state; never aliases a public plan or lifecycle field. */
     public final ShadowResearchCoordinator shadowResearch = new ShadowResearchCoordinator();
+    public final ShadowExperimentSummary shadowExperiment = new ShadowExperimentSummary();
 
     public double last = Double.NaN, bid = Double.NaN, ask = Double.NaN;
     public long lastTickerAt, lastKlineAt, lastAggTradeAt, lastRestTickerAt, lastRestKlineAt;
@@ -79,6 +80,7 @@ public final class MarketRuntime {
     /** Clears diagnostics and pending state while preserving and re-inserting an active plan. */
     public void resetDiagnosticsPreservingActivePlan() {
         ShadowPlanState resetShadow=shadowResearch.reset();
+        shadowExperiment.reset(System.currentTimeMillis());
         p02SetupTracker.reset();
         signalEngine.clearDiagnostics();
         observedSignals.clear();

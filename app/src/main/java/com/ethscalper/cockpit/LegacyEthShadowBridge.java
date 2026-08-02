@@ -85,16 +85,25 @@ final class LegacyEthShadowBridge {
                 item.candidateSignature,item.createdAt,item.adverseExcursion60,
                 item.prefillFavorableExcursion,!item.replayRiskReasonCode.isEmpty(),
                 item.replayRiskReasonCode);
-        out.lastLaneReason=item.lastShadowLaneReason;
+        out.lastShadowStateByComponent.putAll(item.lastShadowStateByComponent);
+        out.shadowDuplicateEventsSuppressed=item.shadowDuplicateEventsSuppressed;
         out.extendedQualificationAt=item.shadowExtendedQualificationAt;
         out.extendedFirstExecutableAt=item.shadowExtendedFirstExecutableAt;
+        out.solEarlyQualitySince=item.solEarlyQualitySince;out.solEarlyQualityMode=item.solEarlyQualityMode;
+        out.solEarlyStabilityMs=item.solEarlyStabilityMs;out.solEarlyLastReasonCode=item.solEarlyLastReasonCode;
+        out.solEarlyConfirmedAt=item.solEarlyConfirmedAt;
         return out;
     }
 
     private static void sync(MarketWatchService.ObservedSignal item,
                              ShadowObservationEngine.Candidate candidate) {
-        item.lastShadowLaneReason=candidate.lastLaneReason;
+        item.lastShadowStateByComponent.clear();
+        item.lastShadowStateByComponent.putAll(candidate.lastShadowStateByComponent);
+        item.shadowDuplicateEventsSuppressed=candidate.shadowDuplicateEventsSuppressed;
         item.shadowExtendedQualificationAt=candidate.extendedQualificationAt;
         item.shadowExtendedFirstExecutableAt=candidate.extendedFirstExecutableAt;
+        item.solEarlyQualitySince=candidate.solEarlyQualitySince;item.solEarlyQualityMode=candidate.solEarlyQualityMode;
+        item.solEarlyStabilityMs=candidate.solEarlyStabilityMs;item.solEarlyLastReasonCode=candidate.solEarlyLastReasonCode;
+        item.solEarlyConfirmedAt=candidate.solEarlyConfirmedAt;
     }
 }

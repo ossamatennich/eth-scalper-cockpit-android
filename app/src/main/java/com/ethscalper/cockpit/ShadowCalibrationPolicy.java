@@ -1,14 +1,18 @@
 package com.ethscalper.cockpit;
 
-/** Pure thresholds for the v2.34.4.2 shadow-only calibration experiment. */
+/** Pure thresholds for the v2.34.4.3 shadow-only quality/frequency experiment. */
 public final class ShadowCalibrationPolicy {
-    public static final String VERSION = "SHADOW_V23442_20260802";
-    public static final String SCHEMA_VERSION = "SHADOW_SCHEMA_V3";
-    public static final String P01_GUARD = "P01_FINAL_CONFIRMATION_GUARD";
+    public static final String VERSION = "SHADOW_V23443_20260802";
+    public static final String SCHEMA_VERSION = "SHADOW_SCHEMA_V4";
+    public static final String ETH_P01_GUARD = "ETH_P01_FINAL_CONFIRMATION_GUARD";
+    public static final String SOL_P01_MONITOR = "SOL_P01_PUBLIC_BASELINE_MONITOR";
     public static final String P02_GUARD = "P02_ANTI_EXHAUSTION";
     public static final String PULLBACK = "P01_PULLBACK_RESUMPTION";
     public static final String ETH_MID_VOL = "ETH_MID_VOL_TREND_EXPANSION";
     public static final String ETH_FLOW_EXTENDED = "ETH_FLOW_EXPANSION_EXTENDED";
+    public static final String SOL_EARLY = "SOL_P01_EARLY_RESUMPTION";
+    public static final String ETH_FLOW_HIGH_CONFIDENCE = "ETH_FLOW_CONTINUATION_HIGH_CONFIDENCE";
+    public static final String ETH_RANGE_FADE_LONG = "ETH_RANGE_FADE_LONG_HIGH_CONFIDENCE";
 
     private static final double EPS = 1e-12;
     private ShadowCalibrationPolicy() {}
@@ -32,6 +36,23 @@ public final class ShadowCalibrationPolicy {
                 && !(filter.flowBacked || filter.priceLed))
             return block("SHADOW_P01_EARLY_NOT_FLOW_OR_PRICE_BACKED");
         return keep("SHADOW_P01_KEEP");
+    }
+
+    /** Symbolic only: ETH keeps the strict research guard; SOL records its public baseline. */
+    public static Decision p01Symbolic(MarketProfile profile,int score,
+                                       NormalizedSignalMetrics.Result metrics,
+                                       P01SleeveFilter.Result filter,String revalidation) {
+        if(profile!=null&&MarketProfile.ETH_SYMBOL.equals(profile.symbol))
+            return p01FinalGuard(score,metrics,filter,revalidation);
+        if(profile!=null&&MarketProfile.SOL_SYMBOL.equals(profile.symbol))
+            return keep("SHADOW_SOL_P01_PUBLIC_BASELINE_KEEP");
+        return block("UNSUPPORTED_SHADOW_PROFILE");
+    }
+
+    public static String p01Component(MarketProfile profile) {
+        if(profile!=null&&MarketProfile.ETH_SYMBOL.equals(profile.symbol))return ETH_P01_GUARD;
+        if(profile!=null&&MarketProfile.SOL_SYMBOL.equals(profile.symbol))return SOL_P01_MONITOR;
+        return "UNSUPPORTED_SHADOW_PROFILE";
     }
 
     public static Decision p02AntiExhaustion(int score, NormalizedSignalMetrics.Result m) {
@@ -101,6 +122,39 @@ public final class ShadowCalibrationPolicy {
         if (m.f30 + EPS < .22) return block("SHADOW_FLOW_EXTENDED_FLOW30_TOO_LOW");
         if (m.f60 + EPS < .70) return block("SHADOW_FLOW_EXTENDED_FLOW60_TOO_LOW");
         return keep("SHADOW_FLOW_EXTENDED_KEEP");
+    }
+
+    public static Decision ethFlowContinuationHighConfidence(MarketProfile profile,
+            SignalDecision candidate,NormalizedSignalMetrics.Result m) {
+        if(profile==null||!MarketProfile.ETH_SYMBOL.equals(profile.symbol))
+            return block("SHADOW_FLOW_HIGH_CONFIDENCE_ETH_ONLY");
+        if(candidate==null||candidate.family==null||!candidate.family.contains("CONTINUATION"))
+            return block("SHADOW_FLOW_HIGH_CONFIDENCE_FAMILY");
+        if(candidate.score<95)return block("SHADOW_FLOW_HIGH_CONFIDENCE_SCORE_TOO_LOW");
+        if(m==null||!m.valid)return block("SHADOW_FLOW_HIGH_CONFIDENCE_METRICS_INVALID");
+        if(m.a+EPS<.80||m.a>1.65+EPS)return block("SHADOW_FLOW_HIGH_CONFIDENCE_A_OUTSIDE_RANGE");
+        if(m.m1<=-.30+EPS)return block("SHADOW_FLOW_HIGH_CONFIDENCE_MOVE1_TOO_LOW");
+        if(m.m3+EPS<0)return block("SHADOW_FLOW_HIGH_CONFIDENCE_MOVE3_TOO_LOW");
+        if(m.m8+EPS<0)return block("SHADOW_FLOW_HIGH_CONFIDENCE_MOVE8_TOO_LOW");
+        if(m.f30+EPS<.22)return block("SHADOW_FLOW_HIGH_CONFIDENCE_FLOW30_TOO_LOW");
+        if(m.f60+EPS<.70)return block("SHADOW_FLOW_HIGH_CONFIDENCE_FLOW60_TOO_LOW");
+        if(m.volumeRatio>1.80+EPS)return block("SHADOW_FLOW_HIGH_CONFIDENCE_VOLUME_TOO_HIGH");
+        return keep("SHADOW_FLOW_HIGH_CONFIDENCE_KEEP");
+    }
+
+    public static Decision ethRangeFadeLongHighConfidence(MarketProfile profile,
+            SignalDecision candidate,NormalizedSignalMetrics.Result m) {
+        if(profile==null||!MarketProfile.ETH_SYMBOL.equals(profile.symbol))
+            return block("SHADOW_RANGE_FADE_ETH_ONLY");
+        if(candidate==null||!"LONG".equals(candidate.side)||candidate.family==null
+                ||!candidate.family.contains("RANGE_FADE"))
+            return block("SHADOW_RANGE_FADE_LONG_FAMILY_REQUIRED");
+        if(candidate.score<95)return block("SHADOW_RANGE_FADE_SCORE_TOO_LOW");
+        if(m==null||!m.valid)return block("SHADOW_RANGE_FADE_METRICS_INVALID");
+        if(m.f30+EPS<.30)return block("SHADOW_RANGE_FADE_FLOW30_TOO_LOW");
+        if(m.directionalEdge>.10+EPS)return block("SHADOW_RANGE_FADE_DIRECTIONAL_EDGE_TOO_HIGH");
+        if(m.room+EPS<2.50)return block("SHADOW_RANGE_FADE_ROOM_TOO_LOW");
+        return keep("SHADOW_RANGE_FADE_LONG_KEEP");
     }
 
     public static boolean isCriticalCurrentRevalidation(String code) {

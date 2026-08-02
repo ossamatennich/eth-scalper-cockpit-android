@@ -53,8 +53,11 @@ public final class ShadowObservationEngine {
         public final long createdAt;
         public final boolean historicalReplayRiskVeto;
         public double adverse,favorable;
-        public String lastLaneReason="";
+        public final LinkedHashMap<String,String> lastShadowStateByComponent=new LinkedHashMap<>();
+        public long shadowDuplicateEventsSuppressed;
         public long extendedQualificationAt,extendedFirstExecutableAt;
+        public long solEarlyQualitySince,solEarlyStabilityMs,solEarlyConfirmedAt;
+        public String solEarlyQualityMode="",solEarlyLastReasonCode="";
         public Candidate(SignalDecision signal,String sleeve,String signature,long createdAt,
                          double adverse,double favorable,boolean replayVeto,String historicalCode){
             this.signal=signal;this.sleeve=sleeve==null?"":sleeve;
@@ -79,6 +82,9 @@ public final class ShadowObservationEngine {
     private final EventSink sink;
     private final Deque<String> missedOrder=new ArrayDeque<>();
     private final Set<String> missedMovements=new HashSet<>();
+    private final Deque<String> researchMovementOrder=new ArrayDeque<>();
+    private final Set<String> researchMovements=new HashSet<>();
+    private final LinkedHashMap<String,String> movementBySignature=new LinkedHashMap<>();
 
     public ShadowObservationEngine(){this((operation,action)->action.run(),defaultSink());}
     public ShadowObservationEngine(OperationRunner runner){this(runner,defaultSink());}
@@ -106,7 +112,8 @@ public final class ShadowObservationEngine {
             ETH_BTC_LED_BREAKOUT_RESEARCH,"OBSERVE_MISSED_MOVE",()->observeMissedMove(
                     context,candidate,creationContext));}
 
-    public synchronized void resetResearchMemory(){missedOrder.clear();missedMovements.clear();}
+    public synchronized void resetResearchMemory(){missedOrder.clear();missedMovements.clear();
+        researchMovementOrder.clear();researchMovements.clear();movementBySignature.clear();}
 
     private void safe(Context c,String component,String operation,Runnable action){
         try{runner.execute(operation,action);}catch(RuntimeException failure){
@@ -157,10 +164,10 @@ public final class ShadowObservationEngine {
         NormalizedSignalMetrics.Result metrics=result.normalizedMetrics;
         ShadowCalibrationPolicy.Decision decision=CandidateLifecycle.SLEEVE_P02.equals(candidate.sleeve)
                 ?ShadowCalibrationPolicy.p02Symbolic(c.runtime.profile,candidate.signal.score,metrics)
-                :ShadowCalibrationPolicy.p01FinalGuard(candidate.signal.score,metrics,
+                :ShadowCalibrationPolicy.p01Symbolic(c.runtime.profile,candidate.signal.score,metrics,
                         result.p01SleeveFilter,revalidation);
         String component=CandidateLifecycle.SLEEVE_P02.equals(candidate.sleeve)
-                ?ShadowCalibrationPolicy.P02_GUARD:ShadowCalibrationPolicy.P01_GUARD;
+                ?ShadowCalibrationPolicy.P02_GUARD:ShadowCalibrationPolicy.p01Component(c.runtime.profile);
         LinkedHashMap<String,Object>d=base(c,candidate,component);
         d.put("decision",decision.decision);d.put("shadowReasonCode",decision.reasonCode);
         d.put("productionConfirmed",true);d.put("score",candidate.signal.score);
@@ -181,6 +188,15 @@ public final class ShadowObservationEngine {
         ShadowPlanFactory.Result geometry=ShadowPlanFactory.fromProduction(c.runtime.profile,
                 candidate.signature,component,candidate.sleeve,candidate.createdAt,c.now,result);
         if(geometry.valid)recordFeeAware(c,published,geometry.state,geometry.economics,true);
+        ShadowPlanState shadow=c.runtime.shadowResearch.active();
+        if(shadow!=null&&sameMovement(c,candidate,shadow.candidateSignature)){
+            LinkedHashMap<String,Object> overlap=base(c,candidate,shadow.component);
+            overlap.put("decision","OVERLAP");overlap.put("shadowReasonCode","SHADOW_PUBLIC_OVERLAP");
+            overlap.put("publicOverlap",true);addPlan(overlap,shadow);
+            write(c,published,"SHADOW_PUBLIC_OVERLAP","SHADOW_PUBLIC_OVERLAP",
+                    "Confirmation publique recouvrant une occasion shadow.",candidate.sleeve,
+                    c.now-candidate.createdAt,candidate.adverse,overlap);
+        }
     }
 
     private void considerAddedPlan(Context c,Candidate candidate){
@@ -190,21 +206,25 @@ public final class ShadowObservationEngine {
                 candidate.signal.side,candidate.signal,c.snapshot,candidate.adverse);
         ShadowCalibrationPolicy.Decision pullback=ShadowCalibrationPolicy.pullback(
                 candidate.signal.score,metrics);
-        ShadowCalibrationPolicy.Decision mid=ShadowCalibrationPolicy.ethMidVol(c.runtime.profile,
-                candidate.signal.score,metrics);
-        ShadowCalibrationPolicy.Decision extended=ShadowCalibrationPolicy.ethFlowExpansionExtended(
-                c.runtime.profile,candidate.signal.score,metrics);
-        if(!pullback.keep&&!mid.keep&&!extended.keep)return;
-        if(extended.keep&&candidate.extendedQualificationAt<=0)candidate.extendedQualificationAt=c.now;
+        ShadowCalibrationPolicy.Decision flow=ShadowCalibrationPolicy.ethFlowContinuationHighConfidence(
+                c.runtime.profile,candidate.signal,metrics);
+        ShadowCalibrationPolicy.Decision range=ShadowCalibrationPolicy.ethRangeFadeLongHighConfidence(
+                c.runtime.profile,candidate.signal,metrics);
+        CandidateLifecycle.FillResult solEarly=solEarlyResult(c,candidate);
+        boolean solEarlyKeep=solEarly!=null&&solEarly.confirmed;
+        if(!pullback.keep&&!flow.keep&&!range.keep&&!solEarlyKeep)return;
+        if(flow.keep&&candidate.extendedQualificationAt<=0)candidate.extendedQualificationAt=c.now;
         boolean executable=CandidateLifecycle.currentlyExecutable(candidate.signal,c.snapshot);
-        if(extended.keep&&executable&&candidate.extendedFirstExecutableAt<=0)
+        if(flow.keep&&executable&&candidate.extendedFirstExecutableAt<=0)
             candidate.extendedFirstExecutableAt=c.now;
-        String selected=pullback.keep?ShadowCalibrationPolicy.PULLBACK
-                :mid.keep?ShadowCalibrationPolicy.ETH_MID_VOL:ETH_FLOW_EXPANSION_EXTENDED;
-        if(pullback.keep&&mid.keep)recordWouldQualify(c,candidate,metrics,
-                ShadowCalibrationPolicy.ETH_MID_VOL);
-        if((pullback.keep||mid.keep)&&extended.keep)recordWouldQualify(c,candidate,metrics,
-                ETH_FLOW_EXPANSION_EXTENDED);
+        String selected=solEarlyKeep?ShadowCalibrationPolicy.SOL_EARLY
+                :pullback.keep?ShadowCalibrationPolicy.PULLBACK
+                :flow.keep?ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE
+                :ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG;
+        if(pullback.keep&&flow.keep)recordWouldQualify(c,candidate,metrics,
+                ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE);
+        if((pullback.keep||flow.keep)&&range.keep)recordWouldQualify(c,candidate,metrics,
+                ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG);
         if(!c.marketFresh||!c.btcFresh){recordSkipOnce(c,candidate,metrics,selected,
                 "SHADOW_FEED_STALE","SKIP");return;}
         if(c.productionActivePlan){recordSkipOnce(c,candidate,metrics,selected,
@@ -218,27 +238,75 @@ public final class ShadowObservationEngine {
         if(!ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate.signal,candidate.favorable)){
             recordSkipOnce(c,candidate,metrics,selected,
                     "SHADOW_TARGET_ALREADY_TOUCHED_BEFORE_OPEN","SKIP");return;}
+        String candidateMovement=movementKey(c,candidate);
+        if(researchMovements.contains(candidateMovement)){
+            recordSkipOnce(c,candidate,metrics,selected,"SHADOW_MOVEMENT_ALREADY_OBSERVED","SKIP");return;}
         if(!c.runtime.shadowResearch.canOpen(candidate.signature,c.now)){
             recordSkipOnce(c,candidate,metrics,selected,c.runtime.shadowResearch.active()!=null
                     ?"SHADOW_PLAN_ALREADY_ACTIVE":"SHADOW_DEDUP_OR_COOLDOWN","SKIP");return;}
-        ShadowPlanFactory.Result built=ShadowPlanFactory.build(c.runtime.profile,candidate.signal,
-                candidate.sleeve,candidate.signature,selected,c.snapshot,candidate.adverse,
-                candidate.historicalReplayRiskVeto,c.structuralBars,candidate.createdAt,c.now);
+        boolean reanchored=ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(selected)
+                ||ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG.equals(selected);
+        ShadowPlanFactory.Result built=reanchored
+                ?ShadowPlanFactory.buildReanchored(c.runtime.profile,candidate.signal,candidate.sleeve,
+                    candidate.signature,selected,c.snapshot,candidate.adverse,
+                    candidate.historicalReplayRiskVeto,c.structuralBars,candidate.createdAt,c.now)
+                :ShadowPlanFactory.build(c.runtime.profile,candidate.signal,candidate.sleeve,
+                    candidate.signature,selected,c.snapshot,candidate.adverse,
+                    candidate.historicalReplayRiskVeto,c.structuralBars,candidate.createdAt,c.now);
         if(!built.valid){recordSkipOnce(c,candidate,metrics,selected,built.reasonCode,"SKIP");return;}
-        if((ShadowCalibrationPolicy.ETH_MID_VOL.equals(selected)||ETH_FLOW_EXPANSION_EXTENDED.equals(selected))
-                &&(!built.economics.valid||!(built.economics.netTargetUsdt>0)
-                ||!(built.economics.netStopUsdt>0)||built.economics.netRewardRisk+1e-12<.40)){
+        if(!built.economics.valid||!(built.economics.netTargetUsdt>0)
+                ||!(built.economics.netStopUsdt>0)||built.economics.netRewardRisk+1e-12<.40){
             recordSkipOnce(c,candidate,metrics,selected,"SHADOW_NET_REWARD_RISK_TOO_LOW","SKIP");return;}
         if(!c.runtime.shadowResearch.open(built.state)){recordSkipOnce(c,candidate,metrics,selected,
                 "SHADOW_DEDUP_OR_COOLDOWN","SKIP");return;}
+        rememberResearchMovement(candidate.signature,candidateMovement);
         LinkedHashMap<String,Object>d=base(c,candidate,selected);
         d.put("decision","OPEN");d.put("shadowReasonCode","SHADOW_PLAN_OPENED");
         addPlan(d,built.state);putMetrics(d,metrics,candidate.adverse);
-        if(ETH_FLOW_EXPANSION_EXTENDED.equals(selected))putLatency(d,candidate,c.now);
+        d.put("movementKey",movementKey(c,candidate));d.put("publicOverlap",false);
+        if(reanchored){d.put("originalCandidateEntry",candidate.signal.entry);
+            d.put("currentExecutableQuote","LONG".equals(candidate.signal.side)
+                    ?c.snapshot.marketAsk:c.snapshot.marketBid);
+            d.put("reanchoredEntry",built.state.entry);d.put("reanchoredTp",built.state.tp);
+            d.put("reanchoredSl",built.state.sl);
+            d.put("quoteDriftFromOriginal",Math.abs(built.state.entry-candidate.signal.entry));}
+        if(ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(selected))putLatency(d,candidate,c.now);
+        if(ShadowCalibrationPolicy.SOL_EARLY.equals(selected)){
+            d.put("solEarlyQualitySince",candidate.solEarlyQualitySince);
+            d.put("solEarlyQualityMode",candidate.solEarlyQualityMode);
+            d.put("solEarlyStabilityMs",candidate.solEarlyStabilityMs);
+            d.put("solEarlyConfirmedAt",candidate.solEarlyConfirmedAt);}
         write(c,candidate.signal,"SHADOW_PLAN_OPENED","SHADOW_PLAN_OPENED",
                 "Plan shadow ouvert sans publication ni alerte.",candidate.sleeve,
                 c.now-candidate.createdAt,candidate.adverse,d);
         recordFeeAware(c,candidate.signal,built.state,built.economics,false);
+    }
+
+    private CandidateLifecycle.FillResult solEarlyResult(Context c,Candidate candidate){
+        if(!MarketProfile.SOL_SYMBOL.equals(c.runtime.profile.symbol)
+                ||candidate.signal.score<95||candidate.signal.family==null
+                ||!candidate.signal.family.contains("CONTINUATION"))return null;
+        long age=c.now-candidate.createdAt;
+        if(age<0||age>=P01EarlyConfirmation.MAX_EARLY_AGE_MS)return null;
+        double progress=Double.isFinite(candidate.signal.targetMove)&&candidate.signal.targetMove>0
+                ?Math.max(0,candidate.favorable/candidate.signal.targetMove):0;
+        CandidateLifecycle.FillResult probe=CandidateLifecycle.processEarlyP01Candidate(
+                c.runtime.profile,candidate.signal,c.snapshot,c.marketFresh,candidate.createdAt,c.now,
+                progress,candidate.adverse,candidate.historicalReplayRiskVeto,
+                !c.productionActivePlan,c.rearmComplete,candidate.signal.entry,false);
+        P01EarlyConfirmation.StabilityResult stability=P01EarlyConfirmation.advance(c.now,
+                candidate.solEarlyQualitySince,candidate.solEarlyQualityMode,probe.earlyP01);
+        candidate.solEarlyQualitySince=stability.qualitySince;
+        candidate.solEarlyQualityMode=stability.mode;
+        candidate.solEarlyStabilityMs=stability.stabilityMs;
+        candidate.solEarlyLastReasonCode=stability.reasonCode;
+        if(!stability.confirmed)return null;
+        CandidateLifecycle.FillResult confirmed=CandidateLifecycle.processEarlyP01Candidate(
+                c.runtime.profile,candidate.signal,c.snapshot,c.marketFresh,candidate.createdAt,c.now,
+                progress,candidate.adverse,candidate.historicalReplayRiskVeto,
+                !c.productionActivePlan,c.rearmComplete,candidate.signal.entry,true);
+        if(confirmed.confirmed)candidate.solEarlyConfirmedAt=c.now;
+        return confirmed;
     }
 
     private void recordWouldQualify(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
@@ -248,11 +316,19 @@ public final class ShadowObservationEngine {
 
     private void recordSkipOnce(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
                                 String component,String reason,String decision){
-        String key=decision+"|"+component+"|"+reason;if(key.equals(candidate.lastLaneReason))return;
-        candidate.lastLaneReason=key;LinkedHashMap<String,Object>d=base(c,candidate,component);
+        String key=decision+"|"+reason;String previous=candidate.lastShadowStateByComponent.get(component);
+        if(key.equals(previous)){candidate.shadowDuplicateEventsSuppressed++;return;}
+        if(!candidate.lastShadowStateByComponent.containsKey(component)
+                &&candidate.lastShadowStateByComponent.size()>=16){
+            String eldest=candidate.lastShadowStateByComponent.keySet().iterator().next();
+            candidate.lastShadowStateByComponent.remove(eldest);}
+        candidate.lastShadowStateByComponent.put(component,key);
+        LinkedHashMap<String,Object>d=base(c,candidate,component);
         d.put("decision",decision);d.put("shadowReasonCode",reason);
+        d.put("movementKey",movementKey(c,candidate));
+        d.put("shadowDuplicateEventsSuppressed",candidate.shadowDuplicateEventsSuppressed);
         putMetrics(d,metrics,candidate.adverse);
-        if(ETH_FLOW_EXPANSION_EXTENDED.equals(component))putLatency(d,candidate,0);
+        if(ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(component))putLatency(d,candidate,0);
         write(c,candidate.signal,"SHADOW_PLAN_SKIPPED",reason,
                 "Voie shadow observée sans effet public.",candidate.sleeve,
                 c.now-candidate.createdAt,candidate.adverse,d);
@@ -316,8 +392,36 @@ public final class ShadowObservationEngine {
         d.put("profileVersion",c.runtime.profile.profileVersion);
         if(candidate!=null){d.put("candidateSignature",candidate.signature);
             d.put("sourceCandidateCreatedAt",candidate.createdAt);d.put("side",candidate.signal.side);
-            d.put("sleeve",candidate.sleeve);}
+            d.put("sleeve",candidate.sleeve);d.put("family",candidate.signal.family);
+            d.put("score",candidate.signal.score);d.put("movementKey",movementKey(c,candidate));
+            d.put("publicOverlap",false);d.put("originalCandidateEntry",candidate.signal.entry);}
         return d;
+    }
+
+    static String movementKey(Context c,Candidate candidate){
+        if(c==null||candidate==null||candidate.signal==null)return "";
+        String family=candidate.signal.family==null?"":candidate.signal.family;
+        String group=family.contains("RANGE_FADE")?"RANGE_FADE":family.contains("CONTINUATION")
+                ?"CONTINUATION":family;
+        double origin=Double.isFinite(candidate.signal.movementOrigin)
+                ?candidate.signal.movementOrigin:candidate.signal.entry;
+        long rounded=Double.isFinite(origin)&&c.runtime.profile.priceTick>0
+                ?Math.round(origin/c.runtime.profile.priceTick):0;
+        return c.runtime.profile.symbol+"|"+candidate.signal.side+"|"+group+"|"
+                +(candidate.createdAt/MISSED_MOVEMENT_BUCKET_MS)+"|"+rounded;
+    }
+
+    private boolean sameMovement(Context c,Candidate candidate,String signature){
+        if(candidate==null)return false;if(candidate.signature.equals(signature))return true;
+        String known=movementBySignature.get(signature);return known!=null&&known.equals(movementKey(c,candidate));
+    }
+
+    private synchronized void rememberResearchMovement(String signature,String movement){
+        if(movement==null||movement.isEmpty())return;
+        if(researchMovements.add(movement))researchMovementOrder.addLast(movement);
+        movementBySignature.put(signature,movement);
+        while(researchMovementOrder.size()>256){String old=researchMovementOrder.removeFirst();
+            researchMovements.remove(old);movementBySignature.entrySet().removeIf(e->old.equals(e.getValue()));}
     }
 
     private static void addPlan(Map<String,Object>d,ShadowPlanState p){
@@ -345,6 +449,7 @@ public final class ShadowObservationEngine {
         LinkedHashMap<String,Object> normalized=new LinkedHashMap<>(details);
         normalized.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);
         normalized.put("shadowSchemaVersion",ShadowCalibrationPolicy.SCHEMA_VERSION);
+        c.runtime.shadowExperiment.observe(type,normalized);
         sink.record(new ShadowEvent(c,signal,type,code,text,sleeve,Math.max(0,age),adverse,normalized));
     }
     private static Object finiteOrNull(double value){return Double.isFinite(value)?value:null;}

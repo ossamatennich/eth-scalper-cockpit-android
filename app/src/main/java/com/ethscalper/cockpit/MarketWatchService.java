@@ -2781,6 +2781,10 @@ public class MarketWatchService extends Service {
         o.put("c2LongCandidates", legacyC2Long);
         o.put("c2ShortCandidates", legacyC2Short);
         o.put("purpose", "Full market playback: find missed LONG/SHORT opportunities and false entries");
+        JSONObject shadow=new JSONObject();long summaryNow=System.currentTimeMillis();
+        for(Map.Entry<String,MarketRuntime> entry:marketCoordinator.runtimes().entrySet())
+            shadow.put(entry.getKey(),new JSONObject(entry.getValue().shadowExperiment.snapshot(summaryNow)));
+        o.put("SHADOW_EXPERIMENT_SUMMARY",shadow);
         return o;
     }
 
@@ -2859,7 +2863,14 @@ public class MarketWatchService extends Service {
             item.minPrice = Math.min(item.minPrice, price);
             if (!"ACTIVE".equals(item.status)) observeAdverseExcursion60(item, snapshot, now);
 
-            if ("DIAGNOSTIC_ONLY".equals(item.status)) continue;
+            if ("DIAGNOSTIC_ONLY".equals(item.status)) {
+                MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+                legacyEthShadowBridge.observeCandidate(ethRuntime,item,snapshot,now,
+                        ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                        activeFinalSignal()!=null,lastTerminalAt,
+                        candidateTombstones.blocks(item.candidateSignature),structuralEthBars(now));
+                continue;
+            }
 
             if ("LIMIT_PENDING".equals(item.status)) {
                 item.normalizedMetrics = NormalizedSignalMetrics.calculate(
@@ -2954,6 +2965,7 @@ public class MarketWatchService extends Service {
             }
             if (SignalSafetyPolicies.isTerminalStatus(status)) {
                 closeObservedSignal(item, status, snapshot, now);
+                marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).shadowExperiment.publicTerminal(status);
                 p02SetupTracker.reset();
                 lastTerminalAt = now;
                 if (!terminalRearmPersistence.save(MarketProfile.ETH_SYMBOL,lastTerminalAt)) {
@@ -4770,6 +4782,10 @@ public class MarketWatchService extends Service {
         summary.put("version",BuildConfig.VERSION_NAME);
         summary.put("marketSampleIntervalSec",PERSISTENT_MARKET_FRAME_INTERVAL_MS/1000);
         summary.put("available",recorderIndex!=null);
+        JSONObject shadow=new JSONObject();long summaryNow=System.currentTimeMillis();
+        for(Map.Entry<String,MarketRuntime> entry:marketCoordinator.runtimes().entrySet())
+            shadow.put(entry.getKey(),new JSONObject(entry.getValue().shadowExperiment.snapshot(summaryNow)));
+        summary.put("SHADOW_EXPERIMENT_SUMMARY",shadow);
         return summary;
     }
 
@@ -5834,9 +5850,12 @@ public class MarketWatchService extends Service {
         double p01EarlyTriggerAsk = Double.NaN;
         double p01EarlyQuoteDistance = Double.NaN;
         double p01EarlySecondsSaved = Double.NaN;
-        String lastShadowLaneReason = "";
+        final LinkedHashMap<String,String> lastShadowStateByComponent = new LinkedHashMap<>();
+        long shadowDuplicateEventsSuppressed;
         long shadowExtendedQualificationAt;
         long shadowExtendedFirstExecutableAt;
+        long solEarlyQualitySince, solEarlyStabilityMs, solEarlyConfirmedAt;
+        String solEarlyQualityMode = "", solEarlyLastReasonCode = "";
 
         final double signalEthLast;
         final double signalBid;

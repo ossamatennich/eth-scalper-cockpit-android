@@ -39,6 +39,23 @@ public final class ShadowPlanFactory {
         return new Result(true,"SHADOW_PLAN_READY",state,plan,sizing,economics);
     }
 
+    /** Re-anchors research geometry to the executable quote without mutating the source candidate. */
+    public static Result buildReanchored(MarketProfile profile,SignalDecision candidate,String sleeve,
+            String signature,String component,MarketSnapshot snapshot,double adverse,
+            boolean historicalReplayRiskVeto,Iterable<MarketRuntime.MarketBar> candles,
+            long createdAt,long now) {
+        if(profile==null||candidate==null||snapshot==null)return Result.rejected("SHADOW_PLAN_DATA_INVALID");
+        double quote="LONG".equals(candidate.side)?snapshot.marketAsk:snapshot.marketBid;
+        if(!Double.isFinite(quote)||quote<=0)return Result.rejected("SHADOW_EXECUTABLE_QUOTE_INVALID");
+        double entry="LONG".equals(candidate.side)?profile.ceilToTick(quote):profile.floorToTick(quote);
+        SignalDecision reanchored=SignalDecision.signal(profile,candidate.side,candidate.family,
+                candidate.score,candidate.quantity,entry,candidate.takeProfit,candidate.stopLoss,
+                candidate.targetMove,candidate.stopDistance,candidate.impulse,candidate.resetConfirmed,
+                candidate.movementOrigin,candidate.movementExtreme,candidate.movementDistance);
+        return build(profile,reanchored,sleeve,signature,component,snapshot,adverse,
+                historicalReplayRiskVeto,candles,createdAt,now);
+    }
+
     public static Result fromProduction(MarketProfile profile,String signature,String component,
                                         String sleeve,long createdAt,long now,
                                         CandidateLifecycle.FillResult fill) {

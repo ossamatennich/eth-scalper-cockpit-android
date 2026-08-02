@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.4.3 — architecture shadow qualité + fréquence
+
+- garde P01 symbolique : strict sur ETH, baseline publique conservée sur SOL ;
+- reprise P01 précoce SOL réutilisant le sélecteur et la stabilité existants ;
+- voie ETH de continuation à flow confirmé et voie secondaire RANGE_FADE LONG, ré-ancrées causalement ;
+- déduplication par composant et par mouvement, overlaps public/shadow explicitement mesurés ;
+- résumé incrémental borné de qualité, résultats nets et fréquence dans le statut et l’export ;
+- politique `SHADOW_V23443_20260802`, schéma `SHADOW_SCHEMA_V4`, aucune activation publique.
+
 ## 2.34.4.2 — bridge shadow ETH et politiques symboliques
 
 - pont fail-open entre le moteur ETH historique et la couche d’observation shadow commune à SOL ;

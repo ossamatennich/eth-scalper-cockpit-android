@@ -32,7 +32,7 @@ public final class MarketPlanOrchestrator {
         runtime.recorder.frame(now,runtime.lastDecision,snapshot,marketFeedFresh,btcFeedFresh);
         safeObserveShadowTerminal(runtime,snapshot,now,marketFeedFresh,btcFeedFresh);
         Event terminal=terminalIfTouched(runtime,snapshot,now);
-        if(terminal!=null){record(runtime,snapshot,terminal.plan,null,now,terminal.status,
+        if(terminal!=null){runtime.shadowExperiment.publicTerminal(terminal.status);record(runtime,snapshot,terminal.plan,null,now,terminal.status,
                 terminal.reasonCode,"Plan terminé au "+terminal.status,"STRUCTURAL_SHARED","",
                 "",0,marketFeedFresh,btcFeedFresh,0,Map.of("exitPrice",terminal.exitPrice));return terminal;}
         if(runtime.hasActivePlan())return Event.none(runtime.lastSignal);
@@ -215,16 +215,25 @@ public final class MarketPlanOrchestrator {
                 candidate.sleeve,candidate.signature,candidate.createdAt,candidate.adverse,
                 candidate.favorable,candidate.historicalReplayRiskVeto,
                 candidate.historicalDiagnosticCode);
-        out.lastLaneReason=candidate.lastShadowLaneReason;
+        out.lastShadowStateByComponent.putAll(candidate.lastShadowStateByComponent);
+        out.shadowDuplicateEventsSuppressed=candidate.shadowDuplicateEventsSuppressed;
         out.extendedQualificationAt=candidate.shadowExtendedQualificationAt;
         out.extendedFirstExecutableAt=candidate.shadowExtendedFirstExecutableAt;
+        out.solEarlyQualitySince=candidate.solEarlyQualitySince;out.solEarlyQualityMode=candidate.solEarlyQualityMode;
+        out.solEarlyStabilityMs=candidate.solEarlyStabilityMs;out.solEarlyLastReasonCode=candidate.solEarlyLastReasonCode;
+        out.solEarlyConfirmedAt=candidate.solEarlyConfirmedAt;
         return out;
     }
 
     private static void sync(RuntimeCandidate candidate,ShadowObservationEngine.Candidate adapted) {
-        candidate.lastShadowLaneReason=adapted.lastLaneReason;
+        candidate.lastShadowStateByComponent.clear();
+        candidate.lastShadowStateByComponent.putAll(adapted.lastShadowStateByComponent);
+        candidate.shadowDuplicateEventsSuppressed=adapted.shadowDuplicateEventsSuppressed;
         candidate.shadowExtendedQualificationAt=adapted.extendedQualificationAt;
         candidate.shadowExtendedFirstExecutableAt=adapted.extendedFirstExecutableAt;
+        candidate.solEarlyQualitySince=adapted.solEarlyQualitySince;candidate.solEarlyQualityMode=adapted.solEarlyQualityMode;
+        candidate.solEarlyStabilityMs=adapted.solEarlyStabilityMs;candidate.solEarlyLastReasonCode=adapted.solEarlyLastReasonCode;
+        candidate.solEarlyConfirmedAt=adapted.solEarlyConfirmedAt;
     }
 
     /** Compatibility delegate for existing recorder-schema tests. */
@@ -403,9 +412,12 @@ public final class MarketPlanOrchestrator {
         public boolean historicalReplayRiskVeto;
         public String historicalDiagnosticCode="";
         public boolean shadowOpened;
-        public String lastShadowLaneReason="";
+        public final LinkedHashMap<String,String> lastShadowStateByComponent=new LinkedHashMap<>();
+        public long shadowDuplicateEventsSuppressed;
         public long shadowExtendedQualificationAt;
         public long shadowExtendedFirstExecutableAt;
+        public long solEarlyQualitySince,solEarlyStabilityMs,solEarlyConfirmedAt;
+        public String solEarlyQualityMode="",solEarlyLastReasonCode="";
         RuntimeCandidate(SignalDecision signal,String sleeve,long createdAt){this.signal=signal;this.sleeve=sleeve;this.createdAt=createdAt;this.signature=signal.symbol+"|"+signal.side+"|"+signal.family+"|"+signal.entry+"|"+signal.takeProfit+"|"+signal.stopLoss;}
         void resetEarly(){earlySince=0;earlyMode="";}
     }
