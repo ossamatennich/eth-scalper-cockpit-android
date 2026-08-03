@@ -2,7 +2,7 @@
 
 Application Android de recherche qui analyse en continu **ETHUSDT** et **SOLUSDT**. **BTCUSDT** sert uniquement de contexte partagé.
 
-La version courante est **2.34.4.4** (`versionCode 23444`). L’APK recommandée est l’édition **NMC Stable 4.4**, signée durablement afin que ses mises à jour Android remplacent réellement la version stable précédente. Elle mesure en shadow la qualité et la fréquence utile des confirmations ETH/SOL sans bloquer, publier ou modifier le moindre plan public. Son schéma V5 sépare les qualifications, les occasions réellement exécutables, les ouvertures et les overlaps, y compris après un terminal shadow. Le flux Binance Futures et le fallback REST public restent indépendants du volume des diagnostics. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
+La version courante est **2.34.4.5** (`versionCode 23445`). L’APK recommandée est l’édition **NMC Stable 4.5**, signée durablement afin que ses mises à jour Android remplacent réellement la version stable précédente. Elle mesure en shadow la qualité et la fréquence utile des confirmations ETH/SOL sans bloquer, publier ou modifier le moindre plan public. Son schéma V6 ajoute le garde qualité SOL P01, une recherche ETH de réaccélération stable pendant dix secondes, et deux télémétries sans ouverture de plan. Le flux Binance Futures et le fallback REST public restent indépendants du volume des diagnostics. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
 
 ## Principes essentiels
 
@@ -14,7 +14,7 @@ La version courante est **2.34.4.4** (`versionCode 23444`). L’APK recommandée
 - après publication, le plan est immuable et se termine uniquement au TP ou au SL ;
 - `realTradingAllowed=false` ;
 - SOL reste un profil de recherche.
-- la politique `SHADOW_V23444_20260802` et le schéma `SHADOW_SCHEMA_V5` restent silencieux et purement observationnels.
+- la politique `SHADOW_V23445_20260803` et le schéma `SHADOW_SCHEMA_V6` restent silencieux et purement observationnels.
 
 ## Construire et tester
 

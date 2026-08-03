@@ -5865,6 +5865,8 @@ public class MarketWatchService extends Service {
         long shadowExtendedFirstExecutableAt;
         long solEarlyQualitySince, solEarlyStabilityMs, solEarlyConfirmedAt;
         String solEarlyQualityMode = "", solEarlyLastReasonCode = "";
+        long reaccelQualitySince, reaccelStabilityMs, reaccelConfirmedAt;
+        String reaccelBranch = "", reaccelLastReasonCode = "";
 
         final double signalEthLast;
         final double signalBid;

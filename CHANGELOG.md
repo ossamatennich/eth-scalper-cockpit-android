@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.4.5 — recherche shadow réaccélération et fréquence protégée
+
+- remplace le baseline universel SOL P01 par un garde shadow propre à SOL, sans effet sur les confirmations publiques ;
+- ajoute `ETH_FLOW_REACCELERATION_V2`, avec deux branches de flow et dix secondes de stabilité continue avant toute ouverture shadow ;
+- conserve l’ancienne continuation ETH comme comparateur sans ouverture et place Range Fade en quarantaine ;
+- ajoute les télémétries bornées Range Reclaim et No-Retrace Breakout, sans plan, alerte ni faux terminal ;
+- étend le résumé expérimental V6 et conserve le sizing shadow frais inclus ;
+- politique `SHADOW_V23445_20260803`, schéma `SHADOW_SCHEMA_V6`, moteur public inchangé.
+
 ## 2.34.4.4 — comptabilité shadow qualité/fréquence corrigée
 
 - qualifications, occasions exécutables et ouvertures comptées séparément, sans double incrément ;

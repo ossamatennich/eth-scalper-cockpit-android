@@ -92,6 +92,9 @@ final class LegacyEthShadowBridge {
         out.solEarlyQualitySince=item.solEarlyQualitySince;out.solEarlyQualityMode=item.solEarlyQualityMode;
         out.solEarlyStabilityMs=item.solEarlyStabilityMs;out.solEarlyLastReasonCode=item.solEarlyLastReasonCode;
         out.solEarlyConfirmedAt=item.solEarlyConfirmedAt;
+        out.reaccelQualitySince=item.reaccelQualitySince;out.reaccelStabilityMs=item.reaccelStabilityMs;
+        out.reaccelConfirmedAt=item.reaccelConfirmedAt;out.reaccelBranch=item.reaccelBranch;
+        out.reaccelLastReasonCode=item.reaccelLastReasonCode;
         return out;
     }
 
@@ -105,5 +108,8 @@ final class LegacyEthShadowBridge {
         item.solEarlyQualitySince=candidate.solEarlyQualitySince;item.solEarlyQualityMode=candidate.solEarlyQualityMode;
         item.solEarlyStabilityMs=candidate.solEarlyStabilityMs;item.solEarlyLastReasonCode=candidate.solEarlyLastReasonCode;
         item.solEarlyConfirmedAt=candidate.solEarlyConfirmedAt;
+        item.reaccelQualitySince=candidate.reaccelQualitySince;item.reaccelStabilityMs=candidate.reaccelStabilityMs;
+        item.reaccelConfirmedAt=candidate.reaccelConfirmedAt;item.reaccelBranch=candidate.reaccelBranch;
+        item.reaccelLastReasonCode=candidate.reaccelLastReasonCode;
     }
 }

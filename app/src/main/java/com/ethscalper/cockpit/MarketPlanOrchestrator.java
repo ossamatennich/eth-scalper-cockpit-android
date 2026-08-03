@@ -227,6 +227,9 @@ public final class MarketPlanOrchestrator {
         out.solEarlyQualitySince=candidate.solEarlyQualitySince;out.solEarlyQualityMode=candidate.solEarlyQualityMode;
         out.solEarlyStabilityMs=candidate.solEarlyStabilityMs;out.solEarlyLastReasonCode=candidate.solEarlyLastReasonCode;
         out.solEarlyConfirmedAt=candidate.solEarlyConfirmedAt;
+        out.reaccelQualitySince=candidate.reaccelQualitySince;out.reaccelStabilityMs=candidate.reaccelStabilityMs;
+        out.reaccelConfirmedAt=candidate.reaccelConfirmedAt;out.reaccelBranch=candidate.reaccelBranch;
+        out.reaccelLastReasonCode=candidate.reaccelLastReasonCode;
         return out;
     }
 
@@ -239,6 +242,9 @@ public final class MarketPlanOrchestrator {
         candidate.solEarlyQualitySince=adapted.solEarlyQualitySince;candidate.solEarlyQualityMode=adapted.solEarlyQualityMode;
         candidate.solEarlyStabilityMs=adapted.solEarlyStabilityMs;candidate.solEarlyLastReasonCode=adapted.solEarlyLastReasonCode;
         candidate.solEarlyConfirmedAt=adapted.solEarlyConfirmedAt;
+        candidate.reaccelQualitySince=adapted.reaccelQualitySince;candidate.reaccelStabilityMs=adapted.reaccelStabilityMs;
+        candidate.reaccelConfirmedAt=adapted.reaccelConfirmedAt;candidate.reaccelBranch=adapted.reaccelBranch;
+        candidate.reaccelLastReasonCode=adapted.reaccelLastReasonCode;
     }
 
     /** Compatibility delegate for existing recorder-schema tests. */
@@ -423,6 +429,8 @@ public final class MarketPlanOrchestrator {
         public long shadowExtendedFirstExecutableAt;
         public long solEarlyQualitySince,solEarlyStabilityMs,solEarlyConfirmedAt;
         public String solEarlyQualityMode="",solEarlyLastReasonCode="";
+        public long reaccelQualitySince,reaccelStabilityMs,reaccelConfirmedAt;
+        public String reaccelBranch="",reaccelLastReasonCode="";
         RuntimeCandidate(SignalDecision signal,String sleeve,long createdAt){this.signal=signal;this.sleeve=sleeve;this.createdAt=createdAt;this.signature=signal.symbol+"|"+signal.side+"|"+signal.family+"|"+signal.entry+"|"+signal.takeProfit+"|"+signal.stopLoss;}
         void resetEarly(){earlySince=0;earlyMode="";}
     }

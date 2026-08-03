@@ -1,18 +1,21 @@
 package com.ethscalper.cockpit;
 
-/** Pure thresholds for the v2.34.4.4 shadow-only quality/frequency experiment. */
+/** Pure thresholds for the v2.34.4.5 shadow-only quality/frequency experiment. */
 public final class ShadowCalibrationPolicy {
-    public static final String VERSION = "SHADOW_V23444_20260802";
-    public static final String SCHEMA_VERSION = "SHADOW_SCHEMA_V5";
+    public static final String VERSION = "SHADOW_V23445_20260803";
+    public static final String SCHEMA_VERSION = "SHADOW_SCHEMA_V6";
     public static final String ETH_P01_GUARD = "ETH_P01_FINAL_CONFIRMATION_GUARD";
-    public static final String SOL_P01_MONITOR = "SOL_P01_PUBLIC_BASELINE_MONITOR";
+    public static final String SOL_P01_MONITOR = "SOL_P01_QUALITY_GUARD_V2";
     public static final String P02_GUARD = "P02_ANTI_EXHAUSTION";
     public static final String PULLBACK = "P01_PULLBACK_RESUMPTION";
     public static final String ETH_MID_VOL = "ETH_MID_VOL_TREND_EXPANSION";
     public static final String ETH_FLOW_EXTENDED = "ETH_FLOW_EXPANSION_EXTENDED";
     public static final String SOL_EARLY = "SOL_P01_EARLY_RESUMPTION";
-    public static final String ETH_FLOW_HIGH_CONFIDENCE = "ETH_FLOW_CONTINUATION_HIGH_CONFIDENCE";
-    public static final String ETH_RANGE_FADE_LONG = "ETH_RANGE_FADE_LONG_HIGH_CONFIDENCE";
+    public static final String ETH_FLOW_HIGH_CONFIDENCE = "ETH_FLOW_CONTINUATION_HIGH_CONFIDENCE_BASELINE";
+    public static final String ETH_REACCELERATION = "ETH_FLOW_REACCELERATION_V2";
+    public static final String ETH_RANGE_FADE_LONG = "ETH_RANGE_FADE_QUARANTINE";
+    public static final String ETH_RANGE_RECLAIM = "ETH_RANGE_RECLAIM_RESEARCH";
+    public static final String ETH_NO_RETRACE = "ETH_NO_RETRACE_BREAKOUT_RESEARCH";
 
     private static final double EPS = 1e-12;
     private ShadowCalibrationPolicy() {}
@@ -45,8 +48,18 @@ public final class ShadowCalibrationPolicy {
         if(profile!=null&&MarketProfile.ETH_SYMBOL.equals(profile.symbol))
             return p01FinalGuard(score,metrics,filter,revalidation);
         if(profile!=null&&MarketProfile.SOL_SYMBOL.equals(profile.symbol))
-            return keep("SHADOW_SOL_P01_PUBLIC_BASELINE_KEEP");
+            return solP01QualityGuard(score,metrics,true,true);
         return block("UNSUPPORTED_SHADOW_PROFILE");
+    }
+
+    public static Decision solP01QualityGuard(int score,NormalizedSignalMetrics.Result metrics,
+                                               boolean marketFresh,boolean btcFresh) {
+        if(!marketFresh||!btcFresh)return block("SHADOW_SOL_P01_FEED_STALE");
+        if(score<95)return block("SHADOW_SOL_P01_SCORE_TOO_LOW");
+        if(metrics==null||!metrics.valid)return block("SHADOW_SOL_P01_METRICS_INVALID");
+        if(metrics.m1+EPS<.75)return block("SHADOW_SOL_P01_M1_TOO_WEAK");
+        if(metrics.volumeRatio+EPS<.80)return block("SHADOW_SOL_P01_VOLUME_TOO_LOW");
+        return keep("SHADOW_SOL_P01_KEEP");
     }
 
     public static String p01Component(MarketProfile profile) {
@@ -142,6 +155,23 @@ public final class ShadowCalibrationPolicy {
         return keep("SHADOW_FLOW_HIGH_CONFIDENCE_KEEP");
     }
 
+    /** Candidate-only quality classification; operational prerequisites and stability live in the engine. */
+    public static ReaccelerationDecision ethFlowReaccelerationV2(MarketProfile profile,
+            SignalDecision candidate,NormalizedSignalMetrics.Result m) {
+        if(profile==null||!MarketProfile.ETH_SYMBOL.equals(profile.symbol)||candidate==null)
+            return ReaccelerationDecision.block("SHADOW_ETH_REACCEL_PROFILE_REJECTED");
+        if(candidate.family==null||!candidate.family.contains("CONTINUATION")||candidate.score<95)
+            return ReaccelerationDecision.block("SHADOW_ETH_REACCEL_PROFILE_REJECTED");
+        if(m==null||!m.valid||m.a+EPS<.80||m.a>1.65+EPS||m.m3+EPS<0||m.m8+EPS<0
+                ||m.f30+EPS<.22||m.f60+EPS<.70||m.volumeRatio+EPS<.50||m.volumeRatio>1.80+EPS)
+            return ReaccelerationDecision.block("SHADOW_ETH_REACCEL_PROFILE_REJECTED");
+        if(m.m1<-.0-EPS)return ReaccelerationDecision.block("SHADOW_ETH_REACCEL_M1_TOO_WEAK");
+        if(m.m1+EPS>=.25)return ReaccelerationDecision.keep("BRANCH_A","SHADOW_ETH_REACCEL_BRANCH_A");
+        if(m.m1+EPS>=.15&&m.m3+EPS>=2.50&&m.f30+EPS>=1.00)
+            return ReaccelerationDecision.keep("BRANCH_B","SHADOW_ETH_REACCEL_BRANCH_B");
+        return ReaccelerationDecision.block("SHADOW_ETH_REACCEL_M1_TOO_WEAK");
+    }
+
     public static Decision ethRangeFadeLongHighConfidence(MarketProfile profile,
             SignalDecision candidate,NormalizedSignalMetrics.Result m) {
         if(profile==null||!MarketProfile.ETH_SYMBOL.equals(profile.symbol))
@@ -189,5 +219,11 @@ public final class ShadowCalibrationPolicy {
         private Decision(boolean keep, String decision, String reasonCode) {
             this.keep=keep;this.decision=decision;this.reasonCode=reasonCode;
         }
+    }
+    public static final class ReaccelerationDecision {
+        public final boolean keep;public final String branch,reasonCode;
+        private ReaccelerationDecision(boolean keep,String branch,String reason){this.keep=keep;this.branch=branch;reasonCode=reason;}
+        static ReaccelerationDecision keep(String branch,String reason){return new ReaccelerationDecision(true,branch,reason);}
+        static ReaccelerationDecision block(String reason){return new ReaccelerationDecision(false,"",reason);}
     }
 }

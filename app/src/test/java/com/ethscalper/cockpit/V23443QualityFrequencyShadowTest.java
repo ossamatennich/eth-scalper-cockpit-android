@@ -14,7 +14,7 @@ public final class V23443QualityFrequencyShadowTest {
         assertEquals("BLOCK",ShadowCalibrationPolicy.p01Symbolic(MarketProfile.eth(),96,weak,filter,"").decision);
         ShadowCalibrationPolicy.Decision sol=ShadowCalibrationPolicy.p01Symbolic(
                 MarketProfile.sol(),96,weak,filter,"");
-        assertTrue(sol.keep);assertEquals("SHADOW_SOL_P01_PUBLIC_BASELINE_KEEP",sol.reasonCode);
+        assertTrue(sol.keep);assertEquals("SHADOW_SOL_P01_KEEP",sol.reasonCode);
         assertEquals(ShadowCalibrationPolicy.ETH_P01_GUARD,
                 ShadowCalibrationPolicy.p01Component(MarketProfile.eth()));
         assertEquals(ShadowCalibrationPolicy.SOL_P01_MONITOR,
@@ -76,7 +76,7 @@ public final class V23443QualityFrequencyShadowTest {
         assertEquals(1,((Number)out.get("uniqueShadowOpened")).intValue());
         assertEquals(1,((Number)out.get("publicShadowOverlaps")).intValue());
         assertTrue(out.get("combinedSignalsPerHour") instanceof Number);
-        assertEquals("SHADOW_SCHEMA_V5",out.get("shadowSchemaVersion"));
+        assertEquals("SHADOW_SCHEMA_V6",out.get("shadowSchemaVersion"));
     }
 
     @Test public void shadowStateDedupIsComponentIndependentAndBoundedByContract(){

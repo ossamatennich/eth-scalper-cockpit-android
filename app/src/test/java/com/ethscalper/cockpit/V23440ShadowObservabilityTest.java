@@ -17,8 +17,8 @@ public class V23440ShadowObservabilityTest {
         assertFalse(lifecycle.contains("SHADOW_TIMEOUT"));
     }
     @Test public void policyVersionAndAllEventsAreExplicit(){
-        assertEquals("SHADOW_V23444_20260802",ShadowCalibrationPolicy.VERSION);
-        assertEquals("SHADOW_SCHEMA_V5",ShadowCalibrationPolicy.SCHEMA_VERSION);
+        assertEquals("SHADOW_V23445_20260803",ShadowCalibrationPolicy.VERSION);
+        assertEquals("SHADOW_SCHEMA_V6",ShadowCalibrationPolicy.SCHEMA_VERSION);
         String[] types={"SHADOW_AB_DECISION","SHADOW_PLAN_OPENED","SHADOW_PLAN_SKIPPED",
                 "SHADOW_TP_TOUCHED","SHADOW_SL_TOUCHED","SHADOW_FEE_AWARE_SIZING",
                 "SHADOW_STATE_RESET","SHADOW_INTERNAL_ERROR"};

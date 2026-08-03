@@ -85,7 +85,7 @@ public final class V23444ShadowAccountingTest {
         Map<String,Object> all=ShadowExperimentSummary.aggregate(List.of(eth,sol),safeNow());
         assertEquals(2,all.get("publicMovementKeys"));assertEquals(2,all.get("uniqueShadowOpportunities"));
         assertEquals(3,all.get("uniqueCombinedPublicAndShadowOpportunities"));
-        assertEquals("SHADOW_SCHEMA_V5",all.get("shadowSchemaVersion"));
+        assertEquals("SHADOW_SCHEMA_V6",all.get("shadowSchemaVersion"));
     }
 
     @Test public void openedRegistryFindsActiveTpAndSlAndEmitsOverlapOnlyOnce(){
@@ -163,9 +163,10 @@ public final class V23444ShadowAccountingTest {
                 Collections.emptyList());
         assertNull(runtime.activePlan);assertNull(runtime.lastSignal);
         assertEquals(CandidateLifecycle.RANGE_FADE_DIAGNOSTIC_ONLY,item.status);
-        assertTrue(String.valueOf(runtime.recorder.eventMaps()),runtime.recorder.eventMaps().stream().anyMatch(e->"SHADOW_PLAN_OPENED".equals(e.get("eventType"))
+        assertTrue(String.valueOf(runtime.recorder.eventMaps()),runtime.recorder.eventMaps().stream().anyMatch(e->"SHADOW_PLAN_SKIPPED".equals(e.get("eventType"))
                 &&ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG.equals(e.get("component"))));
-        assertTrue(runtime.shadowResearch.active()!=null);
+        assertNull(runtime.shadowResearch.active());
+        assertTrue(runtime.recorder.eventMaps().stream().anyMatch(e->"SHADOW_RANGE_RECLAIM_OBSERVATION".equals(e.get("eventType"))));
     }
 
     @Test public void failingSummaryCannotInterruptPublicTerminal(){

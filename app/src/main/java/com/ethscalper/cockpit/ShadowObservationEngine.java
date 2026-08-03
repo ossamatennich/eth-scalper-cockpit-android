@@ -1,13 +1,9 @@
 package com.ethscalper.cockpit;
 
-import java.util.ArrayDeque;
 import java.util.Collections;
-import java.util.Deque;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Shared, fail-open shadow observation layer used by both the legacy ETH engine and the
@@ -15,9 +11,8 @@ import java.util.Set;
  */
 public final class ShadowObservationEngine {
     public static final String ETH_FLOW_EXPANSION_EXTENDED="ETH_FLOW_EXPANSION_EXTENDED";
-    public static final String ETH_BTC_LED_BREAKOUT_RESEARCH="ETH_BTC_LED_BREAKOUT_RESEARCH";
+    public static final String ETH_BTC_LED_BREAKOUT_RESEARCH=ShadowCalibrationPolicy.ETH_NO_RETRACE;
     private static final String DUPLICATE_HIGHER="SHADOW_DUPLICATE_HIGHER_PRIORITY_LANE";
-    private static final int MAX_MISSED_MOVEMENTS=160;
     private static final long MISSED_MOVEMENT_BUCKET_MS=15_000L;
 
     @FunctionalInterface public interface OperationRunner {
@@ -58,6 +53,8 @@ public final class ShadowObservationEngine {
         public long extendedQualificationAt,extendedFirstExecutableAt;
         public long solEarlyQualitySince,solEarlyStabilityMs,solEarlyConfirmedAt;
         public String solEarlyQualityMode="",solEarlyLastReasonCode="";
+        public long reaccelQualitySince,reaccelStabilityMs,reaccelConfirmedAt;
+        public String reaccelBranch="",reaccelLastReasonCode="";
         public Candidate(SignalDecision signal,String sleeve,String signature,long createdAt,
                          double adverse,double favorable,boolean replayVeto,String historicalCode){
             this.signal=signal;this.sleeve=sleeve==null?"":sleeve;
@@ -80,9 +77,8 @@ public final class ShadowObservationEngine {
 
     private final OperationRunner runner;
     private final EventSink sink;
-    private final Deque<String> missedOrder=new ArrayDeque<>();
-    private final Set<String> missedMovements=new HashSet<>();
     private final ShadowOpenedPlanRegistry openedRegistry=new ShadowOpenedPlanRegistry();
+    private final ShadowTelemetryRegistry telemetryRegistry=new ShadowTelemetryRegistry();
 
     public ShadowObservationEngine(){this((operation,action)->action.run(),defaultSink());}
     public ShadowObservationEngine(OperationRunner runner){this(runner,defaultSink());}
@@ -111,10 +107,11 @@ public final class ShadowObservationEngine {
                     context,candidate,creationContext));}
 
     public synchronized void resetResearchMemory(){
-        try{missedOrder.clear();missedMovements.clear();openedRegistry.reset();}
+        try{openedRegistry.reset();telemetryRegistry.reset();}
         catch(RuntimeException ignored){/* reset is shadow-only and fail-open */}
     }
     public ShadowOpenedPlanRegistry openedRegistry(){return openedRegistry;}
+    public ShadowTelemetryRegistry telemetryRegistry(){return telemetryRegistry;}
 
     private void safe(Context c,String component,String operation,Runnable action){
         try{runner.execute(operation,action);}catch(RuntimeException failure){
@@ -168,6 +165,8 @@ public final class ShadowObservationEngine {
         NormalizedSignalMetrics.Result metrics=result.normalizedMetrics;
         ShadowCalibrationPolicy.Decision decision=CandidateLifecycle.SLEEVE_P02.equals(candidate.sleeve)
                 ?ShadowCalibrationPolicy.p02Symbolic(c.runtime.profile,candidate.signal.score,metrics)
+                :MarketProfile.SOL_SYMBOL.equals(c.runtime.profile.symbol)
+                ?ShadowCalibrationPolicy.solP01QualityGuard(candidate.signal.score,metrics,c.marketFresh,c.btcFresh)
                 :ShadowCalibrationPolicy.p01Symbolic(c.runtime.profile,candidate.signal.score,metrics,
                         result.p01SleeveFilter,revalidation);
         String component=CandidateLifecycle.SLEEVE_P02.equals(candidate.sleeve)
@@ -211,44 +210,51 @@ public final class ShadowObservationEngine {
                 ||!CandidateLifecycle.SLEEVE_P01.equals(candidate.sleeve))return;
         NormalizedSignalMetrics.Result metrics=NormalizedSignalMetrics.calculate(c.runtime.profile,
                 candidate.signal.side,candidate.signal,c.snapshot,candidate.adverse);
-        ShadowCalibrationPolicy.Decision pullback=ShadowCalibrationPolicy.pullback(
-                candidate.signal.score,metrics);
-        ShadowCalibrationPolicy.Decision flow=ShadowCalibrationPolicy.ethFlowContinuationHighConfidence(
-                c.runtime.profile,candidate.signal,metrics);
+        String candidateMovement=movementKey(c,candidate);
         ShadowCalibrationPolicy.Decision range=ShadowCalibrationPolicy.ethRangeFadeLongHighConfidence(
                 c.runtime.profile,candidate.signal,metrics);
-        CandidateLifecycle.FillResult solEarly=solEarlyResult(c,candidate);
+        if(candidate.signal.family!=null&&candidate.signal.family.contains("RANGE_FADE")){
+            if(range.keep){
+                c.runtime.shadowExperiment.safeQualified(ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG,
+                        candidateMovement,c.now);
+                recordSkipOnce(c,candidate,metrics,ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG,
+                        "SHADOW_ETH_RANGE_FADE_QUARANTINE","BLOCK");
+                observeRangeReclaim(c,candidate,metrics,candidateMovement);
+            }
+            return;
+        }
+        ShadowCalibrationPolicy.Decision pullback=ShadowCalibrationPolicy.pullback(
+                candidate.signal.score,metrics);
+        ShadowCalibrationPolicy.Decision baseline=ShadowCalibrationPolicy.ethFlowContinuationHighConfidence(
+                c.runtime.profile,candidate.signal,metrics);
+        ShadowCalibrationPolicy.ReaccelerationDecision reaccel=
+                ShadowCalibrationPolicy.ethFlowReaccelerationV2(c.runtime.profile,candidate.signal,metrics);
+        CandidateLifecycle.FillResult solEarly=solEarlyResult(c,candidate,metrics);
         boolean solEarlyKeep=solEarly!=null&&solEarly.confirmed;
-        if(!pullback.keep&&!flow.keep&&!range.keep&&!solEarlyKeep)return;
-        if(flow.keep&&candidate.extendedQualificationAt<=0)candidate.extendedQualificationAt=c.now;
+        boolean reaccelKeep=advanceReacceleration(c,candidate,metrics,reaccel,candidateMovement);
+        if(baseline.keep)recordBaselineWouldQualify(c,candidate,metrics);
+        if(!pullback.keep&&!reaccelKeep&&!solEarlyKeep)return;
         boolean executable=CandidateLifecycle.currentlyExecutable(candidate.signal,c.snapshot);
-        if(flow.keep&&executable&&candidate.extendedFirstExecutableAt<=0)
-            candidate.extendedFirstExecutableAt=c.now;
         String selected=solEarlyKeep?ShadowCalibrationPolicy.SOL_EARLY
                 :pullback.keep?ShadowCalibrationPolicy.PULLBACK
-                :flow.keep?ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE
-                :ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG;
-        String candidateMovement=movementKey(c,candidate);
+                :ShadowCalibrationPolicy.ETH_REACCELERATION;
         c.runtime.shadowExperiment.safeQualified(selected,candidateMovement,c.now);
-        if(pullback.keep&&flow.keep)recordWouldQualify(c,candidate,metrics,
-                ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE);
-        if((pullback.keep||flow.keep)&&range.keep)recordWouldQualify(c,candidate,metrics,
-                ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG);
+        if(pullback.keep&&reaccelKeep)recordWouldQualify(c,candidate,metrics,
+                ShadowCalibrationPolicy.ETH_REACCELERATION);
         if(!c.marketFresh||!c.btcFresh){recordSkipOnce(c,candidate,metrics,selected,
-                "SHADOW_FEED_STALE","SKIP");return;}
+                reaccelReason(selected,"SHADOW_FEED_STALE"),"SKIP");return;}
         if(c.productionActivePlan){recordSkipOnce(c,candidate,metrics,selected,
-                "SHADOW_PRODUCTION_PLAN_ACTIVE","SKIP");return;}
+                reaccelReason(selected,"SHADOW_PRODUCTION_PLAN_ACTIVE"),"SKIP");return;}
         if(!c.rearmComplete){recordSkipOnce(c,candidate,metrics,selected,
-                "SHADOW_PRODUCTION_REARM_ACTIVE","SKIP");return;}
+                reaccelReason(selected,"SHADOW_PRODUCTION_REARM_ACTIVE"),"SKIP");return;}
         if(c.tombstoned){recordSkipOnce(c,candidate,metrics,selected,
-                "SHADOW_CANDIDATE_TOMBSTONED","SKIP");return;}
+                reaccelReason(selected,"SHADOW_CANDIDATE_TOMBSTONED"),"SKIP");return;}
         if(!executable){recordSkipOnce(c,candidate,metrics,selected,
-                "SHADOW_LIMIT_NOT_EXECUTABLE","SKIP");return;}
+                reaccelReason(selected,"SHADOW_LIMIT_NOT_EXECUTABLE"),"SKIP");return;}
         if(!ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate.signal,candidate.favorable)){
             recordSkipOnce(c,candidate,metrics,selected,
-                    "SHADOW_TARGET_ALREADY_TOUCHED_BEFORE_OPEN","SKIP");return;}
-        boolean reanchored=ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(selected)
-                ||ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG.equals(selected);
+                    reaccelReason(selected,"SHADOW_TARGET_ALREADY_TOUCHED_BEFORE_OPEN"),"SKIP");return;}
+        boolean reanchored=ShadowCalibrationPolicy.ETH_REACCELERATION.equals(selected);
         ShadowPlanFactory.Result built=reanchored
                 ?ShadowPlanFactory.buildReanchored(c.runtime.profile,candidate.signal,candidate.sleeve,
                     candidate.signature,selected,c.snapshot,candidate.adverse,
@@ -259,7 +265,8 @@ public final class ShadowObservationEngine {
         if(!built.valid){recordSkipOnce(c,candidate,metrics,selected,built.reasonCode,"SKIP");return;}
         if(!built.economics.valid||!(built.economics.netTargetUsdt>0)
                 ||!(built.economics.netStopUsdt>0)||built.economics.netRewardRisk+1e-12<.40){
-            recordSkipOnce(c,candidate,metrics,selected,"SHADOW_NET_REWARD_RISK_TOO_LOW","SKIP");return;}
+            recordSkipOnce(c,candidate,metrics,selected,ShadowCalibrationPolicy.ETH_REACCELERATION.equals(selected)
+                    ?"SHADOW_ETH_REACCEL_NET_RR_TOO_LOW":"SHADOW_NET_REWARD_RISK_TOO_LOW","SKIP");return;}
         c.runtime.shadowExperiment.safeOpportunity(selected,candidateMovement);
         if(openedRegistry.findOverlap(candidate.signature,candidateMovement)!=null){
             recordSkipOnce(c,candidate,metrics,selected,"SHADOW_MOVEMENT_ALREADY_OBSERVED","SKIP");return;}
@@ -268,7 +275,7 @@ public final class ShadowObservationEngine {
                     ?"SHADOW_PLAN_ALREADY_ACTIVE":"SHADOW_DEDUP_OR_COOLDOWN","SKIP");return;}
         if(!c.runtime.shadowResearch.open(built.state)){recordSkipOnce(c,candidate,metrics,selected,
                 "SHADOW_DEDUP_OR_COOLDOWN","SKIP");return;}
-        boolean higherPriority=(pullback.keep&&flow.keep)||((pullback.keep||flow.keep)&&range.keep);
+        boolean higherPriority=pullback.keep&&reaccelKeep;
         ShadowOpenedPlanRegistry.Record opened=openedRegistry.registerOpen(built.state,candidateMovement,
                 candidate.signal.family,higherPriority);
         c.runtime.shadowExperiment.safeRegistryStats(openedRegistry.snapshotStats());
@@ -277,8 +284,10 @@ public final class ShadowObservationEngine {
         addPlan(d,built.state);putMetrics(d,metrics,candidate.adverse);
         d.put("movementKey",movementKey(c,candidate));d.put("publicOverlap",false);
         d.put("higherPriorityOverlap",higherPriority);
-        if(reanchored){d.put("originalCandidateEntry",candidate.signal.entry);
-            d.put("currentExecutableQuote","LONG".equals(candidate.signal.side)
+        if(reanchored){d.put("branch",candidate.reaccelBranch);
+            d.put("qualificationAt",candidate.reaccelQualitySince);d.put("stabilityStartedAt",candidate.reaccelQualitySince);
+            d.put("stabilityMs",candidate.reaccelStabilityMs);d.put("originalCandidateEntry",candidate.signal.entry);
+            d.put("executableQuote","LONG".equals(candidate.signal.side)
                     ?c.snapshot.marketAsk:c.snapshot.marketBid);
             d.put("reanchoredEntry",built.state.entry);d.put("reanchoredTp",built.state.tp);
             d.put("reanchoredSl",built.state.sl);
@@ -295,7 +304,47 @@ public final class ShadowObservationEngine {
         recordFeeAware(c,candidate.signal,built.state,built.economics,false,built.baselineQuantity);
     }
 
-    private CandidateLifecycle.FillResult solEarlyResult(Context c,Candidate candidate){
+    private boolean advanceReacceleration(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
+            ShadowCalibrationPolicy.ReaccelerationDecision decision,String movement){
+        if(!decision.keep){resetReacceleration(candidate,decision.reasonCode);return false;}
+        String operational="";
+        if(c.snapshot==null||c.snapshot.now!=c.now)operational="SHADOW_ETH_REACCEL_STABILITY_RESET";
+        else if(!c.marketFresh||!c.btcFresh)operational="SHADOW_ETH_REACCEL_FEED_STALE";
+        else if(c.productionActivePlan)operational="SHADOW_ETH_REACCEL_PUBLIC_PLAN_ACTIVE";
+        else if(!c.rearmComplete)operational="SHADOW_ETH_REACCEL_REARM_ACTIVE";
+        else if(c.tombstoned)operational="SHADOW_ETH_REACCEL_TOMBSTONED";
+        else if(!CandidateLifecycle.currentlyExecutable(candidate.signal,c.snapshot))operational="SHADOW_ETH_REACCEL_NOT_EXECUTABLE";
+        else if(!ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate.signal,candidate.favorable))
+            operational="SHADOW_ETH_REACCEL_TARGET_ALREADY_TOUCHED";
+        if(!operational.isEmpty()){resetReacceleration(candidate,operational);
+            recordSkipOnce(c,candidate,metrics,ShadowCalibrationPolicy.ETH_REACCELERATION,operational,"STABILITY_RESET");return false;}
+        if(candidate.reaccelQualitySince<=0||!decision.branch.equals(candidate.reaccelBranch)){
+            boolean changed=candidate.reaccelQualitySince>0&&!decision.branch.equals(candidate.reaccelBranch);
+            candidate.reaccelQualitySince=c.now;candidate.reaccelBranch=decision.branch;candidate.reaccelStabilityMs=0;
+            candidate.reaccelLastReasonCode=changed?"SHADOW_ETH_REACCEL_STABILITY_RESET":"SHADOW_ETH_REACCEL_STABILITY_PENDING";
+            c.runtime.shadowExperiment.safeQualified(ShadowCalibrationPolicy.ETH_REACCELERATION,movement,c.now);
+            recordSkipOnce(c,candidate,metrics,ShadowCalibrationPolicy.ETH_REACCELERATION,
+                    candidate.reaccelLastReasonCode,changed?"STABILITY_RESET":"STABILITY_PENDING");return false;}
+        candidate.reaccelStabilityMs=Math.max(0,c.now-candidate.reaccelQualitySince);
+        if(candidate.reaccelStabilityMs<10_000L){candidate.reaccelLastReasonCode="SHADOW_ETH_REACCEL_STABILITY_PENDING";
+            recordSkipOnce(c,candidate,metrics,ShadowCalibrationPolicy.ETH_REACCELERATION,
+                    candidate.reaccelLastReasonCode,"STABILITY_PENDING");return false;}
+        candidate.reaccelConfirmedAt=c.now;candidate.reaccelLastReasonCode="SHADOW_ETH_REACCEL_CONFIRMED";return true;
+    }
+
+    private static void resetReacceleration(Candidate c,String reason){c.reaccelQualitySince=0;c.reaccelBranch="";
+        c.reaccelStabilityMs=0;c.reaccelConfirmedAt=0;c.reaccelLastReasonCode=reason;}
+
+    private static String reaccelReason(String component,String generic){if(!ShadowCalibrationPolicy.ETH_REACCELERATION.equals(component))return generic;
+        if("SHADOW_FEED_STALE".equals(generic))return "SHADOW_ETH_REACCEL_FEED_STALE";
+        if("SHADOW_PRODUCTION_PLAN_ACTIVE".equals(generic))return "SHADOW_ETH_REACCEL_PUBLIC_PLAN_ACTIVE";
+        if("SHADOW_PRODUCTION_REARM_ACTIVE".equals(generic))return "SHADOW_ETH_REACCEL_REARM_ACTIVE";
+        if("SHADOW_CANDIDATE_TOMBSTONED".equals(generic))return "SHADOW_ETH_REACCEL_TOMBSTONED";
+        if("SHADOW_LIMIT_NOT_EXECUTABLE".equals(generic))return "SHADOW_ETH_REACCEL_NOT_EXECUTABLE";
+        if("SHADOW_TARGET_ALREADY_TOUCHED_BEFORE_OPEN".equals(generic))return "SHADOW_ETH_REACCEL_TARGET_ALREADY_TOUCHED";return generic;}
+
+    private CandidateLifecycle.FillResult solEarlyResult(Context c,Candidate candidate,
+                                                         NormalizedSignalMetrics.Result metrics){
         if(!MarketProfile.SOL_SYMBOL.equals(c.runtime.profile.symbol))return null;
         if(candidate.signal.score<95||candidate.signal.family==null
                 ||!candidate.signal.family.contains("CONTINUATION")){
@@ -325,7 +374,9 @@ public final class ShadowObservationEngine {
         candidate.solEarlyQualityMode=stability.mode;
         candidate.solEarlyStabilityMs=stability.stabilityMs;
         candidate.solEarlyLastReasonCode=stability.reasonCode;
-        if(!stability.confirmed)return null;
+        if(!stability.confirmed){String decision=stability.qualitySince>0?"STABILITY_PENDING":"STABILITY_RESET";
+            recordSkipOnce(c,candidate,metrics,ShadowCalibrationPolicy.SOL_EARLY,
+                    stability.reasonCode,decision);return null;}
         CandidateLifecycle.FillResult confirmed=CandidateLifecycle.processEarlyP01Candidate(
                 c.runtime.profile,candidate.signal,c.snapshot,c.marketFresh,candidate.createdAt,c.now,
                 progress,candidate.adverse,candidate.historicalReplayRiskVeto,
@@ -344,6 +395,12 @@ public final class ShadowObservationEngine {
         recordSkipOnce(c,candidate,metrics,component,DUPLICATE_HIGHER,"WOULD_QUALIFY");
     }
 
+    private void recordBaselineWouldQualify(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics){
+        String component=ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE;
+        c.runtime.shadowExperiment.safeQualified(component,movementKey(c,candidate),c.now);
+        recordSkipOnce(c,candidate,metrics,component,"SHADOW_BASELINE_REJECTED_FOR_OPENING","WOULD_QUALIFY");
+    }
+
     private void recordSkipOnce(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
                                 String component,String reason,String decision){
         String key=decision+"|"+reason;String previous=candidate.lastShadowStateByComponent.get(component);
@@ -360,6 +417,12 @@ public final class ShadowObservationEngine {
         d.put("shadowDuplicateEventsSuppressed",candidate.shadowDuplicateEventsSuppressed);
         putMetrics(d,metrics,candidate.adverse);
         if(ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(component))putLatency(d,candidate,0);
+        if(ShadowCalibrationPolicy.ETH_REACCELERATION.equals(component)){
+            d.put("branch",candidate.reaccelBranch);
+            d.put("qualificationAt",candidate.reaccelQualitySince>0?candidate.reaccelQualitySince:null);
+            d.put("stabilityStartedAt",candidate.reaccelQualitySince>0?candidate.reaccelQualitySince:null);
+            d.put("stabilityMs",candidate.reaccelStabilityMs);
+        }
         write(c,candidate.signal,"SHADOW_PLAN_SKIPPED",reason,
                 "Voie shadow observée sans effet public.",candidate.sleeve,
                 c.now-candidate.createdAt,candidate.adverse,d);
@@ -369,23 +432,46 @@ public final class ShadowObservationEngine {
                                                 Map<String,Object> creationContext){
         if(candidate==null||candidate.signal==null
                 ||!MarketProfile.ETH_SYMBOL.equals(c.runtime.profile.symbol))return;
-        String movementKey=candidate.signal.side+"|"+(candidate.createdAt/MISSED_MOVEMENT_BUCKET_MS)
-                +"|"+Math.round(candidate.signal.movementOrigin/c.runtime.profile.priceTick);
-        if(missedMovements.contains(movementKey))return;
-        missedMovements.add(movementKey);missedOrder.addLast(movementKey);
-        while(missedOrder.size()>MAX_MISSED_MOVEMENTS)missedMovements.remove(missedOrder.removeFirst());
+        String movement=movementKey(c,candidate);
+        long firstExecutable=longFrom(creationContext,"firstExecutableAt",0);
+        ShadowTelemetryRegistry.BreakoutUpdate update=telemetryRegistry.observeBreakout(movement,
+                candidate.signal,c.snapshot,candidate.createdAt,c.now,candidate.adverse,candidate.favorable,
+                stringFrom(creationContext,"reasonCode","V2329_TARGET_REACHED_BEFORE_CONFIRMED_FILL"),firstExecutable);
+        if(!update.created){c.runtime.shadowExperiment.safeTelemetryDeduplicated(
+                ShadowCalibrationPolicy.ETH_NO_RETRACE);return;}
         LinkedHashMap<String,Object>d=base(c,candidate,ETH_BTC_LED_BREAKOUT_RESEARCH);
-        d.put("decision","OBSERVE");d.put("shadowReasonCode","SHADOW_TARGET_REACHED_BEFORE_CONFIRMATION");
+        d.put("decision","OBSERVE");d.put("shadowReasonCode","SHADOW_NO_RETRACE_BREAKOUT_OBSERVED");
         NormalizedSignalMetrics.Result metrics=NormalizedSignalMetrics.calculate(c.runtime.profile,
                 candidate.signal.side,candidate.signal,c.snapshot,candidate.adverse);
-        putMetrics(d,metrics,candidate.adverse);
-        if(c.snapshot!=null){d.put("btcMove1",finiteOrNull(c.snapshot.btcMove1));
-            d.put("btcMove3",finiteOrNull(c.snapshot.btcMove3));d.put("btcMove8",finiteOrNull(c.snapshot.btcMove8));}
+        putMetrics(d,metrics,candidate.adverse);d.putAll(update.details);
         if(creationContext!=null)d.putAll(creationContext);
-        write(c,candidate.signal,"SHADOW_MISSED_MOVE_OBSERVATION",
-                "SHADOW_TARGET_REACHED_BEFORE_CONFIRMATION",
+        write(c,candidate.signal,"SHADOW_NO_RETRACE_BREAKOUT_OBSERVATION",
+                "SHADOW_NO_RETRACE_BREAKOUT_OBSERVED",
                 "Mouvement ETH manqué observé sans ouvrir de plan shadow.",candidate.sleeve,
                 c.now-candidate.createdAt,candidate.adverse,d);
+    }
+
+    private void observeRangeReclaim(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
+                                     String movement){
+        ShadowTelemetryRegistry.RangeUpdate update=telemetryRegistry.observeRange(movement,candidate.signal,
+                metrics,c.snapshot,c.now,candidate.adverse,c.marketFresh,c.btcFresh);
+        if(!update.changed){c.runtime.shadowExperiment.safeTelemetryDeduplicated(
+                ShadowCalibrationPolicy.ETH_RANGE_RECLAIM);return;}
+        LinkedHashMap<String,Object>d=base(c,candidate,ShadowCalibrationPolicy.ETH_RANGE_RECLAIM);
+        d.put("decision","OBSERVE");d.put("shadowReasonCode","SHADOW_RANGE_RECLAIM_OBSERVED");
+        d.putAll(update.details);putMetrics(d,metrics,candidate.adverse);
+        String type=update.terminal?"SHADOW_RANGE_RECLAIM_TERMINAL_OBSERVATION"
+                :"SHADOW_RANGE_RECLAIM_OBSERVATION";
+        write(c,candidate.signal,type,"SHADOW_RANGE_RECLAIM_OBSERVED",
+                "Télémétrie causale de reclaim range, sans plan shadow.",candidate.sleeve,
+                c.now-candidate.createdAt,candidate.adverse,d);
+    }
+
+    private static long longFrom(Map<String,Object> values,String key,long fallback){
+        Object v=values==null?null:values.get(key);return v instanceof Number?((Number)v).longValue():fallback;
+    }
+    private static String stringFrom(Map<String,Object> values,String key,String fallback){
+        Object v=values==null?null:values.get(key);return v==null?fallback:String.valueOf(v);
     }
 
     private void recordFeeAware(Context c,SignalDecision signal,ShadowPlanState state,
@@ -487,7 +573,8 @@ public final class ShadowObservationEngine {
     private static void putQualificationLatency(Map<String,Object>d,Candidate c,String component,long openedAt){
         long qualified=ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(component)
                 ?c.extendedQualificationAt:ShadowCalibrationPolicy.SOL_EARLY.equals(component)
-                ?c.solEarlyQualitySince:openedAt;
+                ?c.solEarlyQualitySince:ShadowCalibrationPolicy.ETH_REACCELERATION.equals(component)
+                ?c.reaccelQualitySince:openedAt;
         d.put("qualificationAt",qualified>0?qualified:null);d.put("shadowOpenedAt",openedAt);
         d.put("qualificationToOpenMs",qualified>0?Math.max(0,openedAt-qualified):null);
         if(ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(component))
