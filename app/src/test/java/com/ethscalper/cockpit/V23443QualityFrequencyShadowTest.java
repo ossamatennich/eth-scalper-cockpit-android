@@ -76,7 +76,7 @@ public final class V23443QualityFrequencyShadowTest {
         assertEquals(1,((Number)out.get("uniqueShadowOpened")).intValue());
         assertEquals(1,((Number)out.get("publicShadowOverlaps")).intValue());
         assertTrue(out.get("combinedSignalsPerHour") instanceof Number);
-        assertEquals("SHADOW_SCHEMA_V6",out.get("shadowSchemaVersion"));
+        assertEquals("SHADOW_SCHEMA_V7",out.get("shadowSchemaVersion"));
     }
 
     @Test public void shadowStateDedupIsComponentIndependentAndBoundedByContract(){

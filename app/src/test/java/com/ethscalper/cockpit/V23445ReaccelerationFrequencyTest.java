@@ -99,7 +99,7 @@ public final class V23445ReaccelerationFrequencyTest {
         ShadowExperimentSummary s=new ShadowExperimentSummary();
         s.safeTelemetryDeduplicated(ShadowCalibrationPolicy.ETH_RANGE_RECLAIM);
         Map<String,Object> out=s.snapshot(System.currentTimeMillis()+3_600_000L);
-        assertEquals("SHADOW_SCHEMA_V6",out.get("shadowSchemaVersion"));
+        assertEquals("SHADOW_SCHEMA_V7",out.get("shadowSchemaVersion"));
         @SuppressWarnings("unchecked") Map<String,Object> components=(Map<String,Object>)out.get("components");
         for(String name:new String[]{ShadowCalibrationPolicy.SOL_P01_MONITOR,ShadowCalibrationPolicy.ETH_REACCELERATION,
                 ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG,ShadowCalibrationPolicy.ETH_RANGE_RECLAIM,

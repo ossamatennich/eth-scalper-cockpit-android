@@ -7,7 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
-/** Incremental schema-V5 counters with exact movement-set semantics and fail-open entry points. */
+/** Incremental schema-V7 counters with exact movement-set semantics and fail-open entry points. */
 public class ShadowExperimentSummary {
     public static final int MAX_KEYS=256;
     @FunctionalInterface public interface OperationRunner{void run(String operation,Runnable action);}
@@ -34,6 +34,8 @@ public class ShadowExperimentSummary {
             ()->duplicateSuppressed(component,signature));}
     public void safeTelemetryDeduplicated(String component){safe("TELEMETRY_DEDUPLICATED",
             ()->telemetryDeduplicated(component));}
+    public void safeTelemetrySnapshot(String component,List<Map<String,Object>> records){safe("TELEMETRY_SNAPSHOT",
+            ()->telemetrySnapshot(component,records));}
     public void safePublicTerminal(String status){safe("PUBLIC_TERMINAL",()->publicTerminal(status));}
     public void safeRegistryStats(Map<String,Object> stats){safe("REGISTRY_STATS",()->registryStats(stats));}
     public void safeReset(long now,boolean carried){safe("RESET",()->reset(now,carried));}
@@ -86,6 +88,10 @@ public class ShadowExperimentSummary {
     public synchronized void duplicateSuppressed(String component,String signature){duplicateSuppressed++;
         component(component).duplicateSuppressed++;}
     public synchronized void telemetryDeduplicated(String component){component(component).telemetryDeduplicated++;}
+    public synchronized void telemetrySnapshot(String component,List<Map<String,Object>> records){
+        Component c=component(component);c.telemetrySnapshots.clear();if(records==null)return;
+        for(Map<String,Object> record:records){if(record!=null)c.telemetrySnapshots.add(new LinkedHashMap<>(record));
+            if(c.telemetrySnapshots.size()>=ShadowTelemetryRegistry.CAPACITY)break;}}
     public synchronized void publicTerminal(String status){if("TP_TOUCHED".equals(status))publicTp++;
         else if("SL_TOUCHED".equals(status))publicSl++;
         Component sol=component(ShadowCalibrationPolicy.SOL_P01_MONITOR);
@@ -120,6 +126,8 @@ public class ShadowExperimentSummary {
         out.put("dedupCapacity",ShadowOpenedPlanRegistry.CAPACITY);out.put("dedupCapacityReached",dedupCapacityReached);
         out.put("evictedMovementRecords",evictedMovementRecords);out.put("activeShadowPlan",activeShadowPlans>0);
         out.put("terminalShadowRecords",terminalShadowRecords);out.put("publicPlanCarriedAtReset",publicPlanCarriedAtReset);
+        out.put("noRetraceMovements",component(ShadowCalibrationPolicy.ETH_NO_RETRACE).snapshotRecords());
+        out.put("rangeReclaimMovements",component(ShadowCalibrationPolicy.ETH_RANGE_RECLAIM).snapshotRecords());
         LinkedHashMap<String,Object> by=new LinkedHashMap<>();for(Map.Entry<String,Component>e:components.entrySet())by.put(e.getKey(),e.getValue().map());
         out.put("components",by);return out;}
 
@@ -169,14 +177,17 @@ public class ShadowExperimentSummary {
         void addAll(Iterable<String> keys){for(String k:keys)add(k);}int size(){return values.size();}void clear(){values.clear();}}
     private static final class Component{final BoundedKeys qualified=new BoundedKeys(),opportunities=new BoundedKeys(),opened=new BoundedKeys(),wouldQualify=new BoundedKeys(),publicOverlaps=new BoundedKeys(),telemetryMovements=new BoundedKeys();
         final LinkedHashMap<String,Long> qualificationAt=new LinkedHashMap<>(),blockByReason=new LinkedHashMap<>();final List<Long> latencies=new ArrayList<>(),stabilities=new ArrayList<>();
+        final List<Map<String,Object>> telemetrySnapshots=new ArrayList<>();
         long skipped,tp,sl,measurements,duplicateSuppressed,keep,block,branchAQualifications,branchBQualifications,
                 stabilityPending,stabilityReset,observations,terminalObservations,telemetryDeduplicated,
                 publicTpAfterKeep,publicSlAfterKeep,publicTpAfterBlock,publicSlAfterBlock;double netUsdt,netR;
         void addLatency(long value){latencies.add(value);while(latencies.size()>MAX_KEYS)latencies.remove(0);}
         void addStability(long value){stabilities.add(value);while(stabilities.size()>MAX_KEYS)stabilities.remove(0);}
-        void reset(){qualified.clear();opportunities.clear();opened.clear();wouldQualify.clear();publicOverlaps.clear();telemetryMovements.clear();qualificationAt.clear();blockByReason.clear();latencies.clear();stabilities.clear();skipped=tp=sl=measurements=duplicateSuppressed=keep=block=branchAQualifications=branchBQualifications=stabilityPending=stabilityReset=observations=terminalObservations=telemetryDeduplicated=publicTpAfterKeep=publicSlAfterKeep=publicTpAfterBlock=publicSlAfterBlock=0;netUsdt=netR=0;}
+        void reset(){qualified.clear();opportunities.clear();opened.clear();wouldQualify.clear();publicOverlaps.clear();telemetryMovements.clear();qualificationAt.clear();blockByReason.clear();latencies.clear();stabilities.clear();telemetrySnapshots.clear();skipped=tp=sl=measurements=duplicateSuppressed=keep=block=branchAQualifications=branchBQualifications=stabilityPending=stabilityReset=observations=terminalObservations=telemetryDeduplicated=publicTpAfterKeep=publicSlAfterKeep=publicTpAfterBlock=publicSlAfterBlock=0;netUsdt=netR=0;}
         void mergeInto(Component t){t.qualified.addAll(qualified.values);t.opportunities.addAll(opportunities.values);t.opened.addAll(opened.values);t.wouldQualify.addAll(wouldQualify.values);t.publicOverlaps.addAll(publicOverlaps.values);
             t.telemetryMovements.addAll(telemetryMovements.values);for(long l:latencies)t.addLatency(l);for(long l:stabilities)t.addStability(l);
+            for(Map<String,Object> record:telemetrySnapshots){if(t.telemetrySnapshots.size()>=ShadowTelemetryRegistry.CAPACITY)break;
+                t.telemetrySnapshots.add(new LinkedHashMap<>(record));}
             for(Map.Entry<String,Long>e:blockByReason.entrySet())t.blockByReason.merge(e.getKey(),e.getValue(),Long::sum);
             t.skipped+=skipped;t.tp+=tp;t.sl+=sl;t.measurements+=measurements;t.duplicateSuppressed+=duplicateSuppressed;
             t.keep+=keep;t.block+=block;t.branchAQualifications+=branchAQualifications;t.branchBQualifications+=branchBQualifications;
@@ -195,6 +206,8 @@ public class ShadowExperimentSummary {
             m.put("terminalObservations",terminalObservations);m.put("deduplicatedEvents",telemetryDeduplicated);
             m.put("publicTpAfterKeep",publicTpAfterKeep);m.put("publicSlAfterKeep",publicSlAfterKeep);
             m.put("publicTpAfterBlock",publicTpAfterBlock);m.put("publicSlAfterBlock",publicSlAfterBlock);return m;}
+        List<Map<String,Object>> snapshotRecords(){List<Map<String,Object>> out=new ArrayList<>();
+            for(Map<String,Object> record:telemetrySnapshots)out.add(new LinkedHashMap<>(record));return out;}
         private static Object median(List<Long> values){if(values.isEmpty())return null;List<Long> copy=new ArrayList<>(values);Collections.sort(copy);int n=copy.size();
             return n%2==1?copy.get(n/2):(copy.get(n/2-1)+copy.get(n/2))/2.0;}}
     private static final class SnapshotHolder{Map<String,Object> value;}

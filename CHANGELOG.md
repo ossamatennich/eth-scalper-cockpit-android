@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.4.6 — intégrité des télémétries shadow
+
+- calcule Range Reclaim depuis `movementExtreme`, avec `movementOrigin` conservé uniquement comme diagnostic séparé ;
+- attribue No-Retrace au composant officiel `ETH_NO_RETRACE_BREAKOUT_RESEARCH` ;
+- remet à zéro l’horloge Reacceleration dès qu’un plan shadow est actif ;
+- expose des snapshots FIFO bornés à 160 mouvements avec compteurs de doublons consolidés ;
+- politique `SHADOW_V23446_20260803`, schéma `SHADOW_SCHEMA_V7`, moteur public inchangé.
+
 ## 2.34.4.5 — recherche shadow réaccélération et fréquence protégée
 
 - remplace le baseline universel SOL P01 par un garde shadow propre à SOL, sans effet sur les confirmations publiques ;

@@ -85,7 +85,7 @@ public final class V23444ShadowAccountingTest {
         Map<String,Object> all=ShadowExperimentSummary.aggregate(List.of(eth,sol),safeNow());
         assertEquals(2,all.get("publicMovementKeys"));assertEquals(2,all.get("uniqueShadowOpportunities"));
         assertEquals(3,all.get("uniqueCombinedPublicAndShadowOpportunities"));
-        assertEquals("SHADOW_SCHEMA_V6",all.get("shadowSchemaVersion"));
+        assertEquals("SHADOW_SCHEMA_V7",all.get("shadowSchemaVersion"));
     }
 
     @Test public void openedRegistryFindsActiveTpAndSlAndEmitsOverlapOnlyOnce(){
@@ -125,7 +125,9 @@ public final class V23444ShadowAccountingTest {
 
     @Test public void summaryFailuresAreFailOpenAndReturnBoundedFallback(){
         ShadowExperimentSummary broken=new ShadowExperimentSummary((operation,action)->{throw new RuntimeException(operation);});
-        broken.safePublicTerminal("TP_TOUCHED");broken.safeDuplicateSuppressed(FLOW,"s");broken.safeReset(10,true);
+        broken.safePublicTerminal("TP_TOUCHED");broken.safeDuplicateSuppressed(FLOW,"s");
+        broken.safeTelemetrySnapshot(ShadowCalibrationPolicy.ETH_NO_RETRACE,Collections.singletonList(event("m","s",FLOW,"OBSERVE")));
+        broken.safeReset(10,true);
         Map<String,Object> fallback=broken.safeSnapshot(20);assertEquals(false,fallback.get("available"));
         MarketRuntime runtime=new MarketRuntime(MarketProfile.eth(),broken);assertFalse(runtime.hasActivePlan());
     }

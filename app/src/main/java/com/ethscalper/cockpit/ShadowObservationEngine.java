@@ -11,7 +11,7 @@ import java.util.Map;
  */
 public final class ShadowObservationEngine {
     public static final String ETH_FLOW_EXPANSION_EXTENDED="ETH_FLOW_EXPANSION_EXTENDED";
-    public static final String ETH_BTC_LED_BREAKOUT_RESEARCH=ShadowCalibrationPolicy.ETH_NO_RETRACE;
+    public static final String ETH_BTC_LED_BREAKOUT_RESEARCH="ETH_BTC_LED_BREAKOUT_RESEARCH";
     private static final String DUPLICATE_HIGHER="SHADOW_DUPLICATE_HIGHER_PRIORITY_LANE";
     private static final long MISSED_MOVEMENT_BUCKET_MS=15_000L;
 
@@ -103,7 +103,7 @@ public final class ShadowObservationEngine {
                     context,candidate,result,entryRevalidationCode));}
     public void safeObserveMissedMove(Context context,Candidate candidate,
                                       Map<String,Object> creationContext){safe(context,
-            ETH_BTC_LED_BREAKOUT_RESEARCH,"OBSERVE_MISSED_MOVE",()->observeMissedMove(
+            ShadowCalibrationPolicy.ETH_NO_RETRACE,"OBSERVE_MISSED_MOVE",()->observeMissedMove(
                     context,candidate,creationContext));}
 
     public synchronized void resetResearchMemory(){
@@ -313,6 +313,7 @@ public final class ShadowObservationEngine {
         else if(c.productionActivePlan)operational="SHADOW_ETH_REACCEL_PUBLIC_PLAN_ACTIVE";
         else if(!c.rearmComplete)operational="SHADOW_ETH_REACCEL_REARM_ACTIVE";
         else if(c.tombstoned)operational="SHADOW_ETH_REACCEL_TOMBSTONED";
+        else if(c.runtime.shadowResearch.active()!=null)operational="SHADOW_ETH_REACCEL_SHADOW_PLAN_ACTIVE";
         else if(!CandidateLifecycle.currentlyExecutable(candidate.signal,c.snapshot))operational="SHADOW_ETH_REACCEL_NOT_EXECUTABLE";
         else if(!ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate.signal,candidate.favorable))
             operational="SHADOW_ETH_REACCEL_TARGET_ALREADY_TOUCHED";
@@ -434,12 +435,14 @@ public final class ShadowObservationEngine {
                 ||!MarketProfile.ETH_SYMBOL.equals(c.runtime.profile.symbol))return;
         String movement=movementKey(c,candidate);
         long firstExecutable=longFrom(creationContext,"firstExecutableAt",0);
-        ShadowTelemetryRegistry.BreakoutUpdate update=telemetryRegistry.observeBreakout(movement,
+        ShadowTelemetryRegistry.BreakoutUpdate update=telemetryRegistry.observeBreakout(movement,candidate.signature,
                 candidate.signal,c.snapshot,candidate.createdAt,c.now,candidate.adverse,candidate.favorable,
                 stringFrom(creationContext,"reasonCode","V2329_TARGET_REACHED_BEFORE_CONFIRMED_FILL"),firstExecutable);
+        c.runtime.shadowExperiment.safeTelemetrySnapshot(ShadowCalibrationPolicy.ETH_NO_RETRACE,
+                telemetryRegistry.noRetraceSnapshots());
         if(!update.created){c.runtime.shadowExperiment.safeTelemetryDeduplicated(
                 ShadowCalibrationPolicy.ETH_NO_RETRACE);return;}
-        LinkedHashMap<String,Object>d=base(c,candidate,ETH_BTC_LED_BREAKOUT_RESEARCH);
+        LinkedHashMap<String,Object>d=base(c,candidate,ShadowCalibrationPolicy.ETH_NO_RETRACE);
         d.put("decision","OBSERVE");d.put("shadowReasonCode","SHADOW_NO_RETRACE_BREAKOUT_OBSERVED");
         NormalizedSignalMetrics.Result metrics=NormalizedSignalMetrics.calculate(c.runtime.profile,
                 candidate.signal.side,candidate.signal,c.snapshot,candidate.adverse);
@@ -453,8 +456,10 @@ public final class ShadowObservationEngine {
 
     private void observeRangeReclaim(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
                                      String movement){
-        ShadowTelemetryRegistry.RangeUpdate update=telemetryRegistry.observeRange(movement,candidate.signal,
+        ShadowTelemetryRegistry.RangeUpdate update=telemetryRegistry.observeRange(movement,candidate.signature,candidate.signal,
                 metrics,c.snapshot,c.now,candidate.adverse,c.marketFresh,c.btcFresh);
+        c.runtime.shadowExperiment.safeTelemetrySnapshot(ShadowCalibrationPolicy.ETH_RANGE_RECLAIM,
+                telemetryRegistry.rangeSnapshots());
         if(!update.changed){c.runtime.shadowExperiment.safeTelemetryDeduplicated(
                 ShadowCalibrationPolicy.ETH_RANGE_RECLAIM);return;}
         LinkedHashMap<String,Object>d=base(c,candidate,ShadowCalibrationPolicy.ETH_RANGE_RECLAIM);
