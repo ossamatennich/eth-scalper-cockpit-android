@@ -31,6 +31,7 @@ public final class MarketPlanOrchestrator {
                           boolean marketFeedFresh, boolean btcFeedFresh) {
         MarketSnapshot snapshot=MarketSnapshotFactory.build(runtime,btc,now);
         runtime.recorder.frame(now,runtime.lastDecision,snapshot,marketFeedFresh,btcFeedFresh);
+        runtime.frozenProfitability.safeObserveTerminal(runtime,snapshot,now,marketFeedFresh,btcFeedFresh);
         safeObserveShadowTerminal(runtime,snapshot,now,marketFeedFresh,btcFeedFresh);
         Event terminal=terminalIfTouched(runtime,snapshot,now);
         if(terminal!=null){
@@ -63,6 +64,8 @@ public final class MarketPlanOrchestrator {
         record(runtime,snapshot,null,raw,now,"RAW_DECISION",raw==null?"":raw.reasonCode,
                 raw==null?"":raw.reasonText,"STRUCTURAL_SHARED","","",0,
                 marketFeedFresh,btcFeedFresh,0,Collections.emptyMap());
+        runtime.frozenProfitability.safeObserveRaw(runtime,snapshot,raw,now,marketFeedFresh,
+                btcFeedFresh,runtime.hasActivePlan(),runtime.rearmRemainingMs(now)==0);
         if(raw!=null&&raw.isSignal()) {
             if(raw.family.contains("RANGE_FADE")) {record(runtime,snapshot,null,raw,now,
                     "RANGE_FADE_DIAGNOSTIC_ONLY",RANGE_DIAGNOSTIC,

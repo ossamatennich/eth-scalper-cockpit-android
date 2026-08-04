@@ -1462,6 +1462,9 @@ public class MarketWatchService extends Service {
         MarketSnapshot snapshot = buildSnapshot(now);
         boolean feedFresh = ethExecutionFeedFresh(now);
         MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+        ethRuntime.frozenProfitability.safeObserveTerminal(ethRuntime,snapshot,now,
+                ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                activeFinalSignal()!=null);
         legacyEthShadowBridge.observeTerminal(ethRuntime,snapshot,now,ethMarketFeedFresh(now),
                 sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),activeFinalSignal()!=null,lastTerminalAt,
                 structuralEthBars(now));
@@ -1501,6 +1504,9 @@ public class MarketWatchService extends Service {
         }
 
         SignalDecision rawDecision = signalEngine.evaluate(snapshot);
+        ethRuntime.frozenProfitability.safeObserveRaw(ethRuntime,snapshot,rawDecision,now,
+                ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                activeFinalPlan,terminalRearmComplete);
         boolean oppositeScenarioActive = rawDecision != null && rawDecision.isSignal()
                 && shouldBlockByScenarioMemory(rawDecision, snapshot, now);
         String replayRiskDiagnostic = rawDecision != null && rawDecision.isSignal()
@@ -2783,6 +2789,7 @@ public class MarketWatchService extends Service {
         o.put("c2ShortCandidates", legacyC2Short);
         o.put("purpose", "Full market playback: find missed LONG/SHORT opportunities and false entries");
         o.put("SHADOW_EXPERIMENT_SUMMARY",shadowExperimentSummaryJson(System.currentTimeMillis()));
+        o.put("FROZEN_PROFITABILITY_SUMMARY",frozenProfitabilitySummaryJson(System.currentTimeMillis()));
         return o;
     }
 
@@ -4783,6 +4790,7 @@ public class MarketWatchService extends Service {
         summary.put("marketSampleIntervalSec",PERSISTENT_MARKET_FRAME_INTERVAL_MS/1000);
         summary.put("available",recorderIndex!=null);
         summary.put("SHADOW_EXPERIMENT_SUMMARY",shadowExperimentSummaryJson(System.currentTimeMillis()));
+        summary.put("FROZEN_PROFITABILITY_SUMMARY",frozenProfitabilitySummaryJson(System.currentTimeMillis()));
         return summary;
     }
 
@@ -4796,6 +4804,16 @@ public class MarketWatchService extends Service {
         }
         shadow.put("ALL",new JSONObject(ShadowExperimentSummary.aggregate(all,now)));
         return shadow;
+    }
+
+    private JSONObject frozenProfitabilitySummaryJson(long now) throws Exception {
+        JSONObject frozen=new JSONObject();List<Map<String,Object>> all=new ArrayList<>();
+        for(Map.Entry<String,MarketRuntime> entry:marketCoordinator.runtimes().entrySet()){
+            Map<String,Object> snapshot=entry.getValue().frozenProfitability.safeSnapshot(entry.getValue(),now);
+            all.add(snapshot);frozen.put(entry.getKey(),new JSONObject(snapshot));
+        }
+        frozen.put("ALL",new JSONObject(FrozenProfitabilityShadowSummary.aggregate(all,now)));
+        return frozen;
     }
 
     private interface StatusObjectSupplier { JSONObject get() throws Exception; }

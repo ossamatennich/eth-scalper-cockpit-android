@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.4.7 — protocole frozen de calibration de rentabilité
+
+- ajoute un portefeuille shadow indépendant : ETH Range haute volatilité et deux branches SOL Accel38 simultanées ;
+- fige les seuils, les multiples de A, la signature structurelle et les buckets de sensibilité pour le futur holdout ;
+- applique un sizing frais inclus sous 14,55 USDT et remplit les terminaux exactement aux TP/SL planifiés ;
+- expose un résumé borné distinct sans importer les résultats historiques dans les compteurs futurs ;
+- politique `SHADOW_V23447_20260804`, schéma `SHADOW_SCHEMA_V8`, protocole public interdit, moteur public inchangé.
+
 ## 2.34.4.6 — intégrité des télémétries shadow
 
 - calcule Range Reclaim depuis `movementExtreme`, avec `movementOrigin` conservé uniquement comme diagnostic séparé ;

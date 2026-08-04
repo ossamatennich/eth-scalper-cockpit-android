@@ -85,7 +85,7 @@ public final class V23444ShadowAccountingTest {
         Map<String,Object> all=ShadowExperimentSummary.aggregate(List.of(eth,sol),safeNow());
         assertEquals(2,all.get("publicMovementKeys"));assertEquals(2,all.get("uniqueShadowOpportunities"));
         assertEquals(3,all.get("uniqueCombinedPublicAndShadowOpportunities"));
-        assertEquals("SHADOW_SCHEMA_V7",all.get("shadowSchemaVersion"));
+        assertEquals("SHADOW_SCHEMA_V8",all.get("shadowSchemaVersion"));
     }
 
     @Test public void openedRegistryFindsActiveTpAndSlAndEmitsOverlapOnlyOnce(){

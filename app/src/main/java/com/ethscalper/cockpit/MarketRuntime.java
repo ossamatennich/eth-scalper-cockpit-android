@@ -19,6 +19,7 @@ public final class MarketRuntime {
     /** Independent, bounded research state; never aliases a public plan or lifecycle field. */
     public final ShadowResearchCoordinator shadowResearch = new ShadowResearchCoordinator();
     public final ShadowExperimentSummary shadowExperiment;
+    public final FrozenProfitabilityShadowObserver frozenProfitability;
 
     public double last = Double.NaN, bid = Double.NaN, ask = Double.NaN;
     public long lastTickerAt, lastKlineAt, lastAggTradeAt, lastRestTickerAt, lastRestKlineAt;
@@ -40,6 +41,7 @@ public final class MarketRuntime {
         this.profile = profile;
         this.shadowExperiment=summary==null?new ShadowExperimentSummary():summary;
         this.recorder = new MarketDiagnosticRecorder(profile);
+        this.frozenProfitability = new FrozenProfitabilityShadowObserver();
     }
 
     public boolean hasActivePlan() {
@@ -81,6 +83,7 @@ public final class MarketRuntime {
 
     /** Clears diagnostics and pending state while preserving and re-inserting an active plan. */
     public void resetDiagnosticsPreservingActivePlan() {
+        long frozenResetAt=System.currentTimeMillis();
         ShadowPlanState resetShadow=shadowResearch.reset();
         shadowExperiment.safeReset(System.currentTimeMillis(),hasActivePlan());
         p02SetupTracker.reset();
@@ -91,6 +94,7 @@ public final class MarketRuntime {
         marketFrames.clear();
         recordedEngineDiagnosticKeys.clear();
         recorder.reset();
+        frozenProfitability.safeReset(this,frozenResetAt,hasActivePlan());
         recorder.record(System.currentTimeMillis(),"DIAGNOSTICS_RESET","V23402_DIAGNOSTICS_RESET",
                 "Diagnostics et frames non actifs réinitialisés.","STRUCTURAL_SHARED","","",
                 null,null,0,true,true,0,java.util.Collections.emptyMap());
