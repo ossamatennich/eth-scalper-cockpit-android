@@ -36,4 +36,12 @@ Le mode persistant est `ACTION_ON` par défaut. `DIAGNOSTICS_ONLY` bloque les no
 
 Les tests couvrent les seuils inclusifs, la causalité, les trous de données, la priorité, les arrondis, l’économie frais inclus, les terminaux, la migration, le mode et la suppression legacy. Les protocoles frozen/shadow, l’export complet, la connexion Binance Futures et les alertes existantes sont conservés.
 
+### Correctif après audit
+
+L’arbitrage ne publie plus la première confirmation legacy rencontrée. Pendant chaque cycle, toutes les qualifications legacy sont collectées, puis la qualification RAW est ajoutée ; un arbitre pur choisit ensuite un seul gagnant par priorité, timestamp et identifiant lexical. Les autres qualifications restent diagnostiques, sans persistance, alerte ni épisode marqué comme ouvert.
+
+Juste avant la persistance, une garde pure recontrôle le mode, les trois flux, l’absence de plan actif, la validité de cinq secondes, les quotes et l’économie frais inclus. Les refus tardifs conservent leur cause exacte. Le statut Scalp Action expose désormais `grossLossAtSl`, les frais, la perte totale, `theoreticalMaximumLoss` et `modeledRiskUsdt` de manière cohérente avec le budget frais inclus de 14,55 USDT. Les plans legacy format 2 gardent leur sémantique historique.
+
+Le résumé ajoute le temps réellement frais plafonné à cinq secondes par intervalle, les R positifs/négatifs, les frais, le profit factor, l’expectancy, le drawdown maximal et la fréquence par heure fraîche. Ces mesures restent descriptives et ne garantissent aucun bénéfice.
+
 Les anciens résultats « 16/16 » sont explicitement retirés comme base de décision. Les chiffres de recherche rétrospective (50 ouvertures, 38 TP, +18.003 R, +241.44 USDT) ne sont pas injectés dans les compteurs live et ne sont pas une promesse de rentabilité. Une validation prospective sur appareil et sur de nouvelles données reste nécessaire.

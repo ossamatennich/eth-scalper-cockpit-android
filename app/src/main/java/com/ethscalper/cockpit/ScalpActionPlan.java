@@ -7,21 +7,28 @@ public final class ScalpActionPlan {
     public final long qualificationAt,entryValidUntil;public final double entry,takeProfit,stopLoss;
     public final double targetDistance,stopDistance,resultCostPerUnit,netRewardPerUnit,netRiskPerUnit;
     public final double plannedNetRewardRisk,theoreticalMaximumLoss,plannedNetRewardUsdt,a;
-    public final int quantity;public final String signature;
+    public final int quantity;public final String signature;public final ScalpActionObservation observation;
 
     private ScalpActionPlan(ScalpActionPolicy.Route route,String episodeId,String side,String source,
                             long now,double entry,double tp,double sl,double target,double stop,double cost,
-                            double reward,double risk,double rr,double maxLoss,double rewardUsdt,double a,int qty){
+                            double reward,double risk,double rr,double maxLoss,double rewardUsdt,double a,int qty,
+                            ScalpActionObservation observation){
         this.route=route;this.episodeId=episodeId;this.side=side;sourceType=source;qualificationAt=now;
         entryValidUntil=now+5_000L;this.entry=entry;takeProfit=tp;stopLoss=sl;targetDistance=target;
         stopDistance=stop;resultCostPerUnit=cost;netRewardPerUnit=reward;netRiskPerUnit=risk;
         plannedNetRewardRisk=rr;theoreticalMaximumLoss=maxLoss;plannedNetRewardUsdt=rewardUsdt;
-        this.a=a;quantity=qty;signature=ScalpActionPolicy.ENGINE_ID+"|"+route.routeId+"|"+episodeId
+        this.a=a;quantity=qty;this.observation=observation;signature=ScalpActionPolicy.ENGINE_ID+"|"+route.routeId+"|"+episodeId
                 +"|"+side+"|"+entry+"|"+tp+"|"+sl;
     }
 
     public static BuildResult build(ScalpActionPolicy.Route route,String episodeId,String side,
                                     String source,long now,double bid,double ask,double a){
+        return build(route,episodeId,side,source,now,bid,ask,a,null);
+    }
+
+    public static BuildResult build(ScalpActionPolicy.Route route,String episodeId,String side,
+                                    String source,long now,double bid,double ask,double a,
+                                    ScalpActionObservation observation){
         MarketProfile p=MarketProfile.eth();if(route==null||episodeId==null||episodeId.isEmpty()
                 ||!("LONG".equals(side)||"SHORT".equals(side))||!validQuote(bid,ask)
                 ||!Double.isFinite(a)||a<=0)return BuildResult.reject("SCALP_ACTION_INVALID_QUOTE");
@@ -39,7 +46,7 @@ public final class ScalpActionPlan {
         qty=Math.min(p.maximumQuantity,Math.max(0,qty));if(qty<p.minimumQuantity)return BuildResult.reject("SCALP_ACTION_QUANTITY_ZERO");
         double loss=qty*risk;if(loss>p.finalRiskBudgetUsdt+1e-9)return BuildResult.reject("SCALP_ACTION_QUANTITY_ZERO");
         return BuildResult.accept(new ScalpActionPlan(route,episodeId,side,source,now,entry,tp,sl,
-                target,stop,cost,reward,risk,rr,loss,qty*reward,a,qty));
+                target,stop,cost,reward,risk,rr,loss,qty*reward,a,qty,observation));
     }
 
     public static ScalpActionPlan fromState(ActivePlanState s){
@@ -50,7 +57,7 @@ public final class ScalpActionPlan {
         return new ScalpActionPlan(r,s.episodeId,s.side,ScalpActionPolicy.RAW,
                 s.qualificationAt>0?s.qualificationAt:s.finalConfirmedAt,s.entry,s.takeProfit,s.stopLoss,
                 s.targetMove,s.stopDistance,cost,reward,risk,reward/risk,s.theoreticalMaximumLoss,
-                s.quantity*reward,Math.max(.35,s.avgRange20),s.quantity);
+                s.quantity*reward,Math.max(.35,s.avgRange20),s.quantity,null);
     }
 
     private static ScalpActionPolicy.Route route(String id){

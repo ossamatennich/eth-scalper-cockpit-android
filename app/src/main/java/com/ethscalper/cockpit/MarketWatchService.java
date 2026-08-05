@@ -122,15 +122,13 @@ public class MarketWatchService extends Service {
     private final ScalpActionContextTracker scalpActionContext = new ScalpActionContextTracker();
     private final ScalpActionMovementRegistry scalpActionMovements = new ScalpActionMovementRegistry();
     private final ScalpActionEngine scalpActionEngine = new ScalpActionEngine(scalpActionMovements);
+    private final ScalpActionCandidateArbiter scalpActionArbiter = new ScalpActionCandidateArbiter();
     private final ScalpActionSummary scalpActionSummary = new ScalpActionSummary();
     private final LegacyPublicComparator legacyPublicComparator = new LegacyPublicComparator();
     private ScalpActionModeStore scalpActionModeStore;
     private String scalpActionMode = ScalpActionEngine.ACTION_ON;
     private ScalpActionPlan activeScalpActionPlan;
     private boolean scalpActionEntryExpiredRecorded;
-    private ScalpActionEngine.Result pendingScalpActionResult;
-    private MarketSnapshot pendingScalpActionSnapshot;
-    private long pendingScalpActionAt;
     private MarketDataRouter marketDataRouter;
     private final Deque<Candle> ethCandles = new ArrayDeque<>();
     private final Deque<Candle> btcCandles = new ArrayDeque<>();
@@ -518,6 +516,7 @@ public class MarketWatchService extends Service {
             candidateTombstones.clear();
             scalpActionSummary.reset();
             scalpActionEngine.reset();
+            scalpActionArbiter.beginCycle(System.currentTimeMillis());
             legacyPublicComparator.reset();
             marketFrames.clear();
             legacyFrameSignals=legacyC1Long=legacyC1Short=legacyC2Long=legacyC2Short=0;
@@ -1504,9 +1503,12 @@ public class MarketWatchService extends Service {
     }
 
     private synchronized void evaluateSignal(long now) {
+        scalpActionArbiter.beginCycle(now);
         evaluateSecondaryMarkets(now);
         MarketSnapshot snapshot = buildSnapshot(now);
         boolean feedFresh = ethExecutionFeedFresh(now);
+        ScalpActionEngine.Common actionCommon=scalpActionCommon(now);
+        scalpActionSummary.observeFresh(now,actionCommon.ethFresh&&actionCommon.btcFresh&&actionCommon.solFresh);
         observeScalpActionLifecycle(snapshot,now);
         observeLegacyComparators(now);
         MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
@@ -1519,7 +1521,6 @@ public class MarketWatchService extends Service {
 
         // C01: an old feed blocks only creation; existing candidates and risks still advance.
         updateObservedSignals(snapshot, now, feedFresh);
-        publishPendingScalpAction();
         snapshot = buildSnapshot(now);
         feedFresh = ethExecutionFeedFresh(now);
         String currentSetup = setupCandidateFor(snapshot);
@@ -1531,6 +1532,7 @@ public class MarketWatchService extends Service {
                 && p02SetupTracker.observe(currentSetup);
 
         if (!feedFresh) {
+            finishScalpActionCycle(now);
             SignalDecision staleFeed = SignalDecision.waiting(
                     "V2326_ETH_FEED_STALE",
                     "Nouvelles entrées bloquées — gestion des risques existants maintenue.",
@@ -1557,6 +1559,7 @@ public class MarketWatchService extends Service {
                 ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
                 activeFinalPlan,terminalRearmComplete);
         safeObserveScalpActionRaw(rawDecision,snapshot,now);
+        finishScalpActionCycle(now);
         boolean oppositeScenarioActive = rawDecision != null && rawDecision.isSignal()
                 && shouldBlockByScenarioMemory(rawDecision, snapshot, now);
         String replayRiskDiagnostic = rawDecision != null && rawDecision.isSignal()
@@ -1605,7 +1608,13 @@ public class MarketWatchService extends Service {
                     marketFresh,sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
             if("CONFIRMED".equals(event.type)) {
                 MarketSnapshot current=MarketSnapshotFactory.build(runtime,sharedBtc,now);
-                legacyPublicComparator.open(event.plan,now);scalpActionSummary.legacySuppressed();
+                LegacyPublicComparator.OpenResult comparator=legacyPublicComparator.openResult(event.plan,now);
+                if(!comparator.opened)runtime.recorder.record(now,"LEGACY_COMPARATOR_SKIPPED_ACTIVE",
+                        comparator.reasonCode,"Comparateur legacy dÃ©jÃ  actif pour ce symbole.",
+                        "STRUCTURAL_SHARED","",event.fill.sleeve,event.signal,current,
+                        Math.max(0,now-event.plan.createdAt),marketFresh,
+                        sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,runtimePlanDetails(event.plan));
+                scalpActionSummary.legacySuppressed();
                 runtime.recorder.record(now,"LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1",
                         "LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1",
                         "Plan SOL legacy conservé en comparateur silencieux.","STRUCTURAL_SHARED","",event.fill.sleeve,
@@ -3226,18 +3235,28 @@ public class MarketWatchService extends Service {
         // Legacy confirmation is still fully calculated and observed, but 4.8 never lets it
         // become a new public plan. Scalp Action observes the exact causal confirmation first.
         SignalDecision legacyPublished=fill.publishedSignal;
-        safeObserveScalpActionLegacy(item,candidate,snapshot,now,fill);
+        ScalpActionEngine.Result scalpActionLegacy=safeObserveScalpActionLegacy(
+                item,candidate,snapshot,now,fill);
         legacyEthShadowBridge.observeConfirmation(
                 marketCoordinator.runtime(MarketProfile.ETH_SYMBOL),item,candidate,snapshot,now,
                 ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),lastTerminalAt,
                 fill,structuralEthBars(now));
         ActivePlanState legacyState=legacyComparatorState(legacyPublished,item,snapshot,now);
-        if(legacyState!=null)legacyPublicComparator.open(legacyState,now);
+        if(legacyState!=null){LegacyPublicComparator.OpenResult comparator=legacyPublicComparator.openResult(legacyState,now);
+            if(!comparator.opened){Map<String,Object> skipped=new LinkedHashMap<>();
+                skipped.put("symbol",MarketProfile.ETH_SYMBOL);
+                recordScalpActionEvent("LEGACY_COMPARATOR_SKIPPED_ACTIVE",
+                        comparator.reasonCode,null,null,now,skipped);}}
         scalpActionSummary.legacySuppressed();
         item.status="LEGACY_PUBLIC_SUPPRESSED";item.closedAt=now;
         item.lastConfirmationCode="LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1";
         pendingCandidateIndex.remove(item.candidateSignature);
         persistObservedSignalEvent(item,"LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1",snapshot,now);
+        Map<String,Object> suppressed=new LinkedHashMap<>();suppressed.put("legacySuppressed",true);
+        suppressed.put("sourceFamily",candidate.family);suppressed.put("sourceSleeve",item.sleeve);
+        recordScalpActionEvent("LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1",
+                "LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1",scalpActionLegacy,
+                scalpActionLegacy==null?null:scalpActionLegacy.plan,now,suppressed);
         return true;
     }
 
@@ -3282,63 +3301,83 @@ public class MarketWatchService extends Service {
     private void safeObserveScalpActionRaw(SignalDecision raw,MarketSnapshot snapshot,long now){
         try{if(raw==null||!raw.isSignal())return;
             ScalpActionContextTracker.Metrics metrics=scalpActionContext.metrics(now,raw.side);
-            handleScalpActionResult(scalpActionEngine.observeRaw(raw,snapshot,metrics,
+            collectScalpActionResult(scalpActionEngine.observeRaw(raw,snapshot,metrics,
                     scalpActionCommon(now),now),snapshot,now);
         }catch(RuntimeException error){scalpActionSummary.internalError();
             recordScalpActionEvent("SCALP_ACTION_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);}
     }
 
-    private void safeObserveScalpActionLegacy(ObservedSignal item,SignalDecision candidate,
+    private ScalpActionEngine.Result safeObserveScalpActionLegacy(ObservedSignal item,SignalDecision candidate,
                                                MarketSnapshot snapshot,long now,
                                                CandidateLifecycle.FillResult fill){
         try{String side=fill.publishedSignal==null?candidate.side:fill.publishedSignal.side;
             ScalpActionContextTracker.Metrics metrics=scalpActionContext.metrics(now,side);
             double move3=fill.normalizedMetrics!=null&&Double.isFinite(fill.normalizedMetrics.m3)
                     ?fill.normalizedMetrics.m3:("SHORT".equals(side)?-1.0:1.0)*snapshot.move3/Math.max(.35,snapshot.avgRange20);
-            ScalpActionEngine.Result result=scalpActionEngine.observeLegacy(side,item.sleeve,move3,
+            ScalpActionEngine.Result result=scalpActionEngine.observeLegacy(side,candidate.family,
+                    item.sleeve,move3,
                     snapshot,metrics,scalpActionCommon(now),now);
-            if(result!=null&&result.accepted()&&!result.virtualQualified){
-                scalpActionSummary.observation(result.route.routeId);
-                recordScalpActionEvent("SCALP_ACTION_QUALIFIED","",result,result.plan,now);
-                if(pendingScalpActionResult==null){pendingScalpActionResult=result;
-                    pendingScalpActionSnapshot=snapshot;pendingScalpActionAt=now;}
-            }else handleScalpActionResult(result,snapshot,now);
+            collectScalpActionResult(result,snapshot,now);
+            return result;
         }catch(RuntimeException error){scalpActionSummary.internalError();
-            recordScalpActionEvent("SCALP_ACTION_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);}
+            recordScalpActionEvent("SCALP_ACTION_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);
+            return null;}
     }
 
     private ScalpActionEngine.Common scalpActionCommon(long now){
         MarketRuntime sol=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);
-        boolean solFresh=sol!=null&&sol.bid>0&&sol.ask>=sol.bid&&sol.lastTickerAt>0
-                &&now-sol.lastTickerAt<=5_000L&&scalpActionContext.fresh(MarketProfile.SOL_SYMBOL,now,5_000L);
+        long solAge=sol==null||sol.lastTickerAt<=0?-1:Math.max(0,now-sol.lastTickerAt);
+        boolean solFresh=sol!=null&&sol.bid>0&&sol.ask>=sol.bid&&solAge>=0
+                &&solAge<=5_000L&&scalpActionContext.fresh(MarketProfile.SOL_SYMBOL,now,5_000L);
         return new ScalpActionEngine.Common(scalpActionMode,ethMarketFeedFresh(now),
                 sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),solFresh,
                 activeFinalSignal()!=null||marketCoordinator.activePlanCount()>0,
-                activeScalpActionPlan!=null);
+                activeScalpActionPlan!=null,solAge);
     }
 
-    private void handleScalpActionResult(ScalpActionEngine.Result result,MarketSnapshot snapshot,long now){
+    private void collectScalpActionResult(ScalpActionEngine.Result result,MarketSnapshot snapshot,long now){
         if(result==null||!result.matched())return;scalpActionSummary.observation(result.route.routeId);
         if(!result.accepted()){scalpActionSummary.skip(result.reasonCode);
-            recordScalpActionEvent("SCALP_ACTION_REJECTED",result.reasonCode,result,null,now);return;}
+            if("SCALP_ACTION_DUPLICATE_EPISODE".equals(result.reasonCode)){
+                scalpActionSummary.duplicate();recordScalpActionEvent("SCALP_ACTION_DUPLICATE_GROUPED",
+                        result.reasonCode,result,null,now);
+            }else recordScalpActionEvent("SCALP_ACTION_REJECTED",result.reasonCode,result,null,now);
+            return;}
         recordScalpActionEvent("SCALP_ACTION_QUALIFIED",result.reasonCode,result,result.plan,now);
-        if(result.virtualQualified){if(scalpActionEngine.markOpened(result)){activeScalpActionPlan=result.plan;
-                scalpActionSummary.qualified(false);}return;}
-        if(publishScalpActionPlan(result,result.plan,snapshot,now))return;
-        scalpActionSummary.skip("SCALP_ACTION_PERSISTENCE_FAILED");
+        scalpActionArbiter.collect(result,snapshot,now);
     }
 
-    private void publishPendingScalpAction(){
-        ScalpActionEngine.Result result=pendingScalpActionResult;MarketSnapshot snapshot=pendingScalpActionSnapshot;
-        long at=pendingScalpActionAt;pendingScalpActionResult=null;pendingScalpActionSnapshot=null;pendingScalpActionAt=0;
-        if(result!=null&&snapshot!=null&&!publishScalpActionPlan(result,result.plan,snapshot,at))
-            scalpActionSummary.skip("SCALP_ACTION_PERSISTENCE_FAILED");
+    private void finishScalpActionCycle(long now){
+        try{ScalpActionCandidateArbiter.Resolution resolution=scalpActionArbiter.resolve();
+            for(ScalpActionCandidateArbiter.Candidate loser:resolution.notSelected){
+                scalpActionSummary.skip("SCALP_ACTION_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY");
+                recordScalpActionEvent("SCALP_ACTION_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY",
+                        "SCALP_ACTION_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY",loser.result,
+                        loser.result.plan,now);}
+            if(resolution.winner==null)return;
+            ScalpActionEngine.Result result=resolution.winner.result;
+            if(result.virtualQualified){
+                if(scalpActionEngine.markOpened(result)){activeScalpActionPlan=result.plan;
+                    scalpActionSummary.qualified(false);}
+                return;
+            }
+            ScalpActionPublicationGuard.PublicationResult published=publishScalpActionPlan(
+                    result,result.plan,resolution.winner.snapshot,now);
+            if(!published.published){scalpActionSummary.skip(published.reasonCode);
+                recordScalpActionEvent("SCALP_ACTION_REJECTED",published.reasonCode,result,result.plan,now);}
+        }catch(RuntimeException error){scalpActionSummary.internalError();
+            recordScalpActionEvent("SCALP_ACTION_INTERNAL_ERROR","SCALP_ACTION_INTERNAL_ERROR",
+                    null,null,now);}
     }
 
-    private boolean publishScalpActionPlan(ScalpActionEngine.Result result,ScalpActionPlan plan,
-                                            MarketSnapshot snapshot,long now){
-        if(result==null||plan==null||activeFinalSignal()!=null||marketCoordinator.activePlanCount()>0
-                ||!ScalpActionEngine.ACTION_ON.equals(scalpActionMode))return false;
+    private ScalpActionPublicationGuard.PublicationResult publishScalpActionPlan(
+            ScalpActionEngine.Result result,ScalpActionPlan plan,MarketSnapshot snapshot,long now){
+        MarketSnapshot current=buildSnapshot(now);ScalpActionEngine.Common common=scalpActionCommon(now);
+        ScalpActionPublicationGuard.PublicationResult gate=ScalpActionPublicationGuard.validate(plan,
+                new ScalpActionPublicationGuard.Context(scalpActionMode,now,common.ethFresh,
+                        common.btcFresh,common.solFresh,common.publicPlanActive,common.actionPlanActive,
+                        current.marketBid,current.marketAsk));
+        if(!gate.published)return gate;
         String reasonText="Plan manuel Scalp Action · "+plan.route.routeId;
         SignalDecision decision=SignalDecision.confirmed(MarketProfile.eth(),plan.side,plan.route.family,
                 plan.route.reasonCode,reasonText,plan.route.score,plan.quantity,plan.entry,
@@ -3358,9 +3397,13 @@ public class MarketWatchService extends Service {
                         MarketProfile.eth().finalRiskBudgetUsdt,plan.theoreticalMaximumLoss)
                 .scalpAction(ScalpActionPolicy.ENGINE_ID,plan.route.routeId,plan.episodeId,
                         plan.qualificationAt,plan.entryValidUntil,"VALIDE").build();
-        if(!activePlanPersistence.saveForMarket(state)){
-            recordScalpActionEvent("SCALP_ACTION_PERSISTENCE_FAILED","SCALP_ACTION_PERSISTENCE_FAILED",result,plan,now);return false;}
-        if(!scalpActionEngine.markOpened(result)){activePlanPersistence.clear(MarketProfile.ETH_SYMBOL);return false;}
+        boolean persisted;try{persisted=activePlanPersistence!=null&&activePlanPersistence.saveForMarket(state);}
+        catch(RuntimeException error){persisted=false;scalpActionSummary.internalError();}
+        if(!persisted){
+            recordScalpActionEvent("SCALP_ACTION_PERSISTENCE_FAILED","SCALP_ACTION_PERSISTENCE_FAILED",result,plan,now);
+            return ScalpActionPublicationGuard.PublicationResult.rejected("SCALP_ACTION_PERSISTENCE_FAILED");}
+        if(!scalpActionEngine.markOpened(result)){activePlanPersistence.clear(MarketProfile.ETH_SYMBOL);
+            return ScalpActionPublicationGuard.PublicationResult.rejected("SCALP_ACTION_DUPLICATE_EPISODE");}
         ObservedSignal item=new ObservedSignal(++observedSignalId,now,decision,snapshot.marketLast,snapshot);
         item.status="ACTIVE";item.entryTriggered=true;item.entryTriggeredAt=now;item.entryTriggerPrice=plan.entry;
         item.simulatedFillAt=now;item.simulatedFillPrice=plan.entry;item.finalConfirmedAt=now;
@@ -3372,8 +3415,11 @@ public class MarketWatchService extends Service {
         activeScalpActionPlan=plan;scalpActionEntryExpiredRecorded=false;lastSignal=decision;lastDecision=decision;
         lastSignalAt=now;lastActivePlanPersistAt=now;scalpActionSummary.qualified(true);
         persistObservedSignalEvent(item,"SCALP_ACTION_PLAN_PERSISTED",snapshot,now);
-        recordScalpActionEvent("SCALP_ACTION_PLAN_PERSISTED","",result,plan,now);
-        notifyScalpActionPlan(item,plan);broadcastStatus("scalp_action_plan","Nouveau plan manuel Scalp Action");return true;
+        Map<String,Object> persistedDetails=new LinkedHashMap<>();persistedDetails.put("persisted",true);
+        persistedDetails.put("entryWindowStatus","VALIDE");
+        recordScalpActionEvent("SCALP_ACTION_PLAN_PERSISTED","",result,plan,now,persistedDetails);
+        notifyScalpActionPlan(item,plan);broadcastStatus("scalp_action_plan","Nouveau plan manuel Scalp Action");
+        return ScalpActionPublicationGuard.PublicationResult.ready();
     }
 
     private void notifyScalpActionPlan(ObservedSignal item,ScalpActionPlan plan){
@@ -3385,7 +3431,9 @@ public class MarketWatchService extends Service {
         if(result.alreadyAlerted)postSilentSignalNotification(item.notificationId,title,body);
         else if(!result.posted)scheduleAudibleFinalSignalRetry(title,body,item.notificationId,
                 MarketProfile.ETH_SYMBOL,item.notificationSignature,0);
-        recordScalpActionEvent("SCALP_ACTION_ALERT_POSTED",result.posted?"POSTED":"RETRY",null,plan,System.currentTimeMillis());
+        Map<String,Object> alert=ScalpActionTelemetry.alert(result.posted,result.alreadyAlerted);
+        recordScalpActionEvent("SCALP_ACTION_ALERT_POSTED",result.posted?"POSTED":"RETRY",
+                null,plan,System.currentTimeMillis(),alert);
     }
 
     private ActivePlanState legacyComparatorState(SignalDecision s,ObservedSignal item,MarketSnapshot snap,long now){
@@ -3405,21 +3453,22 @@ public class MarketWatchService extends Service {
 
     private void recordScalpActionEvent(String type,String reason,ScalpActionEngine.Result result,
                                         ScalpActionPlan plan,long now){
-        try{Map<String,Object>d=new LinkedHashMap<>();d.put("engineId",ScalpActionPolicy.ENGINE_ID);
-            d.put("policyId",ScalpActionPolicy.POLICY_ID);d.put("schema",ScalpActionPolicy.SCHEMA_ID);
+        recordScalpActionEvent(type,reason,result,plan,now,null);
+    }
+
+    private void recordScalpActionEvent(String type,String reason,ScalpActionEngine.Result result,
+                                        ScalpActionPlan plan,long now,Map<String,Object> extra){
+        try{Map<String,Object>d=new LinkedHashMap<>(ScalpActionTelemetry.details(result,plan,now));
             d.put("versionName",BuildConfig.VERSION_NAME);d.put("mode",scalpActionMode);
-            if(result!=null&&result.route!=null){d.put("routeId",result.route.routeId);d.put("routePriority",result.route.priority);d.put("episodeId",result.episode.episodeId);d.put("duplicateCount",result.episode.duplicateCount);}
-            MarketSnapshot current=buildSnapshot(now);String side=plan==null?result!=null&&result.episode!=null?result.episode.side:"":plan.side;
-            ScalpActionContextTracker.Metrics metrics=side.isEmpty()?null:scalpActionContext.metrics(now,side);
-            d.put("marketFeedFresh",ethMarketFeedFresh(now));d.put("btcFeedFresh",sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
-            MarketRuntime sol=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);long solAge=sol==null||sol.lastTickerAt<=0?-1:Math.max(0,now-sol.lastTickerAt);
-            d.put("solFeedFresh",solAge>=0&&solAge<=5_000L);d.put("solQuoteAgeMs",solAge);
-            putFinite(d,"bid",current.marketBid);putFinite(d,"ask",current.marketAsk);putFinite(d,"mid",(current.marketBid+current.marketAsk)/2d);
-            putFinite(d,"A",Math.max(.35,current.avgRange20));putFinite(d,"d_range_pos",1d-current.rangePosition);
-            putFinite(d,"rangePosition",current.rangePosition);putFinite(d,"sourceMove3",current.move3);
-            if(metrics!=null){putFinite(d,"eth_dret_480",metrics.ethDret480);putFinite(d,"sol_rv_30",metrics.solRv30);putFinite(d,"sol_cov_180",metrics.solCov180);}
-            d.put("publicPlanActive",activeFinalSignal()!=null||marketCoordinator.activePlanCount()>0);
-            if(plan!=null){d.put("sourceType",plan.sourceType);d.put("side",plan.side);d.put("entry",plan.entry);d.put("tp",plan.takeProfit);d.put("sl",plan.stopLoss);d.put("targetMultiple",plan.route.targetMultiple);d.put("stopMultiple",plan.route.stopMultiple);d.put("targetDistance",plan.targetDistance);d.put("stopDistance",plan.stopDistance);d.put("resultCostPerUnit",plan.resultCostPerUnit);d.put("netRewardPerUnit",plan.netRewardPerUnit);d.put("netRiskPerUnit",plan.netRiskPerUnit);d.put("quantity",plan.quantity);d.put("plannedNetRewardRisk",plan.plannedNetRewardRisk);d.put("theoreticalMaximumLoss",plan.theoreticalMaximumLoss);d.put("qualificationAt",plan.qualificationAt);d.put("entryValidUntil",plan.entryValidUntil);}
+            MarketSnapshot current=buildSnapshot(now);
+            if(result==null&&(plan==null||plan.observation==null)){
+                d.put("marketFeedFresh",ethMarketFeedFresh(now));
+                d.put("btcFeedFresh",sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
+                MarketRuntime sol=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);
+                long solAge=sol==null||sol.lastTickerAt<=0?-1:Math.max(0,now-sol.lastTickerAt);
+                d.put("solFeedFresh",solAge>=0&&solAge<=5_000L);d.put("solQuoteAgeMs",solAge);
+                d.put("publicPlanActive",activeFinalSignal()!=null||marketCoordinator.activePlanCount()>0);}
+            if(extra!=null)d.putAll(extra);
             marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,type,reason,
                     reason,"SCALP_ACTION_V1","","",lastDecision,current,0,
                     ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,d);
@@ -3427,8 +3476,12 @@ public class MarketWatchService extends Service {
     }
 
     private void recordScalpActionTerminalEvent(ScalpActionPlan plan,ScalpActionPlan.Terminal terminal,long now){
+        Map<String,Object> terminalFields=new LinkedHashMap<>();terminalFields.put("touchQuote",terminal.touchQuote);
+        terminalFields.put("fillPrice",terminal.fillPrice);terminalFields.put("terminalStatus",terminal.status);
+        terminalFields.put("resultR",terminal.resultR);terminalFields.put("grossResultUsdt",terminal.grossResultUsdt);
+        terminalFields.put("estimatedFeesUsdt",terminal.estimatedFeesUsdt);terminalFields.put("netResultUsdt",terminal.netResultUsdt);
         recordScalpActionEvent(ScalpActionPlan.TP.equals(terminal.status)?"SCALP_ACTION_TP_TOUCHED":"SCALP_ACTION_SL_TOUCHED",
-                terminal.status,null,plan,now);
+                terminal.status,null,plan,now,terminalFields);
         try{Map<String,Object>d=new LinkedHashMap<>();d.put("engineId",ScalpActionPolicy.ENGINE_ID);d.put("policyId",ScalpActionPolicy.POLICY_ID);
             d.put("schema",ScalpActionPolicy.SCHEMA_ID);d.put("routeId",plan.route.routeId);d.put("episodeId",plan.episodeId);
             d.put("touchQuote",terminal.touchQuote);d.put("fillPrice",terminal.fillPrice);d.put("terminalStatus",terminal.status);
@@ -5394,14 +5447,17 @@ public class MarketWatchService extends Service {
         putPrice(value,"lastPrice",p.lastPrice);putPrice(value,"lastBid",p.lastBid);putPrice(value,"lastAsk",p.lastAsk);
         value.put("createdAt",p.createdAt);value.put("entryTriggeredAt",p.entryTriggeredAt);
         value.put("finalConfirmedAt",p.finalConfirmedAt);value.put("resultCostPerUnit",p.resultCostPerUnit);
-        value.put("riskAllowancePerUnit",p.riskAllowancePerUnit);value.put("qualityRiskBudget",p.qualityRiskBudget);
-        value.put("theoreticalMaximumLoss",p.theoreticalMaximumLoss);
+        boolean action=ScalpActionPolicy.ENGINE_ID.equals(p.engineId);
+        if(action){for(Map.Entry<String,Object> field:ScalpActionRiskFields.action(p.quantity,p.stopDistance).entrySet())
+                value.put(field.getKey(),field.getValue());}
+        else{value.put("riskAllowancePerUnit",p.riskAllowancePerUnit);value.put("qualityRiskBudget",p.qualityRiskBudget);
+            value.put("theoreticalMaximumLoss",p.theoreticalMaximumLoss);}
         double gross=Math.abs(p.entry-p.stopLoss)*p.quantity;
         double fees=p.resultCostPerUnit*p.quantity;
-        value.put("grossLossAtSl",gross);value.put("estimatedRoundTripFees",fees);
-        value.put("estimatedTotalLossAtSl",gross+fees);
-        value.put("riskBudgetExcludingFees",DynamicTradePlan.GROSS_RISK_BUDGET_USDT);
-        value.put("modeledRiskUsdt",gross);return value;
+        if(!action){value.put("grossLossAtSl",gross);value.put("estimatedRoundTripFees",fees);
+            value.put("estimatedTotalLossAtSl",gross+fees);
+            value.put("riskBudgetExcludingFees",DynamicTradePlan.GROSS_RISK_BUDGET_USDT);
+            value.put("modeledRiskUsdt",gross);}return value;
     }
 
     private JSONObject ethActivePlanJson(SignalDecision signal,ObservedSignal observed,
@@ -5419,16 +5475,17 @@ public class MarketWatchService extends Service {
         putPrice(value,"lastPrice",snapshot.ethLast);putPrice(value,"lastBid",snapshot.ethBid);
         putPrice(value,"lastAsk",snapshot.ethAsk);
         DynamicTradePlan.Result plan=observed==null?null:observed.dynamicTradePlan;
-        value.put("resultCostPerUnit",action?MarketProfile.eth().resultRoundTripCostReference:plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:plan.resultCostPerUnit);
+        if(action){for(Map.Entry<String,Object> field:ScalpActionRiskFields.action(signal.quantity,signal.stopDistance).entrySet())
+                value.put(field.getKey(),field.getValue());return value;}
+        value.put("resultCostPerUnit",plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:plan.resultCostPerUnit);
         value.put("riskAllowancePerUnit",plan==null?DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH:plan.riskAllowancePerUnit);
         value.put("qualityRiskBudget",plan==null?DynamicTradePlan.DEFAULT_RISK_BUDGET_USDT:plan.qualityRiskBudget);
-        double loss=signal.quantity*signal.stopDistance;
-        double fees=signal.quantity*(plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:
-                plan.resultCostPerUnit);
-        value.put("theoreticalMaximumLoss",loss);value.put("grossLossAtSl",loss);
-        value.put("estimatedRoundTripFees",fees);value.put("estimatedTotalLossAtSl",loss+fees);
-        value.put("riskBudgetExcludingFees",DynamicTradePlan.GROSS_RISK_BUDGET_USDT);
-        value.put("modeledRiskUsdt",loss);return value;
+        double legacyCost=plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:plan.resultCostPerUnit;
+        double legacyAllowance=plan==null?DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH:plan.riskAllowancePerUnit;
+        double legacyBudget=plan==null?DynamicTradePlan.DEFAULT_RISK_BUDGET_USDT:plan.qualityRiskBudget;
+        for(Map.Entry<String,Object> field:ScalpActionRiskFields.legacy(signal.quantity,
+                signal.stopDistance,legacyCost,legacyAllowance,legacyBudget).entrySet())
+            value.put(field.getKey(),field.getValue());return value;
     }
 
 

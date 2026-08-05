@@ -2,6 +2,11 @@
 
 ## 2.34.4.8 — Scalp Action V1 manuel
 
+- corrige l’arbitrage global inter-source : toutes les confirmations legacy et la décision RAW d’un même cycle sont comparées avant l’unique publication ;
+- revalide les flux, le plan actif, la fenêtre de cinq secondes, l’économie et le budget juste avant la persistance, avec un code de refus précis ;
+- affiche pour Scalp Action la perte totale frais inclus et le budget exact de 14,55 USDT, sans modifier le rendu des plans legacy restaurés ;
+- complète le résumé live avec temps frais, profit factor, expectancy, drawdown, frais et fréquence ;
+- conserve les métriques de confirmation au timestamp causal et ajoute les événements explicites de non-sélection, doublon et comparateur occupé ;
 - ajoute `NMC_SCALP_ACTION_V1`, moteur public ETH indépendant à cinq voies figées ;
 - observe causalement les décisions brutes et les confirmations legacy, avec contexte ETH/SOL/BTC borné ;
 - calcule l’entrée au bid/ask exécutable, des niveaux conservateurs et une quantité frais inclus sous 14,55 USDT ;

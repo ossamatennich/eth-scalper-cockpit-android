@@ -7,8 +7,11 @@ import java.util.Map;
 public final class LegacyPublicComparator {
     private final LinkedHashMap<String,Entry> active=new LinkedHashMap<>();
     private long opened,tp,sl,skipped;
-    public synchronized boolean open(ActivePlanState plan,long now){if(plan==null)return false;
-        if(active.containsKey(plan.symbol)){skipped++;return false;}active.put(plan.symbol,new Entry(plan,now));opened++;return true;}
+    public synchronized boolean open(ActivePlanState plan,long now){return openResult(plan,now).opened;}
+    public synchronized OpenResult openResult(ActivePlanState plan,long now){
+        if(plan==null)return new OpenResult(false,"LEGACY_COMPARATOR_INVALID_PLAN");
+        if(active.containsKey(plan.symbol)){skipped++;return new OpenResult(false,"LEGACY_COMPARATOR_SKIPPED_ACTIVE");}
+        active.put(plan.symbol,new Entry(plan,now));opened++;return new OpenResult(true,"");}
     public synchronized Terminal observe(String symbol,long now,double bid,double ask,boolean fresh){Entry e=active.get(symbol);
         if(e==null||!fresh||!valid(bid,ask))return null;double q="LONG".equals(e.plan.side)?bid:ask;
         boolean stop="LONG".equals(e.plan.side)?q<=e.plan.stopLoss:q>=e.plan.stopLoss;
@@ -20,6 +23,8 @@ public final class LegacyPublicComparator {
     public synchronized void reset(){active.clear();opened=tp=sl=skipped=0;}
     private static boolean valid(double b,double a){return Double.isFinite(b)&&b>0&&Double.isFinite(a)&&a>0&&a>=b;}
     private static final class Entry{final ActivePlanState plan;final long openedAt;Entry(ActivePlanState p,long at){plan=p;openedAt=at;}}
+    public static final class OpenResult{public final boolean opened;public final String reasonCode;
+        OpenResult(boolean opened,String reasonCode){this.opened=opened;this.reasonCode=reasonCode;}}
     public static final class Terminal{public final ActivePlanState plan;public final String status;public final long at;public final double touchQuote,netResultUsdt;
         Terminal(ActivePlanState p,String s,long a,double q,double n){plan=p;status=s;at=a;touchQuote=q;netResultUsdt=n;}}
 }

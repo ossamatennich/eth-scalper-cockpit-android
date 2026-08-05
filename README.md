@@ -4,6 +4,8 @@ Application Android de recherche qui analyse en continu **ETHUSDT** et **SOLUSDT
 
 La version courante est **2.34.4.8** (`versionCode 23448`). L’APK recommandée est **NMC Stable 4.8 — Scalp Action V1**, signée durablement. `NMC_SCALP_ACTION_V1` devient l’unique source des nouveaux plans finaux manuels ETH. L’ancien moteur continue ses calculs et diagnostics dans un comparateur silencieux, sans publier de nouveaux plans ETH ou SOL. Les plans actifs restaurés d’une version antérieure restent inchangés jusqu’à leur TP ou SL. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
 
+Les qualifications RAW et legacy d’un même cycle sont arbitrées ensemble avant toute publication. Une seule voie peut gagner selon la priorité figée ; les autres restent diagnostiques. La publication refait ensuite tous les contrôles de fraîcheur, de plan actif, de fenêtre d’entrée et de risque sans déplacer l’entrée, le TP ou le SL.
+
 ## Principes essentiels
 
 - un seul plan public actif maximum ;
