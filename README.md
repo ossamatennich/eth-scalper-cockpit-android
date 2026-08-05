@@ -2,20 +2,23 @@
 
 Application Android de recherche qui analyse en continu **ETHUSDT** et **SOLUSDT**. **BTCUSDT** sert uniquement de contexte partagé.
 
-La version courante est **2.34.4.7** (`versionCode 23447`). L’APK recommandée est l’édition **NMC Stable 4.7**, signée durablement. Elle ajoute le protocole figé `FROZEN_PROFITABILITY_SHADOW_V1_20260804`, exclusivement destiné aux prochains diagnostics hors échantillon : ETH Range haute volatilité et SOL Continuation Accel38 A/B sont simulés dans un portefeuille indépendant, sans bloquer, publier ou modifier le moindre plan public. Le remplissage shadow est calculé aux niveaux TP/SL planifiés et le sizing inclut les frais. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
+La version courante est **2.34.4.8** (`versionCode 23448`). L’APK recommandée est **NMC Stable 4.8 — Scalp Action V1**, signée durablement. `NMC_SCALP_ACTION_V1` devient l’unique source des nouveaux plans finaux manuels ETH. L’ancien moteur continue ses calculs et diagnostics dans un comparateur silencieux, sans publier de nouveaux plans ETH ou SOL. Les plans actifs restaurés d’une version antérieure restent inchangés jusqu’à leur TP ou SL. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
 
 ## Principes essentiels
 
-- un plan actif maximum par marché ;
-- ETH et SOL peuvent avoir chacun un plan actif ;
+- un seul plan public actif maximum ;
+- les nouveaux plans finaux Scalp Action concernent uniquement ETH ; SOL reste observé comme contexte ;
 - stop causal déterminé par la structure, la volatilité, l’excursion adverse, le spread et le tick du marché ;
 - perte brute entrée–SL limitée à 14,55 USDT, frais affichés séparément ;
-- une alerte sonore uniquement lorsqu’un nouveau plan final est confirmé ;
+- une alerte sonore uniquement lorsqu’un nouveau plan Scalp Action est persisté ;
+- entrée affichée valable cinq secondes, sans déplacement ultérieur des niveaux ;
+- rollback local immédiat `ACTION_ON` / `DIAGNOSTICS_ONLY` dans Outils ;
 - après publication, le plan est immuable et se termine uniquement au TP ou au SL ;
 - `realTradingAllowed=false` ;
-- SOL reste un profil de recherche.
+- SOL reste un profil de recherche et de contexte ;
 - la politique `SHADOW_V23447_20260804` et le schéma `SHADOW_SCHEMA_V8` restent silencieux et purement observationnels ;
 - le protocole frozen est `futureHoldoutOnly=true`, `publicActivationAllowed=false` et `automaticPromotionAllowed=false`.
+- `realTradingAllowed=false` et aucune API Binance privée n’est utilisée.
 
 ## Construire et tester
 

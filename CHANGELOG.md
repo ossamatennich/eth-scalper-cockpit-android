@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.4.8 — Scalp Action V1 manuel
+
+- ajoute `NMC_SCALP_ACTION_V1`, moteur public ETH indépendant à cinq voies figées ;
+- observe causalement les décisions brutes et les confirmations legacy, avec contexte ETH/SOL/BTC borné ;
+- calcule l’entrée au bid/ask exécutable, des niveaux conservateurs et une quantité frais inclus sous 14,55 USDT ;
+- neutralise les nouvelles publications legacy ETH/SOL tout en conservant diagnostics, frozen, shadow et comparateurs silencieux ;
+- restaure sans conversion les plans déjà actifs, ajoute une fenêtre d’entrée de cinq secondes et un rollback local persistant ;
+- reste manuel uniquement, sans ordre automatique, avec `realTradingAllowed=false`.
+
 ## 2.34.4.7 — protocole frozen de calibration de rentabilité
 
 - ajoute un portefeuille shadow indépendant : ETH Range haute volatilité et deux branches SOL Accel38 simultanées ;
