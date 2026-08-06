@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.4.9 — CV Core V1, moteur public unique
+
+- remplace le moteur public 4.8 par `NMC_SCALP_CV_CORE_V1`, toujours actif et limité à trois voies ETH figées ;
+- fixe les épisodes de mouvement avant toute règle, avec déduplication causale de 180 secondes et sans cooldown terminal ;
+- calcule les rendements et efficacités directionnels ETH/SOL sur des historiques une seconde bornés, sans point futur ;
+- réserve 14,55 USDT de risque frais inclus aux voies RAW et exactement 7,275 USDT à la confirmation P02 ;
+- supprime le mode utilisateur, les cinq anciennes voies et le comparateur legacy, tout en conservant la migration d’un plan 4.8 déjà actif ;
+- maintient la suppression des nouvelles publications legacy ETH/SOL, les diagnostics complets et `realTradingAllowed=false`.
+
 ## 2.34.4.8 — Scalp Action V1 manuel
 
 - corrige l’arbitrage global inter-source : toutes les confirmations legacy et la décision RAW d’un même cycle sont comparées avant l’unique publication ;

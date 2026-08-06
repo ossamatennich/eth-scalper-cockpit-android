@@ -99,10 +99,10 @@ public final class MarketDiagnosticRecorder {
         String type=String.valueOf(record.values.get("eventType"));
         if(type.contains("CANDIDATE"))candidates+=delta;
         if(type.contains("REJECT")||type.contains("TOMBSTONE")||type.contains("MISSED"))rejected+=delta;
-        if("PLAN_CONFIRMED".equals(type))confirmed+=delta;
+        if("PLAN_CONFIRMED".equals(type)||"CV_CORE_PLAN_PERSISTED".equals(type))confirmed+=delta;
         if("PLAN_RESTORED".equals(type))restored+=delta;
-        if("TP_TOUCHED".equals(type))tp+=delta;
-        if("SL_TOUCHED".equals(type))sl+=delta;
+        if("TP_TOUCHED".equals(type)||"CV_CORE_TP_TOUCHED".equals(type))tp+=delta;
+        if("SL_TOUCHED".equals(type)||"CV_CORE_SL_TOUCHED".equals(type))sl+=delta;
     }
 
     private LinkedHashMap<String,Object> base(long at,String type,String code,String text,
@@ -147,6 +147,7 @@ public final class MarketDiagnosticRecorder {
     private static void normalizeTerminal(Map<String,Object> value) {
         String type=String.valueOf(value.get("eventType"));
         if("TP_TOUCHED".equals(type)||"SL_TOUCHED".equals(type)
+                ||"CV_CORE_TP_TOUCHED".equals(type)||"CV_CORE_SL_TOUCHED".equals(type)
                 ||"SHADOW_TP_TOUCHED".equals(type)||"SHADOW_SL_TOUCHED".equals(type))
             value.put("terminalStatus",type);
         else value.put("terminalStatus","");

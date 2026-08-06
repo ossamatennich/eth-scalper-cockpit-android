@@ -72,8 +72,8 @@ public class MainActivity extends Activity {
     private TextView connection,feedAge,generalState,btcContext,aggregateRisk,planHistory;
     private LinearLayout activePlansHost;
     private final Map<String,ActivePlanCardView> activePlanCards=new LinkedHashMap<>();
-    private TextView diagnosticHealth,diagnosticRecent,diagnosticDetails,exportProgress,aiInfo,scalpActionModeInfo;
-    private Button exportButton,scalpActionModeButton;
+    private TextView diagnosticHealth,diagnosticRecent,diagnosticDetails,exportProgress,aiInfo,cvCoreInfo;
+    private Button exportButton;
     private int selectedSection=COCKPIT;
     private JSONObject latestState=new JSONObject();
     private JSONObject latestValidState=new JSONObject();
@@ -191,9 +191,8 @@ public class MainActivity extends Activity {
         return wrap(root);}
 
     private ScrollView buildToolsScreen(){LinearLayout root=screenRoot();addSectionHeader(root,"Outils","Tests et réglages non décisionnels");
-        LinearLayout action=card(root,"MOTEUR SCALP ACTION",CYAN);
-        scalpActionModeInfo=text("Mode : ACTION_ON\nNMC_SCALP_ACTION_V1 · manuel uniquement\nrealTradingAllowed=false",12,MUTED,false);action.addView(scalpActionModeInfo);
-        scalpActionModeButton=actionButton("Passer en diagnostics seulement",AMBER,this::confirmScalpActionModeChange);action.addView(scalpActionModeButton);
+        LinearLayout action=card(root,"MOTEUR CV CORE",CYAN);
+        cvCoreInfo=text("MOTEUR : CV CORE V1\nÉTAT : ACTIF\nMODE : SIGNAUX MANUELS\nTRADING AUTOMATIQUE : NON",12,MUTED,false);action.addView(cvCoreInfo);
         LinearLayout ai=card(root,"IA INFORMATIVE",CYAN);aiInfo=text(aiStatusText(),12,MUTED,false);ai.addView(aiInfo);
         ai.addView(actionButton("Réglages IA OpenAI",CYAN,this::showAiSettingsDialog));ai.addView(actionButton("Tester clé IA",AMBER,this::testAiKeyNow));
         LinearLayout tests=card(root,"TESTS LOCAUX",AMBER);tests.addView(actionButton("Tester alerte forte",RED,()->sendServiceAction(MarketWatchService.ACTION_TEST_ALERT,"ALERTE SONORE DE TEST ENVOYÉE")));
@@ -220,10 +219,7 @@ public class MainActivity extends Activity {
         JSONObject recorder=latestState.optJSONObject("overnightRecorder");setChanged(diagnosticHealth,healthText(latestState,markets,btc,recorder));
         setChanged(diagnosticRecent,recentEvents(latestState.optJSONArray("diagnostics"),5));
         setChanged(diagnosticDetails,technicalDetailsText(latestState,recorder));
-        String actionMode=latestState.optString("scalpActionMode",ScalpActionEngine.ACTION_ON);
-        setChanged(scalpActionModeInfo,"Mode : "+actionMode+"\n"+ScalpActionPolicy.ENGINE_ID+" · manuel uniquement\nrealTradingAllowed=false");
-        if(scalpActionModeButton!=null)scalpActionModeButton.setText(ScalpActionEngine.ACTION_ON.equals(actionMode)
-                ?"Passer en diagnostics seulement":"Réactiver Scalp Action");
+        setChanged(cvCoreInfo,"MOTEUR : CV CORE V1\nÉTAT : ACTIF\nMODE : SIGNAUX MANUELS\nTRADING AUTOMATIQUE : NON");
     }catch(Exception ignored){}}
 
     private void renderPlans(JSONArray plans,JSONObject markets){
@@ -308,15 +304,6 @@ public class MainActivity extends Activity {
             String value=key.getText().toString().trim();if(!value.isEmpty())SecureAiStore.saveKey(this,value);SecureAiStore.setEnabled(this,enabled.isChecked());setChanged(aiInfo,aiStatusText());}).show();}
 
     private String aiStatusText(){return "IA OpenAI : "+(SecureAiStore.isEnabled(this)?"ON · "+SecureAiStore.maskedKey(this):"OFF")+"\nAvis asynchrone, jamais décisionnel.";}
-    private void confirmScalpActionModeChange(){String current=latestState.optString("scalpActionMode",ScalpActionEngine.ACTION_ON);
-        boolean on=ScalpActionEngine.ACTION_ON.equals(current);String next=on?ScalpActionEngine.DIAGNOSTICS_ONLY:ScalpActionEngine.ACTION_ON;
-        String message=on?"Les nouveaux signaux finaux seront désactivés. Un plan déjà actif continuera jusqu’à son TP ou SL."
-                :"Seules les nouvelles opportunités futures pourront déclencher une alerte. Aucune opportunité passée ne sera rejouée.";
-        new AlertDialog.Builder(this).setTitle("Moteur Scalp Action").setMessage(message).setNegativeButton("Annuler",null)
-                .setPositiveButton("Confirmer",(d,w)->setScalpActionMode(next)).show();}
-    private void setScalpActionMode(String mode){try{Intent intent=new Intent(this,MarketWatchService.class);
-        intent.setAction(MarketWatchService.ACTION_SET_SCALP_ACTION_MODE);intent.putExtra(MarketWatchService.EXTRA_SCALP_ACTION_MODE,mode);
-        ContextCompat.startForegroundService(this,intent);}catch(RuntimeException error){scheduleStartupRecovery();}}
     private void sendServiceAction(String action,String toast){sendServiceAction(action,toast,"");}
     private void sendServiceAction(String action,String toast,String requestId){try{Intent intent=new Intent(this,MarketWatchService.class);intent.setAction(action);
         if(requestId!=null&&!requestId.isEmpty())intent.putExtra(MarketWatchService.EXTRA_REQUEST_ID,requestId);

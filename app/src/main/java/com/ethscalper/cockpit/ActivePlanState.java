@@ -5,7 +5,7 @@ import java.util.Map;
 
 /** Immutable, validated representation of the one live final plan. */
 public final class ActivePlanState {
-    public static final int FORMAT_VERSION = 3;
+    public static final int FORMAT_VERSION = 4;
 
     public final int formatVersion;
     public final String symbol;
@@ -64,11 +64,14 @@ public final class ActivePlanState {
     public final int riskQuantity;
     public final int qualityCap;
     public final String engineId;
+    public final String policyId;
+    public final String schemaId;
     public final String routeId;
     public final String episodeId;
     public final long qualificationAt;
     public final long entryValidUntil;
     public final String entryWindowStatus;
+    public final double routeRiskBudgetUsdt;
 
     private ActivePlanState(Builder b) {
         formatVersion = b.formatVersion;
@@ -120,9 +123,10 @@ public final class ActivePlanState {
         structuralBuffer=b.structuralBuffer;stopCalculationType=text(b.stopCalculationType);
         stopReasonCode=text(b.stopReasonCode);selectedBudgetReason=text(b.selectedBudgetReason);
         riskPerUnit=b.riskPerUnit;riskQuantity=b.riskQuantity;qualityCap=b.qualityCap;
-        engineId=text(b.engineId);routeId=text(b.routeId);episodeId=text(b.episodeId);
+        engineId=text(b.engineId);policyId=text(b.policyId);schemaId=text(b.schemaId);
+        routeId=text(b.routeId);episodeId=text(b.episodeId);
         qualificationAt=b.qualificationAt;entryValidUntil=b.entryValidUntil;
-        entryWindowStatus=text(b.entryWindowStatus);
+        entryWindowStatus=text(b.entryWindowStatus);routeRiskBudgetUsdt=b.routeRiskBudgetUsdt;
     }
 
     public static Builder builder() {
@@ -146,6 +150,9 @@ public final class ActivePlanState {
             if (engineId.isEmpty() || routeId.isEmpty() || episodeId.isEmpty()
                     || qualificationAt <= 0 || entryValidUntil < qualificationAt) return false;
         }
+        if(formatVersion>=4&&(!CvCorePolicy.ENGINE_ID.equals(engineId)
+                ||!CvCorePolicy.POLICY_ID.equals(policyId)||!CvCorePolicy.SCHEMA_ID.equals(schemaId)
+                ||!positive(routeRiskBudgetUsdt)))return false;
         return finite(movementOrigin) && finite(movementExtreme) && finite(movementDistance)
                 && finite(resultCostPerUnit) && resultCostPerUnit >= 0.0
                 && finite(riskAllowancePerUnit) && riskAllowancePerUnit >= 0.0
@@ -197,9 +204,10 @@ public final class ActivePlanState {
         put(out,"stopReasonCode",stopReasonCode);put(out,"selectedBudgetReason",selectedBudgetReason);
         put(out,"riskPerUnit",riskPerUnit);put(out,"riskQuantity",riskQuantity);
         put(out,"qualityCap",qualityCap);
-        put(out,"engineId",engineId);put(out,"routeId",routeId);put(out,"episodeId",episodeId);
+        put(out,"engineId",engineId);put(out,"policyId",policyId);put(out,"schemaId",schemaId);
+        put(out,"routeId",routeId);put(out,"episodeId",episodeId);
         put(out,"qualificationAt",qualificationAt);put(out,"entryValidUntil",entryValidUntil);
-        put(out,"entryWindowStatus",entryWindowStatus);
+        put(out,"entryWindowStatus",entryWindowStatus);put(out,"routeRiskBudgetUsdt",routeRiskBudgetUsdt);
         return out;
     }
 
@@ -250,10 +258,12 @@ public final class ActivePlanState {
                             optionalDecimal(values,"riskPerUnit",Double.NaN),
                             optionalInteger(values,"riskQuantity",0),
                             optionalInteger(values,"qualityCap",0))
-                    .scalpAction(optional(values,"engineId",""),optional(values,"routeId",""),
+                    .enginePlan(optional(values,"engineId",""),optional(values,"policyId",""),
+                            optional(values,"schemaId",""),optional(values,"routeId",""),
                             optional(values,"episodeId",""),optionalLong(values,"qualificationAt",0L),
                             optionalLong(values,"entryValidUntil",0L),
-                            optional(values,"entryWindowStatus",""));
+                            optional(values,"entryWindowStatus",""),
+                            optionalDecimal(values,"routeRiskBudgetUsdt",0d));
             ActivePlanState state = b.build();
             return state.isValid() ? state : null;
         } catch (RuntimeException ignored) {
@@ -293,7 +303,9 @@ public final class ActivePlanState {
     private static String text(String value) { return value == null ? "" : value; }
 
     public static final class Builder {
-        private int formatVersion = FORMAT_VERSION;
+        // Generic legacy/diagnostic builders remain format 2 unless a public engine explicitly
+        // selects its format. CV Core publication always writes format 4.
+        private int formatVersion = 2;
         private String symbol = MarketProfile.ETH_SYMBOL, asset = "ETH", profileVersion = "ETH_V23321";
         private String status = "ACTIVE", side = "", family = "", reasonCode = "", reasonText = "";
         private int score, quantity;
@@ -314,8 +326,9 @@ public final class ActivePlanState {
         private double structuralAnchor=Double.NaN,structuralBuffer=Double.NaN,riskPerUnit=Double.NaN;
         private int structuralWindowMinutes,riskQuantity,qualityCap;
         private String stopCalculationType="",stopReasonCode="",selectedBudgetReason="";
-        private String engineId="",routeId="",episodeId="",entryWindowStatus="";
+        private String engineId="",policyId="",schemaId="",routeId="",episodeId="",entryWindowStatus="";
         private long qualificationAt,entryValidUntil;
+        private double routeRiskBudgetUsdt;
 
         public Builder formatVersion(int v) { formatVersion=v; return this; }
         public Builder market(MarketProfile profile) { symbol=profile.symbol;asset=profile.asset;profileVersion=profile.profileVersion;return this; }
@@ -347,9 +360,11 @@ public final class ActivePlanState {
             stopReasonCode=stopReason;selectedBudgetReason=budgetReason;riskPerUnit=perUnit;
             riskQuantity=riskQty;qualityCap=cap;return this;
         }
-        public Builder scalpAction(String engine,String route,String episode,long qualified,long validUntil,String windowStatus) {
-            engineId=engine;routeId=route;episodeId=episode;qualificationAt=qualified;
-            entryValidUntil=validUntil;entryWindowStatus=windowStatus;return this;
+        public Builder enginePlan(String engine,String policy,String schema,String route,String episode,
+                                  long qualified,long validUntil,String windowStatus,double riskBudget) {
+            engineId=engine;policyId=policy;schemaId=schema;routeId=route;episodeId=episode;
+            qualificationAt=qualified;entryValidUntil=validUntil;entryWindowStatus=windowStatus;
+            routeRiskBudgetUsdt=riskBudget;return this;
         }
         public ActivePlanState build() { return new ActivePlanState(this); }
     }

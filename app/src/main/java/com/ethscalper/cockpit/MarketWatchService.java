@@ -72,8 +72,6 @@ public class MarketWatchService extends Service {
     public static final String ACTION_RESET_DIAGNOSTICS = "com.ethscalper.cockpit.RESET_DIAGNOSTICS";
     public static final String ACTION_FLUSH_DIAGNOSTICS = "com.ethscalper.cockpit.FLUSH_DIAGNOSTICS";
     public static final String ACTION_RECORD_EXPORT_TIMEOUT = "com.ethscalper.cockpit.RECORD_EXPORT_TIMEOUT";
-    public static final String ACTION_SET_SCALP_ACTION_MODE = "com.ethscalper.cockpit.SET_SCALP_ACTION_MODE";
-    public static final String EXTRA_SCALP_ACTION_MODE = "scalp_action_mode";
     public static final String BROADCAST_STATUS = "com.ethscalper.cockpit.STATUS";
     public static final String EXTRA_PAYLOAD = "payload";
     public static final String EXTRA_REQUEST_ID = "diagnostic_request_id";
@@ -119,16 +117,13 @@ public class MarketWatchService extends Service {
     private final SharedReferenceContext sharedBtc = new SharedReferenceContext();
     private final MarketPlanOrchestrator marketOrchestrator = new MarketPlanOrchestrator();
     private final LegacyEthShadowBridge legacyEthShadowBridge = new LegacyEthShadowBridge();
-    private final ScalpActionContextTracker scalpActionContext = new ScalpActionContextTracker();
-    private final ScalpActionMovementRegistry scalpActionMovements = new ScalpActionMovementRegistry();
-    private final ScalpActionEngine scalpActionEngine = new ScalpActionEngine(scalpActionMovements);
-    private final ScalpActionCandidateArbiter scalpActionArbiter = new ScalpActionCandidateArbiter();
-    private final ScalpActionSummary scalpActionSummary = new ScalpActionSummary();
-    private final LegacyPublicComparator legacyPublicComparator = new LegacyPublicComparator();
-    private ScalpActionModeStore scalpActionModeStore;
-    private String scalpActionMode = ScalpActionEngine.ACTION_ON;
-    private ScalpActionPlan activeScalpActionPlan;
-    private boolean scalpActionEntryExpiredRecorded;
+    private final CvCoreContextTracker cvContext = new CvCoreContextTracker();
+    private final CvCoreMovementRegistry cvMovements = new CvCoreMovementRegistry();
+    private final CvCoreEngine cvEngine = new CvCoreEngine(cvMovements);
+    private final CvCoreCandidateArbiter cvArbiter = new CvCoreCandidateArbiter();
+    private final CvCoreSummary cvSummary = new CvCoreSummary();
+    private CvCorePlan activeCvPlan;
+    private boolean cvEntryExpiredRecorded;
     private MarketDataRouter marketDataRouter;
     private final Deque<Candle> ethCandles = new ArrayDeque<>();
     private final Deque<Candle> btcCandles = new ArrayDeque<>();
@@ -443,8 +438,6 @@ public class MarketWatchService extends Service {
                 persistentFile(PERSISTENT_MARKET_FRAMES_FILE));
         activePlanPersistence = new ActivePlanPersistence(
                 new SharedPreferencesActivePlanBackend(this));
-        scalpActionModeStore = new ScalpActionModeStore(this);
-        scalpActionMode = scalpActionModeStore.get();
         terminalRearmPersistence = new TerminalRearmPersistence(
                 new SharedPreferencesTerminalRearmBackend(this));
         lastTerminalAt = terminalRearmPersistence.restore();
@@ -454,6 +447,9 @@ public class MarketWatchService extends Service {
         }
         restoreActiveFinalPlan();
         restoreSecondaryFinalPlans();
+        ObservedSignal restoredAtStartup=activeFinalSignal();
+        if(restoredAtStartup==null||!LegacyV23448ActivePlanCompatibility.isRestoredEngine(restoredAtStartup.engineId))
+            LegacyV23448ActivePlanCompatibility.purgeInactivePreferences(this);
         client = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(20, TimeUnit.SECONDS)
@@ -499,11 +495,8 @@ public class MarketWatchService extends Service {
             broadcastStatus("test_vibration", "Vibration longue testée");
         } else if (ACTION_RESET_DIAGNOSTICS.equals(action)) {
             ObservedSignal activePlan = activeFinalSignal();
-            if(activeScalpActionPlan!=null&&(activePlan==null
-                    ||!ScalpActionPolicy.ENGINE_ID.equals(activePlan.scalpActionEngineId))){
-                recordScalpActionEvent("SCALP_ACTION_RESET_ABORTED","RESET_ABORTED",null,
-                        activeScalpActionPlan,System.currentTimeMillis());activeScalpActionPlan=null;
-            }
+            if(activeCvPlan!=null&&(activePlan==null||!CvCorePolicy.ENGINE_ID.equals(activePlan.engineId))){
+                recordCvEvent("CV_CORE_RESET_ABORTED","RESET_ABORTED",null,activeCvPlan,System.currentTimeMillis());activeCvPlan=null;}
             legacyEthShadowBridge.resetResearchMemory();
             marketOrchestrator.resetShadowResearchMemory();
             for(MarketRuntime runtime:marketCoordinator.runtimes().values()) {
@@ -514,10 +507,7 @@ public class MarketWatchService extends Service {
             observedSignals.clear();
             pendingCandidateIndex.clear();
             candidateTombstones.clear();
-            scalpActionSummary.reset();
-            scalpActionEngine.reset();
-            scalpActionArbiter.beginCycle(System.currentTimeMillis());
-            legacyPublicComparator.reset();
+            cvSummary.reset();cvEngine.reset();cvArbiter.beginCycle(System.currentTimeMillis());
             marketFrames.clear();
             legacyFrameSignals=legacyC1Long=legacyC1Short=legacyC2Long=legacyC2Short=0;
             LAST_MARKET_FRAMES_JSON="[]";
@@ -529,6 +519,9 @@ public class MarketWatchService extends Service {
                 flushRuntimeRecorder(runtime,System.currentTimeMillis(),true);
             if (activePlan != null) {
                 observedSignals.addLast(activePlan);
+                if(CvCorePolicy.ENGINE_ID.equals(activePlan.engineId))
+                    cvMovements.restoreOpened(activePlan.episodeId,MarketProfile.ETH_SYMBOL,
+                            activePlan.signal.side,activePlan.qualificationAt,activePlan.routeId);
                 observedSignalId = Math.max(observedSignalId, activePlan.id);
                 lastSignal = activePlan.signal;
                 lastSignalAt = activePlan.finalConfirmedAt;
@@ -554,13 +547,6 @@ public class MarketWatchService extends Service {
                 broadcastStatus(secondaryActive?"diagnostics_reset_active_plan_preserved":"diagnostics_reset",
                         secondaryActive?"Diagnostic réinitialisé — plan actif conservé jusqu’au TP ou au SL."
                                 :"Diagnostic moteur + recorder persistant réinitialisés");
-            }
-        } else if (ACTION_SET_SCALP_ACTION_MODE.equals(action)) {
-            String requested=intent==null?"":intent.getStringExtra(EXTRA_SCALP_ACTION_MODE);
-            if(scalpActionModeStore!=null&&scalpActionModeStore.set(requested)){
-                scalpActionMode=requested;
-                recordScalpActionEvent("SCALP_ACTION_MODE_CHANGED",requested,null,null,System.currentTimeMillis());
-                broadcastStatus("scalp_action_mode_changed","Mode Scalp Action : "+requested);
             }
         } else if (ACTION_FLUSH_DIAGNOSTICS.equals(action)) {
             String requestId=intent==null?"":intent.getStringExtra(EXTRA_REQUEST_ID);
@@ -637,10 +623,13 @@ public class MarketWatchService extends Service {
         item.p01Move15Aligned = state.p01Move15Aligned;
         item.p01Flow30Aligned = state.p01Flow30Aligned;
         item.restoredSizingDiagnostic = state.sizingDiagnostic;
-        item.scalpActionEngineId=state.engineId;item.scalpActionRouteId=state.routeId;
-        item.scalpActionEpisodeId=state.episodeId;item.qualificationAt=state.qualificationAt;
+        item.engineId=state.engineId;item.policyId=state.policyId;item.schemaId=state.schemaId;
+        item.routeId=state.routeId;item.episodeId=state.episodeId;item.routeRiskBudgetUsdt=state.routeRiskBudgetUsdt;
+        item.qualificationAt=state.qualificationAt;
         item.entryValidUntil=state.entryValidUntil;item.entryWindowStatus=state.entryWindowStatus;
-        activeScalpActionPlan=ScalpActionPlan.fromState(state);
+        activeCvPlan=CvCorePlan.fromState(state);
+        if(activeCvPlan!=null)cvMovements.restoreOpened(state.episodeId,state.symbol,state.side,
+                state.qualificationAt,state.routeId);
         item.lastConfirmationCode = ActivePlanPersistence.RESTORED;
         observedSignals.addLast(item);
 
@@ -684,7 +673,9 @@ public class MarketWatchService extends Service {
         if (item == null || item.signal == null || snapshot == null) return false;
         try {
             Object sizing = confirmedSizingJson(item);
-            ActivePlanState.Builder builder = ActivePlanState.builder()
+            boolean cv=CvCorePolicy.ENGINE_ID.equals(item.engineId);
+            boolean restoredV48=LegacyV23448ActivePlanCompatibility.isRestoredEngine(item.engineId);
+            ActivePlanState.Builder builder = ActivePlanState.builder().formatVersion(cv?4:restoredV48?3:2)
                     .status("ACTIVE")
                     .side(item.signal.side).family(item.signal.family)
                     .reasonCode(item.signal.reasonCode).reasonText(item.signal.reasonText)
@@ -711,14 +702,16 @@ public class MarketWatchService extends Service {
                                 p.structuralWindowMinutes,p.structuralBuffer,
                                 p.stopCalculationType,p.stopReasonCode,p.selectedBudgetReason,
                                 p.riskPerUnit,p.riskQuantity,p.qualityCap);}
-            if(ScalpActionPolicy.ENGINE_ID.equals(item.scalpActionEngineId)){
-                builder.unitRisk(MarketProfile.eth().resultRoundTripCostReference,0,
-                        MarketProfile.eth().finalRiskBudgetUsdt,
+            if(cv){
+                builder.unitRisk(CvCorePolicy.RESULT_COST_PER_UNIT,0,item.routeRiskBudgetUsdt,
                         item.signal.quantity*(item.signal.stopDistance
-                                +MarketProfile.eth().resultRoundTripCostReference));
-                builder.scalpAction(item.scalpActionEngineId,item.scalpActionRouteId,
-                        item.scalpActionEpisodeId,item.qualificationAt,item.entryValidUntil,
-                        item.entryWindowStatus);
+                                +CvCorePolicy.RESULT_COST_PER_UNIT));
+                builder.enginePlan(item.engineId,item.policyId,item.schemaId,item.routeId,
+                        item.episodeId,item.qualificationAt,item.entryValidUntil,
+                        item.entryWindowStatus,item.routeRiskBudgetUsdt);
+            }else if(restoredV48){
+                builder.enginePlan(item.engineId,"","",item.routeId,item.episodeId,
+                        item.qualificationAt,item.entryValidUntil,item.entryWindowStatus,0d);
             }
             ActivePlanState state=builder.build();
             return activePlanPersistence.saveForMarket(state);
@@ -1464,12 +1457,12 @@ public class MarketWatchService extends Service {
             if (btcBid > 0 && btcAsk > 0) btcLast = (btcBid + btcAsk) / 2.0;
             sharedBtc.bid=btcBid;sharedBtc.ask=btcAsk;sharedBtc.last=btcLast;
             sharedBtc.lastTickerAt=now;sharedBtc.bookTickerMessages++;
-            scalpActionContext.observe(symbol,btcBid,btcAsk,now);
+            cvContext.observe(symbol,btcBid,btcAsk,now);
         } else if(marketRegistry.contains(symbol)) {
             MarketRuntime runtime=marketCoordinator.runtime(symbol);
             double nextBid=data.optDouble("b",runtime.bid),nextAsk=data.optDouble("a",runtime.ask);
             marketDataRouter.routeBookTicker(symbol,nextBid,nextAsk,now);
-            scalpActionContext.observe(symbol,nextBid,nextAsk,now);
+            cvContext.observe(symbol,nextBid,nextAsk,now);
         }
     }
 
@@ -1503,14 +1496,13 @@ public class MarketWatchService extends Service {
     }
 
     private synchronized void evaluateSignal(long now) {
-        scalpActionArbiter.beginCycle(now);
+        cvArbiter.beginCycle(now);
         evaluateSecondaryMarkets(now);
         MarketSnapshot snapshot = buildSnapshot(now);
         boolean feedFresh = ethExecutionFeedFresh(now);
-        ScalpActionEngine.Common actionCommon=scalpActionCommon(now);
-        scalpActionSummary.observeFresh(now,actionCommon.ethFresh&&actionCommon.btcFresh&&actionCommon.solFresh);
-        observeScalpActionLifecycle(snapshot,now);
-        observeLegacyComparators(now);
+        CvCoreEngine.Common common=cvCommon(now);
+        cvSummary.observeFresh(now,common.ethFresh&&common.btcFresh&&common.solFresh);
+        observeCvLifecycle(snapshot,now);
         MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
         ethRuntime.frozenProfitability.safeObserveTerminal(ethRuntime,snapshot,now,
                 ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
@@ -1532,7 +1524,7 @@ public class MarketWatchService extends Service {
                 && p02SetupTracker.observe(currentSetup);
 
         if (!feedFresh) {
-            finishScalpActionCycle(now);
+            finishCvCycle(now);
             SignalDecision staleFeed = SignalDecision.waiting(
                     "V2326_ETH_FEED_STALE",
                     "Nouvelles entrées bloquées — gestion des risques existants maintenue.",
@@ -1558,8 +1550,8 @@ public class MarketWatchService extends Service {
         ethRuntime.frozenProfitability.safeObserveRaw(ethRuntime,snapshot,rawDecision,now,
                 ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
                 activeFinalPlan,terminalRearmComplete);
-        safeObserveScalpActionRaw(rawDecision,snapshot,now);
-        finishScalpActionCycle(now);
+        safeObserveCvRaw(rawDecision,snapshot,now);
+        finishCvCycle(now);
         boolean oppositeScenarioActive = rawDecision != null && rawDecision.isSignal()
                 && shouldBlockByScenarioMemory(rawDecision, snapshot, now);
         String replayRiskDiagnostic = rawDecision != null && rawDecision.isSignal()
@@ -1608,16 +1600,11 @@ public class MarketWatchService extends Service {
                     marketFresh,sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
             if("CONFIRMED".equals(event.type)) {
                 MarketSnapshot current=MarketSnapshotFactory.build(runtime,sharedBtc,now);
-                LegacyPublicComparator.OpenResult comparator=legacyPublicComparator.openResult(event.plan,now);
-                if(!comparator.opened)runtime.recorder.record(now,"LEGACY_COMPARATOR_SKIPPED_ACTIVE",
-                        comparator.reasonCode,"Comparateur legacy dÃ©jÃ  actif pour ce symbole.",
-                        "STRUCTURAL_SHARED","",event.fill.sleeve,event.signal,current,
-                        Math.max(0,now-event.plan.createdAt),marketFresh,
-                        sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,runtimePlanDetails(event.plan));
-                scalpActionSummary.legacySuppressed();
-                runtime.recorder.record(now,"LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1",
-                        "LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1",
-                        "Plan SOL legacy conservé en comparateur silencieux.","STRUCTURAL_SHARED","",event.fill.sleeve,
+                // CV Core suppresses every new SOL public confirmation; diagnostics remain.
+                cvSummary.legacySuppressed();
+                runtime.recorder.record(now,"LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1",
+                        "LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1",
+                        "Plan SOL legacy supprimé de la publication publique.","STRUCTURAL_SHARED","",event.fill.sleeve,
                         event.signal,current,Math.max(0,now-event.plan.createdAt),marketFresh,
                         sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,runtimePlanDetails(event.plan));
                 runtime.activePlan=null;runtime.lastSignal=null;
@@ -3029,9 +3016,10 @@ public class MarketWatchService extends Service {
             if (SignalSafetyPolicies.isTerminalStatus(status)) {
                 closeObservedSignal(item, status, snapshot, now);
                 p02SetupTracker.reset();
-                boolean scalpAction=ScalpActionPolicy.ENGINE_ID.equals(item.scalpActionEngineId);
-                if(!scalpAction)lastTerminalAt = now;
-                if (!scalpAction&&!terminalRearmPersistence.save(MarketProfile.ETH_SYMBOL,lastTerminalAt)) {
+                boolean cvManaged=CvCorePolicy.ENGINE_ID.equals(item.engineId)
+                        ||LegacyV23448ActivePlanCompatibility.isRestoredEngine(item.engineId);
+                if(!cvManaged)lastTerminalAt = now;
+                if (!cvManaged&&!terminalRearmPersistence.save(MarketProfile.ETH_SYMBOL,lastTerminalAt)) {
                     signalEngine.recordExternalDiagnostic(now,
                             "V2330_TERMINAL_REARM_PERSIST_FAILED",
                             "Terminal timestamp could not be persisted atomically.");
@@ -3232,234 +3220,192 @@ public class MarketWatchService extends Service {
             return false;
         }
 
-        // Legacy confirmation is still fully calculated and observed, but 4.8 never lets it
-        // become a new public plan. Scalp Action observes the exact causal confirmation first.
-        SignalDecision legacyPublished=fill.publishedSignal;
-        ScalpActionEngine.Result scalpActionLegacy=safeObserveScalpActionLegacy(
-                item,candidate,snapshot,now,fill);
+        // Every confirmed ETH candidate fixes/prolongs its episode before route C is evaluated.
+        // The legacy result remains diagnostic-only and is never persisted or alerted.
+        CvCoreEngine.Result cvLegacy=safeObserveCvLegacy(item,candidate,snapshot,now,fill);
         legacyEthShadowBridge.observeConfirmation(
                 marketCoordinator.runtime(MarketProfile.ETH_SYMBOL),item,candidate,snapshot,now,
                 ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),lastTerminalAt,
                 fill,structuralEthBars(now));
-        ActivePlanState legacyState=legacyComparatorState(legacyPublished,item,snapshot,now);
-        if(legacyState!=null){LegacyPublicComparator.OpenResult comparator=legacyPublicComparator.openResult(legacyState,now);
-            if(!comparator.opened){Map<String,Object> skipped=new LinkedHashMap<>();
-                skipped.put("symbol",MarketProfile.ETH_SYMBOL);
-                recordScalpActionEvent("LEGACY_COMPARATOR_SKIPPED_ACTIVE",
-                        comparator.reasonCode,null,null,now,skipped);}}
-        scalpActionSummary.legacySuppressed();
+        cvSummary.legacySuppressed();
         item.status="LEGACY_PUBLIC_SUPPRESSED";item.closedAt=now;
-        item.lastConfirmationCode="LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1";
+        item.lastConfirmationCode="LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1";
         pendingCandidateIndex.remove(item.candidateSignature);
-        persistObservedSignalEvent(item,"LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1",snapshot,now);
+        persistObservedSignalEvent(item,"LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1",snapshot,now);
         Map<String,Object> suppressed=new LinkedHashMap<>();suppressed.put("legacySuppressed",true);
         suppressed.put("sourceFamily",candidate.family);suppressed.put("sourceSleeve",item.sleeve);
-        recordScalpActionEvent("LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1",
-                "LEGACY_PUBLIC_SUPPRESSED_BY_SCALP_ACTION_V1",scalpActionLegacy,
-                scalpActionLegacy==null?null:scalpActionLegacy.plan,now,suppressed);
+        recordCvEvent("LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1",
+                "LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1",cvLegacy,
+                cvLegacy==null?null:cvLegacy.plan,now,suppressed);
         return true;
     }
 
-    private void observeScalpActionLifecycle(MarketSnapshot snapshot,long now){
+    private void observeCvLifecycle(MarketSnapshot snapshot,long now){
         try{
-            if(activeScalpActionPlan!=null){
-                if(now>=activeScalpActionPlan.entryValidUntil&&!scalpActionEntryExpiredRecorded){
-                    scalpActionEntryExpiredRecorded=true;scalpActionSummary.expiration();
-                    ObservedSignal active=activeFinalSignal();if(active!=null&&ScalpActionPolicy.ENGINE_ID.equals(active.scalpActionEngineId)){
-                        active.entryWindowStatus="EXPIRÉE — NE PAS ENTRER SANS NOUVELLE VALIDATION";
-                        String title="NMC SCALP ACTION · ETH "+active.signal.side;
-                        String body="Entrée expirée — ne pas entrer sans nouvelle validation · TP/SL inchangés.";
+            if(activeCvPlan!=null){
+                if(now>=activeCvPlan.entryValidUntil&&!cvEntryExpiredRecorded){
+                    cvEntryExpiredRecorded=true;cvSummary.expiration();
+                    ObservedSignal active=activeFinalSignal();if(active!=null&&CvCorePolicy.ENGINE_ID.equals(active.engineId)){
+                        active.entryWindowStatus="EXPIRÉE — NE PAS ENTRER";
+                        String title="NMC CV CORE · ETH "+active.signal.side;
+                        String body="Entrée expirée — ne pas entrer · TP/SL inchangés.";
                         postSilentSignalNotification(active.notificationId,title,body);
                     }
-                    recordScalpActionEvent("SCALP_ACTION_ENTRY_WINDOW_EXPIRED",
-                            "SCALP_ACTION_ENTRY_WINDOW_EXPIRED",null,activeScalpActionPlan,now);
+                    recordCvEvent("CV_CORE_ENTRY_WINDOW_EXPIRED","CV_CORE_ENTRY_WINDOW_EXPIRED",null,activeCvPlan,now);
                 }
-                ScalpActionPlan.Terminal terminal=activeScalpActionPlan.observe(now,snapshot.ethBid,
+                CvCorePlan.Terminal terminal=activeCvPlan.observe(now,snapshot.ethBid,
                         snapshot.ethAsk,ethMarketFeedFresh(now));
-                if(terminal!=null){scalpActionSummary.terminal(terminal);
-                    recordScalpActionTerminalEvent(activeScalpActionPlan,terminal,now);
-                    activeScalpActionPlan=null;}
+                if(terminal!=null){cvSummary.terminal(terminal);recordCvTerminalEvent(activeCvPlan,terminal,now);activeCvPlan=null;}
             }
-        }catch(RuntimeException error){scalpActionSummary.internalError();recordScalpActionEvent(
-                "SCALP_ACTION_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);}
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);}
     }
 
-    private void observeLegacyComparators(long now){
-        try{LegacyPublicComparator.Terminal ethTerminal=legacyPublicComparator.observe(
-                    MarketProfile.ETH_SYMBOL,now,ethBid,ethAsk,ethMarketFeedFresh(now));
-            if(ethTerminal!=null)recordScalpActionEvent("LEGACY_COMPARATOR_"+ethTerminal.status,
-                    ethTerminal.status,null,null,now);
-            MarketRuntime sol=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);
-            boolean fresh=sol!=null&&sol.lastTickerAt>0&&now-sol.lastTickerAt<=ETH_BOOK_MAX_AGE_MS;
-            LegacyPublicComparator.Terminal solTerminal=legacyPublicComparator.observe(
-                    MarketProfile.SOL_SYMBOL,now,sol==null?0:sol.bid,sol==null?0:sol.ask,fresh);
-            if(solTerminal!=null)recordScalpActionEvent("LEGACY_COMPARATOR_"+solTerminal.status,
-                    solTerminal.status,null,null,now);
-        }catch(RuntimeException error){scalpActionSummary.internalError();}
-    }
-
-    private void safeObserveScalpActionRaw(SignalDecision raw,MarketSnapshot snapshot,long now){
+    private void safeObserveCvRaw(SignalDecision raw,MarketSnapshot snapshot,long now){
         try{if(raw==null||!raw.isSignal())return;
-            ScalpActionContextTracker.Metrics metrics=scalpActionContext.metrics(now,raw.side);
-            collectScalpActionResult(scalpActionEngine.observeRaw(raw,snapshot,metrics,
-                    scalpActionCommon(now),now),snapshot,now);
-        }catch(RuntimeException error){scalpActionSummary.internalError();
-            recordScalpActionEvent("SCALP_ACTION_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);}
+            CvCoreMovementRegistry.Episode episode=cvMovements.observe(raw.symbol,raw.side,now);
+            CvCoreContextTracker.Metrics metrics=cvContext.metrics(now,raw.side,snapshot.btcMove8,snapshot.btcMove3);
+            CvCoreEngine.Result result=cvEngine.observeRaw(raw,snapshot,metrics,cvCommon(now),now,episode);
+            recordCvEvent("CV_CORE_OBSERVATION","",result,null,now);collectCvResult(result,snapshot,now);
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);}
     }
 
-    private ScalpActionEngine.Result safeObserveScalpActionLegacy(ObservedSignal item,SignalDecision candidate,
+    private CvCoreEngine.Result safeObserveCvLegacy(ObservedSignal item,SignalDecision candidate,
                                                MarketSnapshot snapshot,long now,
                                                CandidateLifecycle.FillResult fill){
         try{String side=fill.publishedSignal==null?candidate.side:fill.publishedSignal.side;
-            ScalpActionContextTracker.Metrics metrics=scalpActionContext.metrics(now,side);
-            double move3=fill.normalizedMetrics!=null&&Double.isFinite(fill.normalizedMetrics.m3)
-                    ?fill.normalizedMetrics.m3:("SHORT".equals(side)?-1.0:1.0)*snapshot.move3/Math.max(.35,snapshot.avgRange20);
-            ScalpActionEngine.Result result=scalpActionEngine.observeLegacy(side,candidate.family,
-                    item.sleeve,move3,
-                    snapshot,metrics,scalpActionCommon(now),now);
-            collectScalpActionResult(result,snapshot,now);
+            CvCoreMovementRegistry.Episode episode=cvMovements.observe(MarketProfile.ETH_SYMBOL,side,now);
+            CvCoreContextTracker.Metrics metrics=cvContext.metrics(now,side,snapshot.btcMove8,snapshot.btcMove3);
+            double move3=fill.normalizedMetrics==null?Double.NaN:fill.normalizedMetrics.m3;
+            CvCoreEngine.Result result=cvEngine.observeLegacy(side,candidate.family,item.sleeve,move3,
+                    snapshot,metrics,cvCommon(now),now,episode);
+            recordCvEvent("CV_CORE_OBSERVATION","",result,null,now);collectCvResult(result,snapshot,now);
             return result;
-        }catch(RuntimeException error){scalpActionSummary.internalError();
-            recordScalpActionEvent("SCALP_ACTION_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);
             return null;}
     }
 
-    private ScalpActionEngine.Common scalpActionCommon(long now){
+    private CvCoreEngine.Common cvCommon(long now){
         MarketRuntime sol=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);
         long solAge=sol==null||sol.lastTickerAt<=0?-1:Math.max(0,now-sol.lastTickerAt);
         boolean solFresh=sol!=null&&sol.bid>0&&sol.ask>=sol.bid&&solAge>=0
-                &&solAge<=5_000L&&scalpActionContext.fresh(MarketProfile.SOL_SYMBOL,now,5_000L);
-        return new ScalpActionEngine.Common(scalpActionMode,ethMarketFeedFresh(now),
-                sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),solFresh,
+                &&solAge<=5_000L&&cvContext.fresh(MarketProfile.SOL_SYMBOL,now,5_000L);
+        long ethAge=lastEthBookTickerAt<=0?-1:Math.max(0,now-lastEthBookTickerAt);
+        long btcAge=sharedBtc.lastTickerAt<=0?-1:Math.max(0,now-sharedBtc.lastTickerAt);
+        return new CvCoreEngine.Common(ethMarketFeedFresh(now),
+                sharedBtc.fresh(now,5_000L),solFresh,
                 activeFinalSignal()!=null||marketCoordinator.activePlanCount()>0,
-                activeScalpActionPlan!=null,solAge);
+                activeCvPlan!=null,ethAge,btcAge,solAge);
     }
 
-    private void collectScalpActionResult(ScalpActionEngine.Result result,MarketSnapshot snapshot,long now){
-        if(result==null||!result.matched())return;scalpActionSummary.observation(result.route.routeId);
-        if(!result.accepted()){scalpActionSummary.skip(result.reasonCode);
-            if("SCALP_ACTION_DUPLICATE_EPISODE".equals(result.reasonCode)){
-                scalpActionSummary.duplicate();recordScalpActionEvent("SCALP_ACTION_DUPLICATE_GROUPED",
+    private void collectCvResult(CvCoreEngine.Result result,MarketSnapshot snapshot,long now){
+        if(result==null)return;cvSummary.observation(result.observation==null?"":result.observation.sourceType,
+                result.route==null?"":result.route.routeId);if(!result.matched())return;
+        if(!result.accepted()){cvSummary.reject(result.reasonCode);
+            if("CV_CORE_DUPLICATE_EPISODE".equals(result.reasonCode)){
+                cvSummary.duplicate();recordCvEvent("CV_CORE_DUPLICATE_GROUPED",
                         result.reasonCode,result,null,now);
-            }else recordScalpActionEvent("SCALP_ACTION_REJECTED",result.reasonCode,result,null,now);
+            }else recordCvEvent("CV_CORE_REJECTED",result.reasonCode,result,null,now);
             return;}
-        recordScalpActionEvent("SCALP_ACTION_QUALIFIED",result.reasonCode,result,result.plan,now);
-        scalpActionArbiter.collect(result,snapshot,now);
+        cvSummary.qualified();recordCvEvent("CV_CORE_QUALIFIED",result.reasonCode,result,result.plan,now);
+        cvArbiter.collect(result,snapshot,now);
     }
 
-    private void finishScalpActionCycle(long now){
-        try{ScalpActionCandidateArbiter.Resolution resolution=scalpActionArbiter.resolve();
-            for(ScalpActionCandidateArbiter.Candidate loser:resolution.notSelected){
-                scalpActionSummary.skip("SCALP_ACTION_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY");
-                recordScalpActionEvent("SCALP_ACTION_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY",
-                        "SCALP_ACTION_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY",loser.result,
+    private void finishCvCycle(long now){
+        try{CvCoreCandidateArbiter.Resolution resolution=cvArbiter.resolve();
+            for(CvCoreCandidateArbiter.Candidate loser:resolution.notSelected){
+                cvSummary.reject("CV_CORE_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY");
+                recordCvEvent("CV_CORE_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY",
+                        "CV_CORE_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY",loser.result,
                         loser.result.plan,now);}
             if(resolution.winner==null)return;
-            ScalpActionEngine.Result result=resolution.winner.result;
-            if(result.virtualQualified){
-                if(scalpActionEngine.markOpened(result)){activeScalpActionPlan=result.plan;
-                    scalpActionSummary.qualified(false);}
-                return;
-            }
-            ScalpActionPublicationGuard.PublicationResult published=publishScalpActionPlan(
+            CvCoreEngine.Result result=resolution.winner.result;
+            CvCorePublicationGuard.PublicationResult published=publishCvCorePlan(
                     result,result.plan,resolution.winner.snapshot,now);
-            if(!published.published){scalpActionSummary.skip(published.reasonCode);
-                recordScalpActionEvent("SCALP_ACTION_REJECTED",published.reasonCode,result,result.plan,now);}
-        }catch(RuntimeException error){scalpActionSummary.internalError();
-            recordScalpActionEvent("SCALP_ACTION_INTERNAL_ERROR","SCALP_ACTION_INTERNAL_ERROR",
+            if(!published.published){cvSummary.reject(published.reasonCode);
+                recordCvEvent("CV_CORE_REJECTED",published.reasonCode,result,result.plan,now);}
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR","CV_CORE_INTERNAL_ERROR",
                     null,null,now);}
     }
 
-    private ScalpActionPublicationGuard.PublicationResult publishScalpActionPlan(
-            ScalpActionEngine.Result result,ScalpActionPlan plan,MarketSnapshot snapshot,long now){
-        MarketSnapshot current=buildSnapshot(now);ScalpActionEngine.Common common=scalpActionCommon(now);
-        ScalpActionPublicationGuard.PublicationResult gate=ScalpActionPublicationGuard.validate(plan,
-                new ScalpActionPublicationGuard.Context(scalpActionMode,now,common.ethFresh,
-                        common.btcFresh,common.solFresh,common.publicPlanActive,common.actionPlanActive,
-                        current.marketBid,current.marketAsk));
+    private CvCorePublicationGuard.PublicationResult publishCvCorePlan(
+            CvCoreEngine.Result result,CvCorePlan plan,MarketSnapshot snapshot,long now){
+        MarketSnapshot current=buildSnapshot(now);CvCoreEngine.Common common=cvCommon(now);
+        CvCoreMovementRegistry.Episode episode=result==null?null:cvMovements.find(result.episode.episodeId);
+        CvCorePublicationGuard.PublicationResult gate=CvCorePublicationGuard.validate(plan,
+                new CvCorePublicationGuard.Context(CvCorePolicy.ENGINE_ID,now,common.ethFresh,
+                        common.btcFresh,common.solFresh,common.ethQuoteAgeMs,common.btcQuoteAgeMs,
+                        common.solQuoteAgeMs,common.publicPlanActive,common.cvPlanActive,
+                        episode==null||episode.opened,activePlanPersistence!=null,current.marketBid,current.marketAsk));
         if(!gate.published)return gate;
-        String reasonText="Plan manuel Scalp Action · "+plan.route.routeId;
+        String reasonText="Plan manuel CV Core · "+plan.route.routeId;
         SignalDecision decision=SignalDecision.confirmed(MarketProfile.eth(),plan.side,plan.route.family,
                 plan.route.reasonCode,reasonText,plan.route.score,plan.quantity,plan.entry,
-                plan.takeProfit,plan.stopLoss,plan.targetDistance,plan.stopDistance,"SCALP_ACTION",
+                plan.takeProfit,plan.stopLoss,plan.targetDistance,plan.stopDistance,"CV_CORE",
                 false,snapshot.marketLast,snapshot.marketLast,plan.targetDistance);
         int notificationId=confirmedNotificationId(plan.signature);
-        ActivePlanState state=ActivePlanState.builder().formatVersion(3).market(MarketProfile.eth())
+        ActivePlanState state=ActivePlanState.builder().formatVersion(4).market(MarketProfile.eth())
                 .status("ACTIVE").side(plan.side).family(plan.route.family).reasonCode(plan.route.reasonCode)
                 .reasonText(reasonText).score(plan.route.score).quantity(plan.quantity)
                 .prices(plan.entry,plan.takeProfit,plan.stopLoss).risk(plan.targetDistance,plan.stopDistance)
                 .times(now,now,now).notification(plan.signature,notificationId)
                 .lastMarket(snapshot.marketLast,snapshot.marketBid,snapshot.marketAsk,plan.a)
-                .lastP01ConfirmedAt(lastP01ConfirmedAt).movement("SCALP_ACTION",false,
+                .lastP01ConfirmedAt(lastP01ConfirmedAt).movement("CV_CORE",false,
                         snapshot.marketLast,snapshot.marketLast,plan.targetDistance)
                 .replayRisk("","").p01(Double.NaN,Double.NaN,Double.NaN,Double.NaN,Double.NaN)
                 .sizingDiagnostic("").unitRisk(plan.resultCostPerUnit,0,
-                        MarketProfile.eth().finalRiskBudgetUsdt,plan.theoreticalMaximumLoss)
-                .scalpAction(ScalpActionPolicy.ENGINE_ID,plan.route.routeId,plan.episodeId,
-                        plan.qualificationAt,plan.entryValidUntil,"VALIDE").build();
+                        plan.route.riskBudgetUsdt,plan.theoreticalMaximumLoss)
+                .enginePlan(CvCorePolicy.ENGINE_ID,CvCorePolicy.POLICY_ID,CvCorePolicy.SCHEMA_ID,
+                        plan.route.routeId,plan.episodeId,plan.qualificationAt,plan.entryValidUntil,
+                        "VALIDE",plan.route.riskBudgetUsdt).build();
         boolean persisted;try{persisted=activePlanPersistence!=null&&activePlanPersistence.saveForMarket(state);}
-        catch(RuntimeException error){persisted=false;scalpActionSummary.internalError();}
+        catch(RuntimeException error){persisted=false;cvSummary.error();}
         if(!persisted){
-            recordScalpActionEvent("SCALP_ACTION_PERSISTENCE_FAILED","SCALP_ACTION_PERSISTENCE_FAILED",result,plan,now);
-            return ScalpActionPublicationGuard.PublicationResult.rejected("SCALP_ACTION_PERSISTENCE_FAILED");}
-        if(!scalpActionEngine.markOpened(result)){activePlanPersistence.clear(MarketProfile.ETH_SYMBOL);
-            return ScalpActionPublicationGuard.PublicationResult.rejected("SCALP_ACTION_DUPLICATE_EPISODE");}
+            recordCvEvent("CV_CORE_PERSISTENCE_FAILED","CV_CORE_PERSISTENCE_FAILED",result,plan,now);
+            return new CvCorePublicationGuard.PublicationResult(false,"CV_CORE_PERSISTENCE_FAILED");}
+        if(!cvEngine.markOpened(result)){activePlanPersistence.clear(MarketProfile.ETH_SYMBOL);
+            return new CvCorePublicationGuard.PublicationResult(false,"CV_CORE_DUPLICATE_EPISODE");}
         ObservedSignal item=new ObservedSignal(++observedSignalId,now,decision,snapshot.marketLast,snapshot);
         item.status="ACTIVE";item.entryTriggered=true;item.entryTriggeredAt=now;item.entryTriggerPrice=plan.entry;
         item.simulatedFillAt=now;item.simulatedFillPrice=plan.entry;item.finalConfirmedAt=now;
         item.notificationSignature=plan.signature;item.notificationId=notificationId;item.candidateSignature=plan.signature;
-        item.scalpActionEngineId=ScalpActionPolicy.ENGINE_ID;item.scalpActionRouteId=plan.route.routeId;
-        item.scalpActionEpisodeId=plan.episodeId;item.qualificationAt=plan.qualificationAt;
+        item.engineId=CvCorePolicy.ENGINE_ID;item.policyId=CvCorePolicy.POLICY_ID;item.schemaId=CvCorePolicy.SCHEMA_ID;
+        item.routeId=plan.route.routeId;item.episodeId=plan.episodeId;item.routeRiskBudgetUsdt=plan.route.riskBudgetUsdt;item.qualificationAt=plan.qualificationAt;
         item.entryValidUntil=plan.entryValidUntil;item.entryWindowStatus="VALIDE";
         observedSignals.addLast(item);while(observedSignals.size()>200)observedSignals.removeFirst();
-        activeScalpActionPlan=plan;scalpActionEntryExpiredRecorded=false;lastSignal=decision;lastDecision=decision;
-        lastSignalAt=now;lastActivePlanPersistAt=now;scalpActionSummary.qualified(true);
-        persistObservedSignalEvent(item,"SCALP_ACTION_PLAN_PERSISTED",snapshot,now);
+        activeCvPlan=plan;cvEntryExpiredRecorded=false;lastSignal=decision;lastDecision=decision;
+        lastSignalAt=now;lastActivePlanPersistAt=now;cvSummary.opened();
+        persistObservedSignalEvent(item,"CV_CORE_PLAN_PERSISTED",snapshot,now);
         Map<String,Object> persistedDetails=new LinkedHashMap<>();persistedDetails.put("persisted",true);
         persistedDetails.put("entryWindowStatus","VALIDE");
-        recordScalpActionEvent("SCALP_ACTION_PLAN_PERSISTED","",result,plan,now,persistedDetails);
-        notifyScalpActionPlan(item,plan);broadcastStatus("scalp_action_plan","Nouveau plan manuel Scalp Action");
-        return ScalpActionPublicationGuard.PublicationResult.ready();
+        recordCvEvent("CV_CORE_PLAN_PERSISTED","",result,plan,now,persistedDetails);
+        notifyCvCorePlan(item,plan);broadcastStatus("cv_core_plan","Nouveau plan manuel CV Core");
+        return new CvCorePublicationGuard.PublicationResult(true,"");
     }
 
-    private void notifyScalpActionPlan(ObservedSignal item,ScalpActionPlan plan){
-        String title="NMC SCALP ACTION · ETH "+plan.side;
-        String body=String.format(Locale.US,"Voie : %s · Entrée : %.2f · TP : %.2f · SL : %.2f · Quantité : %d · Entrée valable 5 s. Après expiration, ne pas entrer sans nouvelle validation.",
+    private void notifyCvCorePlan(ObservedSignal item,CvCorePlan plan){
+        String title="NMC CV CORE · ETH "+plan.side;
+        String body=String.format(Locale.US,"Voie : %s · Entrée : %.2f · TP : %.2f · SL : %.2f · Quantité : %d · Entrée valable 5 s. Après expiration, ne pas entrer.",
                 plan.route.routeId,plan.entry,plan.takeProfit,plan.stopLoss,plan.quantity);
         AudiblePostResult result=postAudibleFinalSignalAlert(title,body,item.notificationId,
                 MarketProfile.ETH_SYMBOL,false,item.notificationSignature);item.alertSent=result.posted;
         if(result.alreadyAlerted)postSilentSignalNotification(item.notificationId,title,body);
         else if(!result.posted)scheduleAudibleFinalSignalRetry(title,body,item.notificationId,
                 MarketProfile.ETH_SYMBOL,item.notificationSignature,0);
-        Map<String,Object> alert=ScalpActionTelemetry.alert(result.posted,result.alreadyAlerted);
-        recordScalpActionEvent("SCALP_ACTION_ALERT_POSTED",result.posted?"POSTED":"RETRY",
+        if(result.posted||result.alreadyAlerted)cvSummary.alert();
+        Map<String,Object> alert=CvCoreTelemetry.alert(result.posted,result.alreadyAlerted);
+        recordCvEvent("CV_CORE_ALERT_POSTED",result.posted?"POSTED":"RETRY",
                 null,plan,System.currentTimeMillis(),alert);
     }
 
-    private ActivePlanState legacyComparatorState(SignalDecision s,ObservedSignal item,MarketSnapshot snap,long now){
-        if(s==null||snap==null)return null;String sig="LEGACY|"+s.symbol+"|"+item.candidateSignature+"|"+now;
-        return ActivePlanState.builder().formatVersion(2).market(MarketProfile.eth()).status("ACTIVE")
-                .side(s.side).family(s.family).reasonCode(s.reasonCode).reasonText(s.reasonText)
-                .score(s.score).quantity(s.quantity).prices(s.entry,s.takeProfit,s.stopLoss)
-                .risk(s.targetMove,s.stopDistance).times(now,now,now).notification(sig,confirmedNotificationId(sig))
-                .lastMarket(snap.marketLast,snap.marketBid,snap.marketAsk,Math.max(.35,snap.avgRange20))
-                .lastP01ConfirmedAt(lastP01ConfirmedAt).movement(s.impulse,s.resetConfirmed,
-                        s.movementOrigin,s.movementExtreme,s.movementDistance).replayRisk("","")
-                .p01(Double.NaN,Double.NaN,Double.NaN,Double.NaN,Double.NaN).sizingDiagnostic("")
-                .unitRisk(MarketProfile.eth().resultRoundTripCostReference,0,
-                        MarketProfile.eth().finalRiskBudgetUsdt,
-                        s.quantity*(s.stopDistance+MarketProfile.eth().resultRoundTripCostReference)).build();
+    private void recordCvEvent(String type,String reason,CvCoreEngine.Result result,
+                               CvCorePlan plan,long now){
+        recordCvEvent(type,reason,result,plan,now,null);
     }
 
-    private void recordScalpActionEvent(String type,String reason,ScalpActionEngine.Result result,
-                                        ScalpActionPlan plan,long now){
-        recordScalpActionEvent(type,reason,result,plan,now,null);
-    }
-
-    private void recordScalpActionEvent(String type,String reason,ScalpActionEngine.Result result,
-                                        ScalpActionPlan plan,long now,Map<String,Object> extra){
-        try{Map<String,Object>d=new LinkedHashMap<>(ScalpActionTelemetry.details(result,plan,now));
-            d.put("versionName",BuildConfig.VERSION_NAME);d.put("mode",scalpActionMode);
+    private void recordCvEvent(String type,String reason,CvCoreEngine.Result result,
+                               CvCorePlan plan,long now,Map<String,Object> extra){
+        try{Map<String,Object>d=new LinkedHashMap<>(CvCoreTelemetry.details(result,plan,now));
+            d.put("versionName",BuildConfig.VERSION_NAME);
             MarketSnapshot current=buildSnapshot(now);
             if(result==null&&(plan==null||plan.observation==null)){
                 d.put("marketFeedFresh",ethMarketFeedFresh(now));
@@ -3470,24 +3416,24 @@ public class MarketWatchService extends Service {
                 d.put("publicPlanActive",activeFinalSignal()!=null||marketCoordinator.activePlanCount()>0);}
             if(extra!=null)d.putAll(extra);
             marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,type,reason,
-                    reason,"SCALP_ACTION_V1","","",lastDecision,current,0,
+                    reason,"CV_CORE_V1","","",lastDecision,current,0,
                     ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,d);
         }catch(RuntimeException ignored){}
     }
 
-    private void recordScalpActionTerminalEvent(ScalpActionPlan plan,ScalpActionPlan.Terminal terminal,long now){
+    private void recordCvTerminalEvent(CvCorePlan plan,CvCorePlan.Terminal terminal,long now){
         Map<String,Object> terminalFields=new LinkedHashMap<>();terminalFields.put("touchQuote",terminal.touchQuote);
         terminalFields.put("fillPrice",terminal.fillPrice);terminalFields.put("terminalStatus",terminal.status);
         terminalFields.put("resultR",terminal.resultR);terminalFields.put("grossResultUsdt",terminal.grossResultUsdt);
         terminalFields.put("estimatedFeesUsdt",terminal.estimatedFeesUsdt);terminalFields.put("netResultUsdt",terminal.netResultUsdt);
-        recordScalpActionEvent(ScalpActionPlan.TP.equals(terminal.status)?"SCALP_ACTION_TP_TOUCHED":"SCALP_ACTION_SL_TOUCHED",
+        recordCvEvent(CvCorePlan.TP.equals(terminal.status)?"CV_CORE_TP_TOUCHED":"CV_CORE_SL_TOUCHED",
                 terminal.status,null,plan,now,terminalFields);
-        try{Map<String,Object>d=new LinkedHashMap<>();d.put("engineId",ScalpActionPolicy.ENGINE_ID);d.put("policyId",ScalpActionPolicy.POLICY_ID);
-            d.put("schema",ScalpActionPolicy.SCHEMA_ID);d.put("routeId",plan.route.routeId);d.put("episodeId",plan.episodeId);
+        try{Map<String,Object>d=new LinkedHashMap<>();d.put("engineId",CvCorePolicy.ENGINE_ID);d.put("policyId",CvCorePolicy.POLICY_ID);
+            d.put("schema",CvCorePolicy.SCHEMA_ID);d.put("routeId",plan.route.routeId);d.put("episodeId",plan.episodeId);
             d.put("touchQuote",terminal.touchQuote);d.put("fillPrice",terminal.fillPrice);d.put("terminalStatus",terminal.status);
             d.put("resultR",terminal.resultR);d.put("grossResultUsdt",terminal.grossResultUsdt);d.put("estimatedFeesUsdt",terminal.estimatedFeesUsdt);d.put("netResultUsdt",terminal.netResultUsdt);
-            marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,"SCALP_ACTION_TERMINAL_ECONOMICS",terminal.status,
-                    "Remplissage au niveau planifié.","SCALP_ACTION_V1","","",lastSignal,buildSnapshot(now),0,true,true,0,d);
+            marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,"CV_CORE_TERMINAL_ECONOMICS",terminal.status,
+                    "Remplissage au niveau planifié.","CV_CORE_V1","","",lastSignal,buildSnapshot(now),0,true,true,0,d);
         }catch(RuntimeException ignored){}
     }
 
@@ -3663,7 +3609,8 @@ public class MarketWatchService extends Service {
     private String marketStatusForSignal(SignalDecision signal, MarketSnapshot snapshot) {
         if (signal == null) return "NONE";
 
-        double price = signal!=null&&signal.family!=null&&signal.family.startsWith(ScalpActionPolicy.ENGINE_ID)
+        double price = signal!=null&&signal.family!=null&&(signal.family.startsWith(CvCorePolicy.ENGINE_ID)
+                ||LegacyV23448ActivePlanCompatibility.isRestoredFamily(signal.family))
                 ?("LONG".equals(signal.side)?snapshot.ethBid:snapshot.ethAsk):snapshot.ethLast;
         if (!Double.isFinite(price) || price <= 0) return "NO_PRICE";
 
@@ -4421,7 +4368,8 @@ public class MarketWatchService extends Service {
             return journalStatus;
         }
 
-        double price = lastSignal.family!=null&&lastSignal.family.startsWith(ScalpActionPolicy.ENGINE_ID)
+        double price = lastSignal.family!=null&&(lastSignal.family.startsWith(CvCorePolicy.ENGINE_ID)
+                ||LegacyV23448ActivePlanCompatibility.isRestoredFamily(lastSignal.family))
                 ?("LONG".equals(lastSignal.side)?snapshot.ethBid:snapshot.ethAsk):snapshot.ethLast;
         if (!Double.isFinite(price) || price <= 0) {
             return observed != null && SignalSafetyPolicies.blocksNewFinalSignal(
@@ -5190,15 +5138,13 @@ public class MarketWatchService extends Service {
             state.put("activeSignalValidity", "TP_SL_ONLY_NO_TIMEOUT");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", SignalSafetyPolicies.realTradingAllowed());
-            state.put("scalpActionEngineId",ScalpActionPolicy.ENGINE_ID);
-            state.put("scalpActionPolicyId",ScalpActionPolicy.POLICY_ID);
-            state.put("scalpActionSchema",ScalpActionPolicy.SCHEMA_ID);
-            state.put("scalpActionMode",scalpActionMode);
-            state.put("scalpActionPublicEnabled",ScalpActionEngine.ACTION_ON.equals(scalpActionMode));
-            state.put("scalpActionActivePlan",activeScalpActionPlan!=null);
-            state.put("scalpActionSummary",new JSONObject(scalpActionSummary.snapshot(
-                    scalpActionMode,activeScalpActionPlan!=null)));
-            state.put("legacyComparatorSummary",new JSONObject(legacyPublicComparator.snapshot()));
+            state.put("cvCoreEngineId",CvCorePolicy.ENGINE_ID);
+            state.put("cvCorePolicyId",CvCorePolicy.POLICY_ID);
+            state.put("cvCoreSchema",CvCorePolicy.SCHEMA_ID);
+            state.put("cvCoreState","ACTIVE");
+            state.put("cvCorePublicEnabled",true);
+            state.put("cvCoreActivePlan",activeCvPlan!=null);
+            state.put("cvCoreSummary",new JSONObject(cvSummary.snapshot(activeCvPlan!=null)));
             state.put("aiEnabled", AiAdvisor.isEnabled(this));
             state.put("aiMode", AiAdvisor.isEnabled(this)
                     ? "INFORMATIONAL_POST_SIGNAL_ONLY" : "ENGINE_COMPLETE_AI_OFF");
@@ -5447,14 +5393,14 @@ public class MarketWatchService extends Service {
         putPrice(value,"lastPrice",p.lastPrice);putPrice(value,"lastBid",p.lastBid);putPrice(value,"lastAsk",p.lastAsk);
         value.put("createdAt",p.createdAt);value.put("entryTriggeredAt",p.entryTriggeredAt);
         value.put("finalConfirmedAt",p.finalConfirmedAt);value.put("resultCostPerUnit",p.resultCostPerUnit);
-        boolean action=ScalpActionPolicy.ENGINE_ID.equals(p.engineId);
-        if(action){for(Map.Entry<String,Object> field:ScalpActionRiskFields.action(p.quantity,p.stopDistance).entrySet())
+        boolean cv=CvCorePolicy.ENGINE_ID.equals(p.engineId);
+        if(cv){for(Map.Entry<String,Object> field:CvCoreRiskFields.cv(p.quantity,p.stopDistance,p.routeRiskBudgetUsdt).entrySet())
                 value.put(field.getKey(),field.getValue());}
         else{value.put("riskAllowancePerUnit",p.riskAllowancePerUnit);value.put("qualityRiskBudget",p.qualityRiskBudget);
             value.put("theoreticalMaximumLoss",p.theoreticalMaximumLoss);}
         double gross=Math.abs(p.entry-p.stopLoss)*p.quantity;
         double fees=p.resultCostPerUnit*p.quantity;
-        if(!action){value.put("grossLossAtSl",gross);value.put("estimatedRoundTripFees",fees);
+        if(!cv){value.put("grossLossAtSl",gross);value.put("estimatedRoundTripFees",fees);
             value.put("estimatedTotalLossAtSl",gross+fees);
             value.put("riskBudgetExcludingFees",DynamicTradePlan.GROSS_RISK_BUDGET_USDT);
             value.put("modeledRiskUsdt",gross);}return value;
@@ -5464,18 +5410,18 @@ public class MarketWatchService extends Service {
                                          MarketSnapshot snapshot)throws Exception{
         JSONObject value=signalJson(signal);value.put("status","ACTIVE");
         value.put("quantity",signal.quantity);value.put("takeProfit",signal.takeProfit);
-        value.put("stopLoss",signal.stopLoss);boolean action=observed!=null&&ScalpActionPolicy.ENGINE_ID.equals(observed.scalpActionEngineId);
-        value.put("sleeve",action?"SCALP ACTION V1":observed==null?"P01":observed.sleeve);
+        value.put("stopLoss",signal.stopLoss);boolean cv=observed!=null&&CvCorePolicy.ENGINE_ID.equals(observed.engineId);
+        value.put("sleeve",cv?"CV CORE V1":observed==null?"P01":observed.sleeve);
         if(observed!=null){value.put("createdAt",observed.createdAt);
             value.put("entryTriggeredAt",observed.entryTriggeredAt);
             value.put("finalConfirmedAt",observed.finalConfirmedAt);
-            if(action){value.put("engineId",observed.scalpActionEngineId);value.put("routeId",observed.scalpActionRouteId);
-                value.put("mode",scalpActionMode);value.put("entryValidUntil",observed.entryValidUntil);
+            if(cv){value.put("engineId",observed.engineId);value.put("policyId",observed.policyId);value.put("schemaId",observed.schemaId);
+                value.put("routeId",observed.routeId);value.put("riskBudgetUsdt",observed.routeRiskBudgetUsdt);value.put("entryValidUntil",observed.entryValidUntil);
                 value.put("entryWindowStatus",observed.entryWindowStatus);}}
         putPrice(value,"lastPrice",snapshot.ethLast);putPrice(value,"lastBid",snapshot.ethBid);
         putPrice(value,"lastAsk",snapshot.ethAsk);
         DynamicTradePlan.Result plan=observed==null?null:observed.dynamicTradePlan;
-        if(action){for(Map.Entry<String,Object> field:ScalpActionRiskFields.action(signal.quantity,signal.stopDistance).entrySet())
+        if(cv){for(Map.Entry<String,Object> field:CvCoreRiskFields.cv(signal.quantity,signal.stopDistance,observed.routeRiskBudgetUsdt).entrySet())
                 value.put(field.getKey(),field.getValue());return value;}
         value.put("resultCostPerUnit",plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:plan.resultCostPerUnit);
         value.put("riskAllowancePerUnit",plan==null?DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH:plan.riskAllowancePerUnit);
@@ -5483,7 +5429,7 @@ public class MarketWatchService extends Service {
         double legacyCost=plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:plan.resultCostPerUnit;
         double legacyAllowance=plan==null?DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH:plan.riskAllowancePerUnit;
         double legacyBudget=plan==null?DynamicTradePlan.DEFAULT_RISK_BUDGET_USDT:plan.qualityRiskBudget;
-        for(Map.Entry<String,Object> field:ScalpActionRiskFields.legacy(signal.quantity,
+        for(Map.Entry<String,Object> field:CvCoreRiskFields.legacy(signal.quantity,
                 signal.stopDistance,legacyCost,legacyAllowance,legacyBudget).entrySet())
             value.put(field.getKey(),field.getValue());return value;
     }
@@ -6163,7 +6109,8 @@ public class MarketWatchService extends Service {
         String solEarlyQualityMode = "", solEarlyLastReasonCode = "";
         long reaccelQualitySince, reaccelStabilityMs, reaccelConfirmedAt;
         String reaccelBranch = "", reaccelLastReasonCode = "";
-        String scalpActionEngineId="",scalpActionRouteId="",scalpActionEpisodeId="";
+        String engineId="",policyId="",schemaId="",routeId="",episodeId="";
+        double routeRiskBudgetUsdt;
         long qualificationAt,entryValidUntil;
         String entryWindowStatus="";
 
