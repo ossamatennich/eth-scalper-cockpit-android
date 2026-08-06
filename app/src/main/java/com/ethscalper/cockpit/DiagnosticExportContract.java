@@ -42,7 +42,9 @@ public final class DiagnosticExportContract {
     public static boolean isCandidate(String type){return type!=null&&(type.contains("ADMISSION")
             ||type.contains("CANDIDATE")||type.contains("P01")||type.contains("P02"));}
     public static boolean isPlan(String type){return "PLAN_CONFIRMED".equals(type)
-            ||"PLAN_RESTORED".equals(type)||"TP_TOUCHED".equals(type)||"SL_TOUCHED".equals(type);}
+            ||"CV_CORE_PLAN_PERSISTED".equals(type)||"PLAN_RESTORED".equals(type)
+            ||"TP_TOUCHED".equals(type)||"CV_CORE_TP_TOUCHED".equals(type)
+            ||"SL_TOUCHED".equals(type)||"CV_CORE_SL_TOUCHED".equals(type);}
 
     private static void updateSummary(Map<String,Map<String,Object>> summaries,
                                       Map<String,Object> event,String type) {
@@ -57,10 +59,11 @@ public final class DiagnosticExportContract {
         increment(value,"events");if(type.contains("CANDIDATE"))increment(value,"candidates");
         if(type.contains("REJECT")||type.contains("TOMBSTONE")||type.contains("MISSED"))
             increment(value,"rejectedCandidates");
-        if("PLAN_CONFIRMED".equals(type))increment(value,"confirmedTrades");
+        if("PLAN_CONFIRMED".equals(type)||"CV_CORE_PLAN_PERSISTED".equals(type))
+            increment(value,"confirmedTrades");
         if("PLAN_RESTORED".equals(type))increment(value,"restoredActivePlans");
-        if("TP_TOUCHED".equals(type))increment(value,"tp");
-        if("SL_TOUCHED".equals(type))increment(value,"sl");
+        if("TP_TOUCHED".equals(type)||"CV_CORE_TP_TOUCHED".equals(type))increment(value,"tp");
+        if("SL_TOUCHED".equals(type)||"CV_CORE_SL_TOUCHED".equals(type))increment(value,"sl");
     }
     private static void increment(Map<String,Object> value,String key){Object current=value.get(key);
         value.put(key,(current instanceof Number?((Number)current).intValue():0)+1);}

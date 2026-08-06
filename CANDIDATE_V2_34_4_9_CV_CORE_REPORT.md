@@ -34,6 +34,30 @@ Une validation hors échantillon sur de nouvelles sessions Samsung reste nécess
 
 ## Validation logicielle
 
-La suite 4.9 ajoute 92 tests JVM couvrant les seuils, la causalité, les épisodes fixes, l’arbitrage, le sizing, la garde finale, le lifecycle, la migration, la suppression legacy, les diagnostics et le nettoyage du runtime. Après remplacement des 68 tests 4.8 obsolètes, le total passe de 575 à 599 tests par variante.
+La suite 4.9 initiale ajoutait 92 tests JVM couvrant les seuils, la causalité, les épisodes fixes, l’arbitrage, le sizing, la garde finale, le lifecycle, la migration, la suppression legacy, les diagnostics et le nettoyage du runtime. Le correctif d’idempotence ajoute 16 tests fonctionnels, portant le groupe V23449 à 108 tests et le total à 615 tests par variante.
 
-Les validations locales exécutées sont : 599/599 en Debug, Stable et Release, zéro failure/error/skipped ; 9/9 pour le validateur Python SOL ; construction des trois APK ; `lintRelease` sans erreur. La CI GitHub constitue la validation de signature Stable durable.
+Les validations locales exécutées sont : 615/615 en Debug, Stable et Release, zéro failure/error/skipped ; 9/9 pour le validateur Python SOL ; construction des trois APK ; `lintRelease` sans erreur. La CI GitHub constitue la validation de signature Stable durable.
+
+## Correctif d’audit — idempotence des événements économiques
+
+L’audit du premier artefact 4.9 a identifié deux écritures diagnostiques pour une même ouverture (`persistObservedSignalEvent` puis `recordCvEvent`) et deux familles terminales pour un même TP/SL (`CV_CORE_*_TOUCHED` puis le terminal legacy). Le trading et les niveaux n’étaient pas affectés, mais `confirmedTrades`, `tp` et `sl` pouvaient être doublés.
+
+Le correctif introduit un journal économique canonique borné à 512 clés. Une ouverture utilise `OPEN|engineId|signature`; un terminal utilise `TERMINAL|engineId|signature|terminalStatus`. Les clés sont conservées localement pour résister à une restauration du service. Chaque événement canonique alimente une seule fois le recorder, l’index persistant, l’export FULL et `CvCoreSummary`. Le lifecycle général continue de fermer l’objet public, nettoyer la persistance et notifier, sans écrire un terminal legacy supplémentaire pour un plan CV Core.
+
+Les nouvelles suites fonctionnelles couvrent la publication répétée, TP, SL, refresh post-terminal, retry d’alerte, redémarrage, reset avec plan actif, compatibilité d’un plan 4.8 restauré, journal persistant et scénario `market_summary.txt` à deux plans (un TP et un SL). L’ancien artefact 4.9 ID `8971942896` (ZIP `8a1d5e61…`, APK `991ee21d…`) est obsolète et ne doit plus être utilisé.
+
+### Contrôle de non-régression du moteur
+
+| Élément | Valeur conservée |
+|---|---|
+| Route A | `ETH_RANGE_DUAL_EXHAUSTION_SHORT_V1` |
+| Route B | `ETH_CAPITULATION_LONG_V1` |
+| Route C | `ETH_P02_CONFIRMED_BALANCED_SHORT_V1` |
+| Seuils et inclusivité | inchangés |
+| Multiples TP/SL | A `4/1,75`, B `2,5/1,5`, C `3/1,25` |
+| Budgets frais inclus | `14,55 / 14,55 / 7,275` USDT |
+| Coût par unité | `1,43` USDT |
+| Priorité | A, puis B, puis C |
+| Épisode | `symbol|side`, séparation après plus de 180 s |
+| Validité d’entrée | 5 s |
+| Exécution réelle | `realTradingAllowed=false` |

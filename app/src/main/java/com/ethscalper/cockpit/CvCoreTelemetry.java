@@ -16,7 +16,9 @@ public final class CvCoreTelemetry {
             d.put("ethQuoteAgeMs",o.ethQuoteAgeMs);d.put("btcQuoteAgeMs",o.btcQuoteAgeMs);d.put("solQuoteAgeMs",o.solQuoteAgeMs);finite(d,"bid",o.bid);finite(d,"ask",o.ask);finite(d,"mid",o.mid);finite(d,"A",o.a);finite(d,"directionalMove3Norm",o.directionalMove3Norm);
             metrics(d,o.metrics);}else d.put("observedAt",eventAt);
         d.put("persisted",false);d.put("alerted",false);
-        if(plan!=null){d.put("sourceType",plan.sourceType);d.put("side",plan.side);d.put("entry",plan.entry);d.put("tp",plan.takeProfit);d.put("sl",plan.stopLoss);
+        if(plan!=null){d.put("sourceType",plan.sourceType);d.put("side",plan.side);d.put("routeId",plan.route.routeId);
+            d.put("priority",plan.route.priority);d.put("episodeId",plan.episodeId);d.put("signature",plan.signature);
+            d.put("entry",plan.entry);d.put("tp",plan.takeProfit);d.put("sl",plan.stopLoss);
             d.put("targetMultiple",plan.route.targetMultiple);d.put("stopMultiple",plan.route.stopMultiple);d.put("routeRiskBudget",plan.route.riskBudgetUsdt);
             d.put("targetDistance",plan.targetDistance);d.put("stopDistance",plan.stopDistance);d.put("quantity",plan.quantity);d.put("resultCostPerUnit",plan.resultCostPerUnit);
             d.put("netRewardPerUnit",plan.netRewardPerUnit);d.put("netRiskPerUnit",plan.netRiskPerUnit);d.put("plannedNetRR",plan.plannedNetRewardRisk);

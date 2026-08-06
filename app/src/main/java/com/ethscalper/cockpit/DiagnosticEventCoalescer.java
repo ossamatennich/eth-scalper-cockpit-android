@@ -35,6 +35,8 @@ public final class DiagnosticEventCoalescer {
         if(type.contains("CANDIDATE")||type.startsWith("P01")||type.startsWith("P02")
                 ||"CONFIRMATION_READY".equals(type)||"PLAN_CONFIRMED".equals(type)
                 ||"PLAN_RESTORED".equals(type)||"TP_TOUCHED".equals(type)||"SL_TOUCHED".equals(type)
+                ||"CV_CORE_PLAN_PERSISTED".equals(type)||"CV_CORE_TP_TOUCHED".equals(type)
+                ||"CV_CORE_SL_TOUCHED".equals(type)
                 ||type.contains("PERSISTENCE")||type.contains("ALERT")||type.contains("ERROR")
                 ||type.contains("EXCEPTION")||type.contains("RESET")||type.startsWith("REARM_")
                 ||type.contains("FEED_STATE")||type.contains("SOURCE_TRANSITION")

@@ -148,8 +148,10 @@ public final class MarketDiagnosticRecorder {
         String type=String.valueOf(value.get("eventType"));
         if("TP_TOUCHED".equals(type)||"SL_TOUCHED".equals(type)
                 ||"CV_CORE_TP_TOUCHED".equals(type)||"CV_CORE_SL_TOUCHED".equals(type)
-                ||"SHADOW_TP_TOUCHED".equals(type)||"SHADOW_SL_TOUCHED".equals(type))
-            value.put("terminalStatus",type);
+                ||"SHADOW_TP_TOUCHED".equals(type)||"SHADOW_SL_TOUCHED".equals(type)) {
+            Object supplied=value.get("terminalStatus");
+            if(supplied==null||String.valueOf(supplied).isEmpty())value.put("terminalStatus",type);
+        }
         else value.put("terminalStatus","");
     }
     private static void put(Map<String,Object> map,String key,double value){map.put(key,Double.isFinite(value)?value:null);}

@@ -85,6 +85,8 @@ public class MarketWatchService extends Service {
     private static final String CH_SIGNAL_SILENT = "eth_scalper_signal_updates_v2330";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
+    private static final String CV_ECONOMIC_EVENT_PREFERENCES = "cv_core_economic_events_v1";
+    private static final String CV_ECONOMIC_EVENT_KEYS = "remembered_keys";
     private static final int NOTIF_WATCH_ID = 22801;
     static final int NOTIF_TEST_AUDIBLE_ID = 23_411_001;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
@@ -122,6 +124,7 @@ public class MarketWatchService extends Service {
     private final CvCoreEngine cvEngine = new CvCoreEngine(cvMovements);
     private final CvCoreCandidateArbiter cvArbiter = new CvCoreCandidateArbiter();
     private final CvCoreSummary cvSummary = new CvCoreSummary();
+    private CvCoreEconomicEventJournal cvEconomicEvents;
     private CvCorePlan activeCvPlan;
     private boolean cvEntryExpiredRecorded;
     private MarketDataRouter marketDataRouter;
@@ -440,6 +443,9 @@ public class MarketWatchService extends Service {
                 new SharedPreferencesActivePlanBackend(this));
         terminalRearmPersistence = new TerminalRearmPersistence(
                 new SharedPreferencesTerminalRearmBackend(this));
+        cvEconomicEvents = new CvCoreEconomicEventJournal(
+                marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder, cvSummary);
+        restoreCvEconomicEventKeys();
         lastTerminalAt = terminalRearmPersistence.restore();
         for(MarketRuntime runtime:marketCoordinator.runtimes().values()) {
             runtime.p02SetupTracker.reset();
@@ -3024,7 +3030,11 @@ public class MarketWatchService extends Service {
                             "V2330_TERMINAL_REARM_PERSIST_FAILED",
                             "Terminal timestamp could not be persisted atomically.");
                 }
-                persistObservedSignalEvent(item, status, snapshot, now);
+                // CV Core already wrote its one canonical economic terminal. The general
+                // lifecycle still closes, clears and notifies the public object, but cannot
+                // create a second legacy TP_TOUCHED/SL_TOUCHED diagnostic.
+                if(!CvCorePolicy.ENGINE_ID.equals(item.engineId))
+                    persistObservedSignalEvent(item, status, snapshot, now);
                 notifyObservationStatus(item, status);
                 if (!activePlanPersistence.clearForTerminal(MarketProfile.ETH_SYMBOL,status)) {
                     signalEngine.recordExternalDiagnostic(now,
@@ -3255,7 +3265,7 @@ public class MarketWatchService extends Service {
                 }
                 CvCorePlan.Terminal terminal=activeCvPlan.observe(now,snapshot.ethBid,
                         snapshot.ethAsk,ethMarketFeedFresh(now));
-                if(terminal!=null){cvSummary.terminal(terminal);recordCvTerminalEvent(activeCvPlan,terminal,now);activeCvPlan=null;}
+                if(terminal!=null){recordCvTerminalEvent(activeCvPlan,terminal,now);activeCvPlan=null;}
             }
         }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);}
     }
@@ -3373,11 +3383,10 @@ public class MarketWatchService extends Service {
         item.entryValidUntil=plan.entryValidUntil;item.entryWindowStatus="VALIDE";
         observedSignals.addLast(item);while(observedSignals.size()>200)observedSignals.removeFirst();
         activeCvPlan=plan;cvEntryExpiredRecorded=false;lastSignal=decision;lastDecision=decision;
-        lastSignalAt=now;lastActivePlanPersistAt=now;cvSummary.opened();
-        persistObservedSignalEvent(item,"CV_CORE_PLAN_PERSISTED",snapshot,now);
+        lastSignalAt=now;lastActivePlanPersistAt=now;
         Map<String,Object> persistedDetails=new LinkedHashMap<>();persistedDetails.put("persisted",true);
         persistedDetails.put("entryWindowStatus","VALIDE");
-        recordCvEvent("CV_CORE_PLAN_PERSISTED","",result,plan,now,persistedDetails);
+        recordCvEconomicOpen(result,plan,item,snapshot,now,persistedDetails);
         notifyCvCorePlan(item,plan);broadcastStatus("cv_core_plan","Nouveau plan manuel CV Core");
         return new CvCorePublicationGuard.PublicationResult(true,"");
     }
@@ -3421,19 +3430,48 @@ public class MarketWatchService extends Service {
         }catch(RuntimeException ignored){}
     }
 
+    private void recordCvEconomicOpen(CvCoreEngine.Result result,CvCorePlan plan,
+                                      ObservedSignal item,MarketSnapshot snapshot,long now,
+                                      Map<String,Object> details){
+        try{CvCoreEconomicEventJournal.Result recorded=cvEconomicEvents().recordOpen(now,result,plan,
+                    item.signal,snapshot,ethMarketFeedFresh(now),
+                    sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),details);
+            if(recorded.recorded){persistCvEconomicEventKeys();flushRuntimeRecorder(
+                    marketCoordinator.runtime(MarketProfile.ETH_SYMBOL),now,false);}
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",
+                "CV_CORE_ECONOMIC_OPEN_FAILED",result,plan,now);}
+    }
+
     private void recordCvTerminalEvent(CvCorePlan plan,CvCorePlan.Terminal terminal,long now){
-        Map<String,Object> terminalFields=new LinkedHashMap<>();terminalFields.put("touchQuote",terminal.touchQuote);
-        terminalFields.put("fillPrice",terminal.fillPrice);terminalFields.put("terminalStatus",terminal.status);
-        terminalFields.put("resultR",terminal.resultR);terminalFields.put("grossResultUsdt",terminal.grossResultUsdt);
-        terminalFields.put("estimatedFeesUsdt",terminal.estimatedFeesUsdt);terminalFields.put("netResultUsdt",terminal.netResultUsdt);
-        recordCvEvent(CvCorePlan.TP.equals(terminal.status)?"CV_CORE_TP_TOUCHED":"CV_CORE_SL_TOUCHED",
-                terminal.status,null,plan,now,terminalFields);
-        try{Map<String,Object>d=new LinkedHashMap<>();d.put("engineId",CvCorePolicy.ENGINE_ID);d.put("policyId",CvCorePolicy.POLICY_ID);
-            d.put("schema",CvCorePolicy.SCHEMA_ID);d.put("routeId",plan.route.routeId);d.put("episodeId",plan.episodeId);
-            d.put("touchQuote",terminal.touchQuote);d.put("fillPrice",terminal.fillPrice);d.put("terminalStatus",terminal.status);
-            d.put("resultR",terminal.resultR);d.put("grossResultUsdt",terminal.grossResultUsdt);d.put("estimatedFeesUsdt",terminal.estimatedFeesUsdt);d.put("netResultUsdt",terminal.netResultUsdt);
-            marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,"CV_CORE_TERMINAL_ECONOMICS",terminal.status,
-                    "Remplissage au niveau planifié.","CV_CORE_V1","","",lastSignal,buildSnapshot(now),0,true,true,0,d);
+        try{CvCoreEconomicEventJournal.Result recorded=cvEconomicEvents().recordTerminal(now,plan,terminal,
+                    lastSignal,buildSnapshot(now),ethMarketFeedFresh(now),
+                    sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
+            if(recorded.recorded){persistCvEconomicEventKeys();flushRuntimeRecorder(
+                    marketCoordinator.runtime(MarketProfile.ETH_SYMBOL),now,false);}
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",
+                "CV_CORE_ECONOMIC_TERMINAL_FAILED",null,plan,now);}
+    }
+
+    private CvCoreEconomicEventJournal cvEconomicEvents(){
+        if(cvEconomicEvents==null)cvEconomicEvents=new CvCoreEconomicEventJournal(
+                marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder,cvSummary);
+        return cvEconomicEvents;
+    }
+
+    private void restoreCvEconomicEventKeys(){
+        try{String serialized=getSharedPreferences(CV_ECONOMIC_EVENT_PREFERENCES,MODE_PRIVATE)
+                    .getString(CV_ECONOMIC_EVENT_KEYS,"[]");JSONArray values=new JSONArray(serialized);
+            List<String> keys=new ArrayList<>();for(int i=0;i<values.length();i++){
+                String key=values.optString(i,"");if(!key.isEmpty())keys.add(key);}
+            cvEconomicEvents().restore(keys);
+        }catch(RuntimeException ignored){cvEconomicEvents().restore(Collections.emptyList());}
+        catch(Exception ignored){cvEconomicEvents().restore(Collections.emptyList());}
+    }
+
+    private void persistCvEconomicEventKeys(){
+        try{JSONArray values=new JSONArray();for(String key:cvEconomicEvents().rememberedKeys())values.put(key);
+            getSharedPreferences(CV_ECONOMIC_EVENT_PREFERENCES,MODE_PRIVATE).edit()
+                    .putString(CV_ECONOMIC_EVENT_KEYS,values.toString()).commit();
         }catch(RuntimeException ignored){}
     }
 

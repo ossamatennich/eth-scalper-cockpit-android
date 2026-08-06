@@ -2,6 +2,9 @@
 
 ## 2.34.4.9 — CV Core V1, moteur public unique
 
+- correctif d’audit : un plan CV Core produit désormais exactement une ouverture économique et un seul terminal TP ou SL dans le recorder, l’index persistant et l’export FULL ;
+- ajoute des clés d’idempotence bornées et persistées `OPEN|engineId|signature` et `TERMINAL|engineId|signature|terminalStatus`, sans modifier les épisodes de trading ;
+- aligne `confirmedTrades`, `tp`, `sl`, le résumé CV Core et `market_summary.txt` sur le nombre réel de plans économiques ;
 - remplace le moteur public 4.8 par `NMC_SCALP_CV_CORE_V1`, toujours actif et limité à trois voies ETH figées ;
 - fixe les épisodes de mouvement avant toute règle, avec déduplication causale de 180 secondes et sans cooldown terminal ;
 - calcule les rendements et efficacités directionnels ETH/SOL sur des historiques une seconde bornés, sans point futur ;
