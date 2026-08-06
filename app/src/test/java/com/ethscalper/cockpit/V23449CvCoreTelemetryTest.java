@@ -1,0 +1,10 @@
+package com.ethscalper.cockpit;
+import org.junit.Test;import java.util.Map;import org.json.JSONObject;import static org.junit.Assert.*;
+public final class V23449CvCoreTelemetryTest {
+ @Test public void exactIdentifiersAndObservationFields(){CvCoreEngine.Result r=result();Map<String,Object>d=CvCoreTelemetry.details(r,r.plan,2);assertEquals(CvCorePolicy.ENGINE_ID,d.get("engineId"));assertEquals(CvCorePolicy.POLICY_ID,d.get("policyId"));assertEquals(CvCorePolicy.SCHEMA_ID,d.get("schema"));assertEquals("RAW",d.get("sourceType"));assertEquals("RANGE_FADE",d.get("sourceFamily"));}
+ @Test public void metricsAndRiskAreTypedNumbers(){Map<String,Object>d=CvCoreTelemetry.details(result(),result().plan,2);assertTrue(d.get("directionalEthReturn60") instanceof Number);assertTrue(d.get("routeRiskBudget") instanceof Number);assertTrue(d.get("quantity") instanceof Number);}
+ @Test public void unavailableValuesBecomeNull(){CvCoreObservation o=new CvCoreObservation("RAW","F","","ETHUSDT","LONG",1,0,0,0,Double.NaN,null,null,CvCoreTestFixtures.common());Map<String,Object>d=CvCoreTelemetry.details(null,null,1);assertEquals(1L,d.get("observedAt"));assertNull(CvCoreTelemetry.details(null,CvCoreTestFixtures.plan(CvCorePolicy.CAPITULATION_LONG,"LONG"),1).get("directionalMove3Norm"));}
+ @Test public void serializationContainsNoNonFiniteTokens(){String json=new JSONObject(CvCoreTelemetry.details(result(),result().plan,2)).toString();assertFalse(json.contains("NaN"));assertFalse(json.contains("Infinity"));}
+ @Test public void alertFieldsAreSeparateBooleans(){Map<String,Object>m=CvCoreTelemetry.alert(false,false);assertEquals(Boolean.FALSE,m.get("posted"));assertEquals(Boolean.FALSE,m.get("alreadyAlerted"));assertEquals(Boolean.TRUE,m.get("retryScheduled"));}
+ private static CvCoreEngine.Result result(){CvCoreMovementRegistry reg=new CvCoreMovementRegistry();CvCoreEngine e=new CvCoreEngine(reg);CvCoreMovementRegistry.Episode ep=reg.observe("ETHUSDT","SHORT",1);return e.observeRaw(CvCoreTestFixtures.signal("SHORT","RANGE_FADE"),CvCoreTestFixtures.snapshot(1900,1900.01,1.2,0,0),CvCoreTestFixtures.metrics(-1,-1,0,1,0,0),CvCoreTestFixtures.common(),1,ep);}
+}

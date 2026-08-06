@@ -40,6 +40,13 @@ public final class DiagnosticStreamingExporter {
     public static Result export(OutputStream destination,File events,File frames,
                                 Map<String,String> smallEntries,String version,long exportedAt,
                                 Progress progress,BooleanSupplier cancelled)throws Exception {
+        return export(destination,events,frames,smallEntries,version,exportedAt,
+                ExportSnapshotMetadata.legacy(exportedAt),progress,cancelled);
+    }
+    public static Result export(OutputStream destination,File events,File frames,
+                                Map<String,String> smallEntries,String version,long exportedAt,
+                                ExportSnapshotMetadata metadata,Progress progress,
+                                BooleanSupplier cancelled)throws Exception {
         if(destination==null)throw new IllegalArgumentException("destination");
         LinkedHashMap<String,EntryDigest> manifest=new LinkedHashMap<>();
         try(ZipOutputStream zip=new ZipOutputStream(destination,StandardCharsets.UTF_8)){
@@ -61,7 +68,7 @@ public final class DiagnosticStreamingExporter {
             writeSmall(zip,"feed_health.json",small(smallEntries,"feed_health.json","{}"),manifest);
             writeSmall(zip,"health_check.txt",small(smallEntries,"health_check.txt",""),manifest);
             writeSmall(zip,"instructions.txt",small(smallEntries,"instructions.txt",""),manifest);
-            String manifestJson=manifestJson(version,exportedAt,manifest,events,frames,
+            String manifestJson=manifestJson(version,exportedAt,manifest,events,frames,metadata,
                     configuredSymbols(small(smallEntries,"profiles_manifest.json","{}")));
             writeSmall(zip,"export_manifest.json",manifestJson,null);progress(progress,100,"Terminé");
         }
@@ -104,8 +111,14 @@ public final class DiagnosticStreamingExporter {
     }
 
     private static String manifestJson(String version,long at,Map<String,EntryDigest> values,
-                                       File events,File frames,List<String> symbols){StringBuilder out=new StringBuilder();
+                                       File events,File frames,ExportSnapshotMetadata metadata,
+                                       List<String> symbols){StringBuilder out=new StringBuilder();
         out.append("{\"product\":\"NMC\",\"version\":\"").append(escape(version)).append("\",\"exportedAt\":").append(at)
+                .append(",\"snapshotAt\":").append(metadata.snapshotAt)
+                .append(",\"requestId\":\"").append(escape(metadata.requestId)).append("\"")
+                .append(",\"flushCompleted\":").append(metadata.flushCompleted)
+                .append(",\"statusMode\":\"").append(escape(metadata.statusMode)).append("\"")
+                .append(",\"statusSha256\":\"").append(escape(metadata.statusSha256)).append("\"")
                 .append(",\"sourceRange\":\"rotated .1 then current\",\"symbols\":[");
         for(int i=0;i<symbols.size();i++){if(i>0)out.append(',');out.append('"').append(escape(symbols.get(i))).append('"');}
         out.append("],\"entries\":[");
@@ -136,6 +149,15 @@ public final class DiagnosticStreamingExporter {
         void write(byte[] bytes)throws Exception{output.write(bytes);digest.update(bytes);count+=bytes.length;}}
     public static final class EntryDigest{public final long bytes;public final String sha256;
         EntryDigest(long bytes,String sha256){this.bytes=bytes;this.sha256=sha256;}}
+    public static final class ExportSnapshotMetadata {
+        public final long snapshotAt;public final String requestId,statusMode,statusSha256;
+        public final boolean flushCompleted;
+        public ExportSnapshotMetadata(long snapshotAt,String requestId,boolean flushCompleted,
+                                      String statusMode,String statusSha256){this.snapshotAt=snapshotAt;
+            this.requestId=requestId==null?"":requestId;this.flushCompleted=flushCompleted;
+            this.statusMode=statusMode==null?"":statusMode;this.statusSha256=statusSha256==null?"":statusSha256;}
+        static ExportSnapshotMetadata legacy(long at){return new ExportSnapshotMetadata(at,"",false,"LEGACY","");}
+    }
     public static final class Result{public final Map<String,EntryDigest> entries;public final List<String> names;public final int maximumBufferBytes;
         Result(Map<String,EntryDigest> entries,List<String> names,int maximumBufferBytes){this.entries=Collections.unmodifiableMap(new LinkedHashMap<>(entries));this.names=names;this.maximumBufferBytes=maximumBufferBytes;}}
     public static final class ExportCancelledException extends RuntimeException{}

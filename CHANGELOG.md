@@ -1,5 +1,110 @@
 # Changelog
 
+## 2.34.4.9 — CV Core V1, moteur public unique
+
+- correctif d’audit : un plan CV Core produit désormais exactement une ouverture économique et un seul terminal TP ou SL dans le recorder, l’index persistant et l’export FULL ;
+- ajoute des clés d’idempotence bornées et persistées `OPEN|engineId|signature` et `TERMINAL|engineId|signature|terminalStatus`, sans modifier les épisodes de trading ;
+- aligne `confirmedTrades`, `tp`, `sl`, le résumé CV Core et `market_summary.txt` sur le nombre réel de plans économiques ;
+- remplace le moteur public 4.8 par `NMC_SCALP_CV_CORE_V1`, toujours actif et limité à trois voies ETH figées ;
+- fixe les épisodes de mouvement avant toute règle, avec déduplication causale de 180 secondes et sans cooldown terminal ;
+- calcule les rendements et efficacités directionnels ETH/SOL sur des historiques une seconde bornés, sans point futur ;
+- réserve 14,55 USDT de risque frais inclus aux voies RAW et exactement 7,275 USDT à la confirmation P02 ;
+- supprime le mode utilisateur, les cinq anciennes voies et le comparateur legacy, tout en conservant la migration d’un plan 4.8 déjà actif ;
+- maintient la suppression des nouvelles publications legacy ETH/SOL, les diagnostics complets et `realTradingAllowed=false`.
+
+## 2.34.4.8 — Scalp Action V1 manuel
+
+- corrige l’arbitrage global inter-source : toutes les confirmations legacy et la décision RAW d’un même cycle sont comparées avant l’unique publication ;
+- revalide les flux, le plan actif, la fenêtre de cinq secondes, l’économie et le budget juste avant la persistance, avec un code de refus précis ;
+- affiche pour Scalp Action la perte totale frais inclus et le budget exact de 14,55 USDT, sans modifier le rendu des plans legacy restaurés ;
+- complète le résumé live avec temps frais, profit factor, expectancy, drawdown, frais et fréquence ;
+- conserve les métriques de confirmation au timestamp causal et ajoute les événements explicites de non-sélection, doublon et comparateur occupé ;
+- ajoute `NMC_SCALP_ACTION_V1`, moteur public ETH indépendant à cinq voies figées ;
+- observe causalement les décisions brutes et les confirmations legacy, avec contexte ETH/SOL/BTC borné ;
+- calcule l’entrée au bid/ask exécutable, des niveaux conservateurs et une quantité frais inclus sous 14,55 USDT ;
+- neutralise les nouvelles publications legacy ETH/SOL tout en conservant diagnostics, frozen, shadow et comparateurs silencieux ;
+- restaure sans conversion les plans déjà actifs, ajoute une fenêtre d’entrée de cinq secondes et un rollback local persistant ;
+- reste manuel uniquement, sans ordre automatique, avec `realTradingAllowed=false`.
+
+## 2.34.4.7 — protocole frozen de calibration de rentabilité
+
+- ajoute un portefeuille shadow indépendant : ETH Range haute volatilité et deux branches SOL Accel38 simultanées ;
+- fige les seuils, les multiples de A, la signature structurelle et les buckets de sensibilité pour le futur holdout ;
+- applique un sizing frais inclus sous 14,55 USDT et remplit les terminaux exactement aux TP/SL planifiés ;
+- expose un résumé borné distinct sans importer les résultats historiques dans les compteurs futurs ;
+- politique `SHADOW_V23447_20260804`, schéma `SHADOW_SCHEMA_V8`, protocole public interdit, moteur public inchangé.
+
+## 2.34.4.6 — intégrité des télémétries shadow
+
+- calcule Range Reclaim depuis `movementExtreme`, avec `movementOrigin` conservé uniquement comme diagnostic séparé ;
+- attribue No-Retrace au composant officiel `ETH_NO_RETRACE_BREAKOUT_RESEARCH` ;
+- remet à zéro l’horloge Reacceleration dès qu’un plan shadow est actif ;
+- expose des snapshots FIFO bornés à 160 mouvements avec compteurs de doublons consolidés ;
+- politique `SHADOW_V23446_20260803`, schéma `SHADOW_SCHEMA_V7`, moteur public inchangé.
+
+## 2.34.4.5 — recherche shadow réaccélération et fréquence protégée
+
+- remplace le baseline universel SOL P01 par un garde shadow propre à SOL, sans effet sur les confirmations publiques ;
+- ajoute `ETH_FLOW_REACCELERATION_V2`, avec deux branches de flow et dix secondes de stabilité continue avant toute ouverture shadow ;
+- conserve l’ancienne continuation ETH comme comparateur sans ouverture et place Range Fade en quarantaine ;
+- ajoute les télémétries bornées Range Reclaim et No-Retrace Breakout, sans plan, alerte ni faux terminal ;
+- étend le résumé expérimental V6 et conserve le sizing shadow frais inclus ;
+- politique `SHADOW_V23445_20260803`, schéma `SHADOW_SCHEMA_V6`, moteur public inchangé.
+
+## 2.34.4.4 — comptabilité shadow qualité/fréquence corrigée
+
+- qualifications, occasions exécutables et ouvertures comptées séparément, sans double incrément ;
+- unions exactes public/shadow et agrégat `ALL` ETH+SOL ;
+- registre FIFO borné à 256 plans permettant les overlaps après TP ou SL shadow ;
+- quantité des lanes shadow réellement calculée avec frais, pas, minimum, maximum et plafond qualité ;
+- résumé et terminaux publics entièrement isolés en fail-open ;
+- politique `SHADOW_V23444_20260802`, schéma `SHADOW_SCHEMA_V5`, moteur public inchangé.
+
+## 2.34.4.3 — architecture shadow qualité + fréquence
+
+- garde P01 symbolique : strict sur ETH, baseline publique conservée sur SOL ;
+- reprise P01 précoce SOL réutilisant le sélecteur et la stabilité existants ;
+- voie ETH de continuation à flow confirmé et voie secondaire RANGE_FADE LONG, ré-ancrées causalement ;
+- déduplication par composant et par mouvement, overlaps public/shadow explicitement mesurés ;
+- résumé incrémental borné de qualité, résultats nets et fréquence dans le statut et l’export ;
+- politique `SHADOW_V23443_20260802`, schéma `SHADOW_SCHEMA_V4`, aucune activation publique.
+
+## 2.34.4.2 — bridge shadow ETH et politiques symboliques
+
+- pont fail-open entre le moteur ETH historique et la couche d’observation shadow commune à SOL ;
+- une décision A/B et une sonde de sizing possibles pour chaque confirmation publique ETH ou SOL ;
+- quarantaine shadow des P02 SOL et score shadow minimal de 85 pour les P02 ETH, sans veto public ;
+- nouvelle voie de recherche silencieuse `ETH_FLOW_EXPANSION_EXTENDED`, avec mesure de latence et déduplication ;
+- télémétrie bornée des mouvements ETH BTC-led manqués, sans ouverture de plan ;
+- politique `SHADOW_V23442_20260802`, schéma `SHADOW_SCHEMA_V3`, aucun changement du moteur public.
+
+## 2.34.4.1 — durcissement de l’observabilité shadow
+
+- isolation de toutes les exceptions shadow afin qu’elles ne puissent jamais interrompre le moteur public ;
+- terminaux shadow acceptés uniquement sur une cotation tradée fraîche et valide ;
+- schéma `SHADOW_SCHEMA_V2` avec `E60` absolu et `eNormalized` séparés ;
+- `resultR` calculé sur le risque net planifié, frais inclus ;
+- protection causale contre une cible déjà touchée avant l’ouverture shadow ;
+- tests fonctionnels renforcés sans modification des seuils ni des plans publics.
+
+## 2.34.4.0 — calibration A/B shadow isolée
+
+- garde P01 finale et anti-épuisement P02 mesurés sans modifier les confirmations publiques ;
+- deux voies de recherche shadow causales, dédupliquées et silencieuses ;
+- suivi shadow immuable jusqu’au TP ou au SL, indépendant des compteurs et plans publics ;
+- sonde de sizing tenant compte des frais, sans modifier la quantité active ;
+- événements shadow typés et exportables sous la politique `SHADOW_V23440_20260801` ;
+- aucune modification des filtres, timings, TP, SL, quantités, alertes ou lifecycles publics.
+
+## 2.34.3.9 — statut, export et diagnostics fiabilisés
+
+- normalisation JSON récursive des nombres non finis, maps, listes, tableaux et valeurs Java inconnues ;
+- conservation stricte du dernier statut valide et statut minimal riche en cas d’échec d’une section optionnelle ;
+- export déclenché uniquement après acquittement du flush, avec snapshot unique et traçabilité SHA-256 ;
+- coalescence des diagnostics répétitifs sur des champs stables, sans perdre les événements métier ;
+- observabilité complète du canal sonore, de la ressource, du volume et des restrictions Android, sans modifier les réglages ;
+- aucune modification du moteur, des entrées, TP, SL, quantités ou lifecycles.
+
 ## 2.34.3.8 — diagnostic complet et alerte finale vérifiée
 
 - index recorder, événements récents, plans actifs et santé du canal conservés dans le statut de secours ;

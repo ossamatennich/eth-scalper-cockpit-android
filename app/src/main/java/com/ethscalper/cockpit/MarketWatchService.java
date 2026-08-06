@@ -1,5 +1,6 @@
 package com.ethscalper.cockpit;
 
+import android.Manifest;
 import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -9,7 +10,11 @@ import android.app.Service;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.MediaMetadataRetriever;
+import android.content.res.AssetFileDescriptor;
 import android.net.Uri;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -48,6 +53,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -65,8 +71,13 @@ public class MarketWatchService extends Service {
     public static final String ACTION_TEST_VIBRATION = "com.ethscalper.cockpit.TEST_VIBRATION";
     public static final String ACTION_RESET_DIAGNOSTICS = "com.ethscalper.cockpit.RESET_DIAGNOSTICS";
     public static final String ACTION_FLUSH_DIAGNOSTICS = "com.ethscalper.cockpit.FLUSH_DIAGNOSTICS";
+    public static final String ACTION_RECORD_EXPORT_TIMEOUT = "com.ethscalper.cockpit.RECORD_EXPORT_TIMEOUT";
     public static final String BROADCAST_STATUS = "com.ethscalper.cockpit.STATUS";
     public static final String EXTRA_PAYLOAD = "payload";
+    public static final String EXTRA_REQUEST_ID = "diagnostic_request_id";
+    public static final String EXTRA_FLUSH_COMPLETED = "diagnostic_flush_completed";
+    public static final String EXTRA_STATUS_MODE = "diagnostic_status_mode";
+    public static final String EXTRA_SNAPSHOT_AT = "diagnostic_snapshot_at";
     public static final long SIGNAL_DISPLAY_TTL_MS = 120_000L;
 
     private static final String CH_WATCH = "eth_scalper_watch_v22801";
@@ -74,6 +85,8 @@ public class MarketWatchService extends Service {
     private static final String CH_SIGNAL_SILENT = "eth_scalper_signal_updates_v2330";
     private static final String STATE_PREFERENCES = "market_watch_state";
     private static final String STATE_JSON = "last_status_json";
+    private static final String CV_ECONOMIC_EVENT_PREFERENCES = "cv_core_economic_events_v1";
+    private static final String CV_ECONOMIC_EVENT_KEYS = "remembered_keys";
     private static final int NOTIF_WATCH_ID = 22801;
     static final int NOTIF_TEST_AUDIBLE_ID = 23_411_001;
     private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
@@ -96,11 +109,24 @@ public class MarketWatchService extends Service {
         thread.setDaemon(true);
         return thread;
     });
+    private volatile AudibleSoundResourceSnapshot audibleSoundResourceSnapshot =
+            AudibleSoundResourceSnapshot.pending();
+    private volatile boolean audibleSoundProbeScheduled;
+    private volatile String lastDiagnosticFlushError="";
     private final MarketRegistry marketRegistry = MarketRegistry.production();
     private final MultiMarketCoordinator marketCoordinator =
             new MultiMarketCoordinator(marketRegistry);
     private final SharedReferenceContext sharedBtc = new SharedReferenceContext();
     private final MarketPlanOrchestrator marketOrchestrator = new MarketPlanOrchestrator();
+    private final LegacyEthShadowBridge legacyEthShadowBridge = new LegacyEthShadowBridge();
+    private final CvCoreContextTracker cvContext = new CvCoreContextTracker();
+    private final CvCoreMovementRegistry cvMovements = new CvCoreMovementRegistry();
+    private final CvCoreEngine cvEngine = new CvCoreEngine(cvMovements);
+    private final CvCoreCandidateArbiter cvArbiter = new CvCoreCandidateArbiter();
+    private final CvCoreSummary cvSummary = new CvCoreSummary();
+    private CvCoreEconomicEventJournal cvEconomicEvents;
+    private CvCorePlan activeCvPlan;
+    private boolean cvEntryExpiredRecorded;
     private MarketDataRouter marketDataRouter;
     private final Deque<Candle> ethCandles = new ArrayDeque<>();
     private final Deque<Candle> btcCandles = new ArrayDeque<>();
@@ -156,6 +182,7 @@ public class MarketWatchService extends Service {
     private long lastEvaluationAt;
     private long lastWatchNotificationAt;
     private long lastStatusFallbackDiagnosticAt;
+    private String lastValidStatusJson="";
     private long bookTickerMessages;
     private long klineMessages;
     private long aggTradeMessages;
@@ -189,8 +216,9 @@ public class MarketWatchService extends Service {
 
     public static String getLastStatusJson(Context context) {
         String memory = LAST_STATUS_JSON == null ? "" : LAST_STATUS_JSON;
-        if (!memory.isEmpty()) return memory;
-        return context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).getString(STATE_JSON, "");
+        if (SafeJsonNormalizer.isValidObject(memory)) return memory;
+        String stored=context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).getString(STATE_JSON, "");
+        return SafeJsonNormalizer.isValidObject(stored)?stored:"";
     }
 
     public static String getLastStatusJson() {
@@ -369,9 +397,11 @@ public class MarketWatchService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        lastValidStatusJson=getLastStatusJson(this);
         // Android requires a foreground service to publish its notification immediately.
         // Never place recorder scans, migrations, REST calls or plan restoration before this.
         ensureChannels(this);
+        scheduleAudibleSoundResourceProbe("STARTUP");
         startForeground(NOTIF_WATCH_ID,
                 buildWatchNotification("Démarrage immédiat du moteur multi-marchés…"));
         p02SetupTracker.reset();
@@ -413,6 +443,9 @@ public class MarketWatchService extends Service {
                 new SharedPreferencesActivePlanBackend(this));
         terminalRearmPersistence = new TerminalRearmPersistence(
                 new SharedPreferencesTerminalRearmBackend(this));
+        cvEconomicEvents = new CvCoreEconomicEventJournal(
+                marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder, cvSummary);
+        restoreCvEconomicEventKeys();
         lastTerminalAt = terminalRearmPersistence.restore();
         for(MarketRuntime runtime:marketCoordinator.runtimes().values()) {
             runtime.p02SetupTracker.reset();
@@ -420,6 +453,9 @@ public class MarketWatchService extends Service {
         }
         restoreActiveFinalPlan();
         restoreSecondaryFinalPlans();
+        ObservedSignal restoredAtStartup=activeFinalSignal();
+        if(restoredAtStartup==null||!LegacyV23448ActivePlanCompatibility.isRestoredEngine(restoredAtStartup.engineId))
+            LegacyV23448ActivePlanCompatibility.purgeInactivePreferences(this);
         client = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(20, TimeUnit.SECONDS)
@@ -465,6 +501,10 @@ public class MarketWatchService extends Service {
             broadcastStatus("test_vibration", "Vibration longue testée");
         } else if (ACTION_RESET_DIAGNOSTICS.equals(action)) {
             ObservedSignal activePlan = activeFinalSignal();
+            if(activeCvPlan!=null&&(activePlan==null||!CvCorePolicy.ENGINE_ID.equals(activePlan.engineId))){
+                recordCvEvent("CV_CORE_RESET_ABORTED","RESET_ABORTED",null,activeCvPlan,System.currentTimeMillis());activeCvPlan=null;}
+            legacyEthShadowBridge.resetResearchMemory();
+            marketOrchestrator.resetShadowResearchMemory();
             for(MarketRuntime runtime:marketCoordinator.runtimes().values()) {
                 runtime.resetDiagnosticsPreservingActivePlan();
             }
@@ -473,6 +513,7 @@ public class MarketWatchService extends Service {
             observedSignals.clear();
             pendingCandidateIndex.clear();
             candidateTombstones.clear();
+            cvSummary.reset();cvEngine.reset();cvArbiter.beginCycle(System.currentTimeMillis());
             marketFrames.clear();
             legacyFrameSignals=legacyC1Long=legacyC1Short=legacyC2Long=legacyC2Short=0;
             LAST_MARKET_FRAMES_JSON="[]";
@@ -484,6 +525,9 @@ public class MarketWatchService extends Service {
                 flushRuntimeRecorder(runtime,System.currentTimeMillis(),true);
             if (activePlan != null) {
                 observedSignals.addLast(activePlan);
+                if(CvCorePolicy.ENGINE_ID.equals(activePlan.engineId))
+                    cvMovements.restoreOpened(activePlan.episodeId,MarketProfile.ETH_SYMBOL,
+                            activePlan.signal.side,activePlan.qualificationAt,activePlan.routeId);
                 observedSignalId = Math.max(observedSignalId, activePlan.id);
                 lastSignal = activePlan.signal;
                 lastSignalAt = activePlan.finalConfirmedAt;
@@ -511,8 +555,25 @@ public class MarketWatchService extends Service {
                                 :"Diagnostic moteur + recorder persistant réinitialisés");
             }
         } else if (ACTION_FLUSH_DIAGNOSTICS.equals(action)) {
-            flushDiagnosticsBlocking(10_000L);
-            broadcastStatus("diagnostics_flushed", "Diagnostic prêt pour export");
+            String requestId=intent==null?"":intent.getStringExtra(EXTRA_REQUEST_ID);
+            boolean flushCompleted=flushDiagnosticsBlocking(10_000L);
+            if(!flushCompleted)recordDiagnosticFlushFailure(requestId,10_000L,lastDiagnosticFlushError);
+            if(!flushCompleted){broadcastStatus("diagnostics_flush_failed",
+                    "Flush diagnostic incomplet : "+lastDiagnosticFlushError,
+                    requestId==null?"":requestId,false);
+            }else{
+            broadcastStatus("diagnostics_flushed", "Diagnostic prêt pour export",
+                    requestId==null?"":requestId,true);
+            }
+        } else if (ACTION_RECORD_EXPORT_TIMEOUT.equals(action)) {
+            String requestId=intent==null?"":intent.getStringExtra(EXTRA_REQUEST_ID);
+            long now=System.currentTimeMillis();Map<String,Object> details=new LinkedHashMap<>();
+            details.put("requestId",requestId==null?"":requestId);
+            marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,
+                    "DIAGNOSTIC_EXPORT_FLUSH_TIMEOUT","NMC_DIAGNOSTIC_EXPORT_FLUSH_TIMEOUT",
+                    "Acquittement du flush absent; export du dernier statut valide",
+                    "DIAGNOSTIC_RUNTIME","","",null,null,0,ethExecutionFeedFresh(now),
+                    sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,details);
         } else if (ACTION_SYNC_NOW.equals(action)) {
             broadcastStatus("sync", "État du service natif resynchronisé");
         }
@@ -568,6 +629,13 @@ public class MarketWatchService extends Service {
         item.p01Move15Aligned = state.p01Move15Aligned;
         item.p01Flow30Aligned = state.p01Flow30Aligned;
         item.restoredSizingDiagnostic = state.sizingDiagnostic;
+        item.engineId=state.engineId;item.policyId=state.policyId;item.schemaId=state.schemaId;
+        item.routeId=state.routeId;item.episodeId=state.episodeId;item.routeRiskBudgetUsdt=state.routeRiskBudgetUsdt;
+        item.qualificationAt=state.qualificationAt;
+        item.entryValidUntil=state.entryValidUntil;item.entryWindowStatus=state.entryWindowStatus;
+        activeCvPlan=CvCorePlan.fromState(state);
+        if(activeCvPlan!=null)cvMovements.restoreOpened(state.episodeId,state.symbol,state.side,
+                state.qualificationAt,state.routeId);
         item.lastConfirmationCode = ActivePlanPersistence.RESTORED;
         observedSignals.addLast(item);
 
@@ -611,7 +679,9 @@ public class MarketWatchService extends Service {
         if (item == null || item.signal == null || snapshot == null) return false;
         try {
             Object sizing = confirmedSizingJson(item);
-            ActivePlanState.Builder builder = ActivePlanState.builder()
+            boolean cv=CvCorePolicy.ENGINE_ID.equals(item.engineId);
+            boolean restoredV48=LegacyV23448ActivePlanCompatibility.isRestoredEngine(item.engineId);
+            ActivePlanState.Builder builder = ActivePlanState.builder().formatVersion(cv?4:restoredV48?3:2)
                     .status("ACTIVE")
                     .side(item.signal.side).family(item.signal.family)
                     .reasonCode(item.signal.reasonCode).reasonText(item.signal.reasonText)
@@ -638,6 +708,17 @@ public class MarketWatchService extends Service {
                                 p.structuralWindowMinutes,p.structuralBuffer,
                                 p.stopCalculationType,p.stopReasonCode,p.selectedBudgetReason,
                                 p.riskPerUnit,p.riskQuantity,p.qualityCap);}
+            if(cv){
+                builder.unitRisk(CvCorePolicy.RESULT_COST_PER_UNIT,0,item.routeRiskBudgetUsdt,
+                        item.signal.quantity*(item.signal.stopDistance
+                                +CvCorePolicy.RESULT_COST_PER_UNIT));
+                builder.enginePlan(item.engineId,item.policyId,item.schemaId,item.routeId,
+                        item.episodeId,item.qualificationAt,item.entryValidUntil,
+                        item.entryWindowStatus,item.routeRiskBudgetUsdt);
+            }else if(restoredV48){
+                builder.enginePlan(item.engineId,"","",item.routeId,item.episodeId,
+                        item.qualificationAt,item.entryValidUntil,item.entryWindowStatus,0d);
+            }
             ActivePlanState state=builder.build();
             return activePlanPersistence.saveForMarket(state);
         } catch (Exception ignored) {
@@ -1382,10 +1463,12 @@ public class MarketWatchService extends Service {
             if (btcBid > 0 && btcAsk > 0) btcLast = (btcBid + btcAsk) / 2.0;
             sharedBtc.bid=btcBid;sharedBtc.ask=btcAsk;sharedBtc.last=btcLast;
             sharedBtc.lastTickerAt=now;sharedBtc.bookTickerMessages++;
+            cvContext.observe(symbol,btcBid,btcAsk,now);
         } else if(marketRegistry.contains(symbol)) {
             MarketRuntime runtime=marketCoordinator.runtime(symbol);
-            marketDataRouter.routeBookTicker(symbol,data.optDouble("b",runtime.bid),
-                    data.optDouble("a",runtime.ask),now);
+            double nextBid=data.optDouble("b",runtime.bid),nextAsk=data.optDouble("a",runtime.ask);
+            marketDataRouter.routeBookTicker(symbol,nextBid,nextAsk,now);
+            cvContext.observe(symbol,nextBid,nextAsk,now);
         }
     }
 
@@ -1419,9 +1502,20 @@ public class MarketWatchService extends Service {
     }
 
     private synchronized void evaluateSignal(long now) {
+        cvArbiter.beginCycle(now);
         evaluateSecondaryMarkets(now);
         MarketSnapshot snapshot = buildSnapshot(now);
         boolean feedFresh = ethExecutionFeedFresh(now);
+        CvCoreEngine.Common common=cvCommon(now);
+        cvSummary.observeFresh(now,common.ethFresh&&common.btcFresh&&common.solFresh);
+        observeCvLifecycle(snapshot,now);
+        MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+        ethRuntime.frozenProfitability.safeObserveTerminal(ethRuntime,snapshot,now,
+                ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                activeFinalSignal()!=null);
+        legacyEthShadowBridge.observeTerminal(ethRuntime,snapshot,now,ethMarketFeedFresh(now),
+                sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),activeFinalSignal()!=null,lastTerminalAt,
+                structuralEthBars(now));
 
         // C01: an old feed blocks only creation; existing candidates and risks still advance.
         updateObservedSignals(snapshot, now, feedFresh);
@@ -1436,6 +1530,7 @@ public class MarketWatchService extends Service {
                 && p02SetupTracker.observe(currentSetup);
 
         if (!feedFresh) {
+            finishCvCycle(now);
             SignalDecision staleFeed = SignalDecision.waiting(
                     "V2326_ETH_FEED_STALE",
                     "Nouvelles entrées bloquées — gestion des risques existants maintenue.",
@@ -1458,6 +1553,11 @@ public class MarketWatchService extends Service {
         }
 
         SignalDecision rawDecision = signalEngine.evaluate(snapshot);
+        ethRuntime.frozenProfitability.safeObserveRaw(ethRuntime,snapshot,rawDecision,now,
+                ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                activeFinalPlan,terminalRearmComplete);
+        safeObserveCvRaw(rawDecision,snapshot,now);
+        finishCvCycle(now);
         boolean oppositeScenarioActive = rawDecision != null && rawDecision.isSignal()
                 && shouldBlockByScenarioMemory(rawDecision, snapshot, now);
         String replayRiskDiagnostic = rawDecision != null && rawDecision.isSignal()
@@ -1506,18 +1606,14 @@ public class MarketWatchService extends Service {
                     marketFresh,sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
             if("CONFIRMED".equals(event.type)) {
                 MarketSnapshot current=MarketSnapshotFactory.build(runtime,sharedBtc,now);
-                if(activePlanPersistence.saveForMarket(event.plan)) {
-                    runtime.recorder.record(now,"PLAN_CONFIRMED",event.reasonCode,
-                            "Plan persisté et publié.","STRUCTURAL_SHARED","",event.fill.sleeve,
-                            event.signal,current,Math.max(0,now-event.plan.createdAt),marketFresh,
-                            sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,runtimePlanDetails(event.plan));
-                    notifyMarketPlan(event.plan,true);
-                } else {runtime.recorder.record(now,"PLAN_PERSISTENCE_REJECTED",
-                        ActivePlanPersistence.PERSIST_FAILED,"Publication refusée : persistance atomique impossible.",
-                        "STRUCTURAL_SHARED","",event.fill.sleeve,event.signal,current,
-                        Math.max(0,now-event.plan.createdAt),marketFresh,
+                // CV Core suppresses every new SOL public confirmation; diagnostics remain.
+                cvSummary.legacySuppressed();
+                runtime.recorder.record(now,"LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1",
+                        "LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1",
+                        "Plan SOL legacy supprimé de la publication publique.","STRUCTURAL_SHARED","",event.fill.sleeve,
+                        event.signal,current,Math.max(0,now-event.plan.createdAt),marketFresh,
                         sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,runtimePlanDetails(event.plan));
-                    runtime.activePlan=null;runtime.lastSignal=null;}
+                runtime.activePlan=null;runtime.lastSignal=null;
             } else if("TERMINAL".equals(event.type)) {
                 terminalRearmPersistence.save(profile.symbol,now);runtime.lastTerminalAt=now;
                 activePlanPersistence.clearForTerminal(profile.symbol,event.status);
@@ -2180,8 +2276,31 @@ public class MarketWatchService extends Service {
         try {
             Future<?> barrier=diagnosticIoExecutor.submit(this::flushCoalescedDiagnosticsNow);
             barrier.get(Math.max(1L,timeoutMs),TimeUnit.MILLISECONDS);
+            lastDiagnosticFlushError="";
             return true;
-        } catch (Exception ignored) { return false; }
+        } catch (TimeoutException error) {
+            lastDiagnosticFlushError="TIMEOUT_AFTER_"+Math.max(1L,timeoutMs)+"MS";
+            return false;
+        } catch (Exception error) {
+            lastDiagnosticFlushError=error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage());
+            return false;
+        }
+    }
+
+    private boolean ethMarketFeedFresh(long now) {
+        return executionFeedAuthoritative&&ethBid>0&&ethAsk>0&&ethLast>0
+                &&lastEthBookTickerAt>0&&now-lastEthBookTickerAt<=ETH_BOOK_MAX_AGE_MS;
+    }
+
+    private void recordDiagnosticFlushFailure(String requestId,long timeoutMs,String error){
+        try{long now=System.currentTimeMillis();Map<String,Object> details=new LinkedHashMap<>();
+            details.put("requestId",requestId==null?"":requestId);details.put("timeoutMs",timeoutMs);
+            details.put("flushCompleted",false);details.put("error",error==null?"UNKNOWN":error);
+            marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,
+                    "DIAGNOSTIC_FLUSH_FAILED","NMC_DIAGNOSTIC_FLUSH_FAILED",
+                    error==null?"Flush diagnostic incomplet":error,"DIAGNOSTIC_RUNTIME","","",
+                    null,null,0,ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,details);
+        }catch(Exception ignored){}
     }
 
     private void saveRecorderIndex(){if(recorderIndex==null)return;
@@ -2716,6 +2835,8 @@ public class MarketWatchService extends Service {
         o.put("c2LongCandidates", legacyC2Long);
         o.put("c2ShortCandidates", legacyC2Short);
         o.put("purpose", "Full market playback: find missed LONG/SHORT opportunities and false entries");
+        o.put("SHADOW_EXPERIMENT_SUMMARY",shadowExperimentSummaryJson(System.currentTimeMillis()));
+        o.put("FROZEN_PROFITABILITY_SUMMARY",frozenProfitabilitySummaryJson(System.currentTimeMillis()));
         return o;
     }
 
@@ -2794,12 +2915,29 @@ public class MarketWatchService extends Service {
             item.minPrice = Math.min(item.minPrice, price);
             if (!"ACTIVE".equals(item.status)) observeAdverseExcursion60(item, snapshot, now);
 
-            if ("DIAGNOSTIC_ONLY".equals(item.status)) continue;
+            if ("DIAGNOSTIC_ONLY".equals(item.status)) {
+                MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+                legacyEthShadowBridge.observeCandidate(ethRuntime,item,snapshot,now,
+                        ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                        activeFinalSignal()!=null,lastTerminalAt,
+                        candidateTombstones.blocks(item.candidateSignature),structuralEthBars(now));
+                continue;
+            }
 
             if ("LIMIT_PENDING".equals(item.status)) {
                 item.normalizedMetrics = NormalizedSignalMetrics.calculate(
                         item.signal.side, item.signal, snapshot, item.adverseExcursion60);
+                MarketRuntime ethRuntime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+                legacyEthShadowBridge.observeCandidate(ethRuntime,item,snapshot,now,
+                        ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                        activeFinalSignal()!=null,lastTerminalAt,
+                        candidateTombstones.blocks(item.candidateSignature),structuralEthBars(now));
                 if (feedFresh && CandidateLifecycle.targetReachedBeforeConfirmedFill(item.signal, snapshot)) {
+                    legacyEthShadowBridge.observeMissedMove(ethRuntime,item,snapshot,now,
+                            ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),
+                            activeFinalSignal()!=null,lastTerminalAt,structuralEthBars(now),
+                            Map.of("creationBid",item.creationBid,"creationAsk",item.creationAsk,
+                                    "creationLast",item.creationLast,"score",item.signal.score));
                     resetEarlyP01Stability(item, CandidateLifecycle.TARGET_BEFORE_FILL);
                     if (item.departureAt <= 0) item.departureAt = now;
                     item.lastConfirmationCode = CandidateLifecycle.TARGET_BEFORE_FILL;
@@ -2861,6 +2999,10 @@ public class MarketWatchService extends Service {
                 }
             }
 
+            // A 4.8 legacy confirmation has already been transferred to the silent comparator.
+            // Never let the remainder of the historical ACTIVE path persist or alert it.
+            if ("LEGACY_PUBLIC_SUPPRESSED".equals(item.status)) continue;
+
             if ("LONG".equals(item.signal.side)) {
                 item.mfe = Math.max(0, item.maxPrice - item.signal.entry);
                 item.mae = Math.max(0, item.signal.entry - item.minPrice);
@@ -2880,13 +3022,19 @@ public class MarketWatchService extends Service {
             if (SignalSafetyPolicies.isTerminalStatus(status)) {
                 closeObservedSignal(item, status, snapshot, now);
                 p02SetupTracker.reset();
-                lastTerminalAt = now;
-                if (!terminalRearmPersistence.save(MarketProfile.ETH_SYMBOL,lastTerminalAt)) {
+                boolean cvManaged=CvCorePolicy.ENGINE_ID.equals(item.engineId)
+                        ||LegacyV23448ActivePlanCompatibility.isRestoredEngine(item.engineId);
+                if(!cvManaged)lastTerminalAt = now;
+                if (!cvManaged&&!terminalRearmPersistence.save(MarketProfile.ETH_SYMBOL,lastTerminalAt)) {
                     signalEngine.recordExternalDiagnostic(now,
                             "V2330_TERMINAL_REARM_PERSIST_FAILED",
                             "Terminal timestamp could not be persisted atomically.");
                 }
-                persistObservedSignalEvent(item, status, snapshot, now);
+                // CV Core already wrote its one canonical economic terminal. The general
+                // lifecycle still closes, clears and notifies the public object, but cannot
+                // create a second legacy TP_TOUCHED/SL_TOUCHED diagnostic.
+                if(!CvCorePolicy.ENGINE_ID.equals(item.engineId))
+                    persistObservedSignalEvent(item, status, snapshot, now);
                 notifyObservationStatus(item, status);
                 if (!activePlanPersistence.clearForTerminal(MarketProfile.ETH_SYMBOL,status)) {
                     signalEngine.recordExternalDiagnostic(now,
@@ -2895,6 +3043,9 @@ public class MarketWatchService extends Service {
                 } else {
                     lastActivePlanPersistAt = 0;
                 }
+                // Complete every public side effect before fail-open shadow accounting.
+                marketCoordinator.runtime(MarketProfile.ETH_SYMBOL)
+                        .shadowExperiment.safePublicTerminal(status);
             }
         }
     }
@@ -3079,62 +3230,252 @@ public class MarketWatchService extends Service {
             return false;
         }
 
-        SignalDecision published = fill.publishedSignal;
-        item.signal = published;
-        item.status = "ACTIVE";
-        item.entryTriggered = true;
-        item.entryTriggeredAt = now;
-        item.entryTriggerPrice = snapshot.ethLast;
-        item.simulatedFillAt = now;
-        item.simulatedFillPrice = theoreticalFillPrice(published, snapshot);
-        item.finalConfirmedAt = now;
-        item.premium15m = fill.premium15m;
-        item.maxPrice = snapshot.ethLast;
-        item.minPrice = snapshot.ethLast;
-        item.mfe = 0;
-        item.mae = 0;
-        item.notificationSignature = SignalSafetyPolicies.deterministicSignature(
-                published, item.createdAt / 60_000L);
-        item.notificationId = confirmedNotificationId(item.notificationSignature);
-
-        long confirmedP01At = continuation ? now : lastP01ConfirmedAt;
-        if (!persistActiveFinalPlan(item, confirmedP01At, snapshot)) {
-            item.signal = candidate;
-            item.status = "LIMIT_PENDING";
-            item.entryTriggered = false;
-            item.entryTriggeredAt = 0;
-            item.entryTriggerPrice = Double.NaN;
-            item.simulatedFillAt = 0;
-            item.simulatedFillPrice = Double.NaN;
-            item.finalConfirmedAt = 0;
-            item.notificationSignature = "";
-            item.notificationId = 0;
-            item.alertSent = false;
-            item.lastConfirmationCode = ActivePlanPersistence.PERSIST_FAILED;
-            item.confirmedSizing = null;
-            item.dynamicTradePlan = null;
-            resetEarlyP01Stability(item, ActivePlanPersistence.PERSIST_FAILED);
-            persistObservedSignalEvent(item, ActivePlanPersistence.PERSIST_FAILED, snapshot, now);
-            signalEngine.recordExternalDiagnostic(now, ActivePlanPersistence.PERSIST_FAILED,
-                    "Signal final non publié : persistance atomique du plan actif impossible.");
-            return false;
-        }
-        lastActivePlanPersistAt = now;
+        // Every confirmed ETH candidate fixes/prolongs its episode before route C is evaluated.
+        // The legacy result remains diagnostic-only and is never persisted or alerted.
+        CvCoreEngine.Result cvLegacy=safeObserveCvLegacy(item,candidate,snapshot,now,fill);
+        legacyEthShadowBridge.observeConfirmation(
+                marketCoordinator.runtime(MarketProfile.ETH_SYMBOL),item,candidate,snapshot,now,
+                ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),lastTerminalAt,
+                fill,structuralEthBars(now));
+        cvSummary.legacySuppressed();
+        item.status="LEGACY_PUBLIC_SUPPRESSED";item.closedAt=now;
+        item.lastConfirmationCode="LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1";
         pendingCandidateIndex.remove(item.candidateSignature);
-
-        lastSignal = published;
-        lastSignalAt = now;
-        // P01 cooldown starts only here, never at candidate creation or rejection.
-        lastP01ConfirmedAt = confirmedP01At;
-        lastDecision = published;
-
-        persistObservedSignalEvent(item, ActivePlanPersistence.PERSISTED, snapshot, now);
-        persistObservedSignalEvent(item, fill.reasonCode, snapshot, now);
-        notifyObservationSignal(item);
-        requestPostPublicationAiAdvisory(snapshot, published);
-        broadcastStatus("signal_final_confirmed", fill.reasonCode);
+        persistObservedSignalEvent(item,"LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1",snapshot,now);
+        Map<String,Object> suppressed=new LinkedHashMap<>();suppressed.put("legacySuppressed",true);
+        suppressed.put("sourceFamily",candidate.family);suppressed.put("sourceSleeve",item.sleeve);
+        recordCvEvent("LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1",
+                "LEGACY_PUBLIC_SUPPRESSED_BY_CV_CORE_V1",cvLegacy,
+                cvLegacy==null?null:cvLegacy.plan,now,suppressed);
         return true;
     }
+
+    private void observeCvLifecycle(MarketSnapshot snapshot,long now){
+        try{
+            if(activeCvPlan!=null){
+                if(now>=activeCvPlan.entryValidUntil&&!cvEntryExpiredRecorded){
+                    cvEntryExpiredRecorded=true;cvSummary.expiration();
+                    ObservedSignal active=activeFinalSignal();if(active!=null&&CvCorePolicy.ENGINE_ID.equals(active.engineId)){
+                        active.entryWindowStatus="EXPIRÉE — NE PAS ENTRER";
+                        String title="NMC CV CORE · ETH "+active.signal.side;
+                        String body="Entrée expirée — ne pas entrer · TP/SL inchangés.";
+                        postSilentSignalNotification(active.notificationId,title,body);
+                    }
+                    recordCvEvent("CV_CORE_ENTRY_WINDOW_EXPIRED","CV_CORE_ENTRY_WINDOW_EXPIRED",null,activeCvPlan,now);
+                }
+                CvCorePlan.Terminal terminal=activeCvPlan.observe(now,snapshot.ethBid,
+                        snapshot.ethAsk,ethMarketFeedFresh(now));
+                if(terminal!=null){recordCvTerminalEvent(activeCvPlan,terminal,now);activeCvPlan=null;}
+            }
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);}
+    }
+
+    private void safeObserveCvRaw(SignalDecision raw,MarketSnapshot snapshot,long now){
+        try{if(raw==null||!raw.isSignal())return;
+            CvCoreMovementRegistry.Episode episode=cvMovements.observe(raw.symbol,raw.side,now);
+            CvCoreContextTracker.Metrics metrics=cvContext.metrics(now,raw.side,snapshot.btcMove8,snapshot.btcMove3);
+            CvCoreEngine.Result result=cvEngine.observeRaw(raw,snapshot,metrics,cvCommon(now),now,episode);
+            recordCvEvent("CV_CORE_OBSERVATION","",result,null,now);collectCvResult(result,snapshot,now);
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);}
+    }
+
+    private CvCoreEngine.Result safeObserveCvLegacy(ObservedSignal item,SignalDecision candidate,
+                                               MarketSnapshot snapshot,long now,
+                                               CandidateLifecycle.FillResult fill){
+        try{String side=fill.publishedSignal==null?candidate.side:fill.publishedSignal.side;
+            CvCoreMovementRegistry.Episode episode=cvMovements.observe(MarketProfile.ETH_SYMBOL,side,now);
+            CvCoreContextTracker.Metrics metrics=cvContext.metrics(now,side,snapshot.btcMove8,snapshot.btcMove3);
+            double move3=fill.normalizedMetrics==null?Double.NaN:fill.normalizedMetrics.m3;
+            CvCoreEngine.Result result=cvEngine.observeLegacy(side,candidate.family,item.sleeve,move3,
+                    snapshot,metrics,cvCommon(now),now,episode);
+            recordCvEvent("CV_CORE_OBSERVATION","",result,null,now);collectCvResult(result,snapshot,now);
+            return result;
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",error.getClass().getSimpleName(),null,null,now);
+            return null;}
+    }
+
+    private CvCoreEngine.Common cvCommon(long now){
+        MarketRuntime sol=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);
+        long solAge=sol==null||sol.lastTickerAt<=0?-1:Math.max(0,now-sol.lastTickerAt);
+        boolean solFresh=sol!=null&&sol.bid>0&&sol.ask>=sol.bid&&solAge>=0
+                &&solAge<=5_000L&&cvContext.fresh(MarketProfile.SOL_SYMBOL,now,5_000L);
+        long ethAge=lastEthBookTickerAt<=0?-1:Math.max(0,now-lastEthBookTickerAt);
+        long btcAge=sharedBtc.lastTickerAt<=0?-1:Math.max(0,now-sharedBtc.lastTickerAt);
+        return new CvCoreEngine.Common(ethMarketFeedFresh(now),
+                sharedBtc.fresh(now,5_000L),solFresh,
+                activeFinalSignal()!=null||marketCoordinator.activePlanCount()>0,
+                activeCvPlan!=null,ethAge,btcAge,solAge);
+    }
+
+    private void collectCvResult(CvCoreEngine.Result result,MarketSnapshot snapshot,long now){
+        if(result==null)return;cvSummary.observation(result.observation==null?"":result.observation.sourceType,
+                result.route==null?"":result.route.routeId);if(!result.matched())return;
+        if(!result.accepted()){cvSummary.reject(result.reasonCode);
+            if("CV_CORE_DUPLICATE_EPISODE".equals(result.reasonCode)){
+                cvSummary.duplicate();recordCvEvent("CV_CORE_DUPLICATE_GROUPED",
+                        result.reasonCode,result,null,now);
+            }else recordCvEvent("CV_CORE_REJECTED",result.reasonCode,result,null,now);
+            return;}
+        cvSummary.qualified();recordCvEvent("CV_CORE_QUALIFIED",result.reasonCode,result,result.plan,now);
+        cvArbiter.collect(result,snapshot,now);
+    }
+
+    private void finishCvCycle(long now){
+        try{CvCoreCandidateArbiter.Resolution resolution=cvArbiter.resolve();
+            for(CvCoreCandidateArbiter.Candidate loser:resolution.notSelected){
+                cvSummary.reject("CV_CORE_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY");
+                recordCvEvent("CV_CORE_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY",
+                        "CV_CORE_QUALIFIED_NOT_SELECTED_HIGHER_PRIORITY",loser.result,
+                        loser.result.plan,now);}
+            if(resolution.winner==null)return;
+            CvCoreEngine.Result result=resolution.winner.result;
+            CvCorePublicationGuard.PublicationResult published=publishCvCorePlan(
+                    result,result.plan,resolution.winner.snapshot,now);
+            if(!published.published){cvSummary.reject(published.reasonCode);
+                recordCvEvent("CV_CORE_REJECTED",published.reasonCode,result,result.plan,now);}
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR","CV_CORE_INTERNAL_ERROR",
+                    null,null,now);}
+    }
+
+    private CvCorePublicationGuard.PublicationResult publishCvCorePlan(
+            CvCoreEngine.Result result,CvCorePlan plan,MarketSnapshot snapshot,long now){
+        MarketSnapshot current=buildSnapshot(now);CvCoreEngine.Common common=cvCommon(now);
+        CvCoreMovementRegistry.Episode episode=result==null?null:cvMovements.find(result.episode.episodeId);
+        CvCorePublicationGuard.PublicationResult gate=CvCorePublicationGuard.validate(plan,
+                new CvCorePublicationGuard.Context(CvCorePolicy.ENGINE_ID,now,common.ethFresh,
+                        common.btcFresh,common.solFresh,common.ethQuoteAgeMs,common.btcQuoteAgeMs,
+                        common.solQuoteAgeMs,common.publicPlanActive,common.cvPlanActive,
+                        episode==null||episode.opened,activePlanPersistence!=null,current.marketBid,current.marketAsk));
+        if(!gate.published)return gate;
+        String reasonText="Plan manuel CV Core · "+plan.route.routeId;
+        SignalDecision decision=SignalDecision.confirmed(MarketProfile.eth(),plan.side,plan.route.family,
+                plan.route.reasonCode,reasonText,plan.route.score,plan.quantity,plan.entry,
+                plan.takeProfit,plan.stopLoss,plan.targetDistance,plan.stopDistance,"CV_CORE",
+                false,snapshot.marketLast,snapshot.marketLast,plan.targetDistance);
+        int notificationId=confirmedNotificationId(plan.signature);
+        ActivePlanState state=ActivePlanState.builder().formatVersion(4).market(MarketProfile.eth())
+                .status("ACTIVE").side(plan.side).family(plan.route.family).reasonCode(plan.route.reasonCode)
+                .reasonText(reasonText).score(plan.route.score).quantity(plan.quantity)
+                .prices(plan.entry,plan.takeProfit,plan.stopLoss).risk(plan.targetDistance,plan.stopDistance)
+                .times(now,now,now).notification(plan.signature,notificationId)
+                .lastMarket(snapshot.marketLast,snapshot.marketBid,snapshot.marketAsk,plan.a)
+                .lastP01ConfirmedAt(lastP01ConfirmedAt).movement("CV_CORE",false,
+                        snapshot.marketLast,snapshot.marketLast,plan.targetDistance)
+                .replayRisk("","").p01(Double.NaN,Double.NaN,Double.NaN,Double.NaN,Double.NaN)
+                .sizingDiagnostic("").unitRisk(plan.resultCostPerUnit,0,
+                        plan.route.riskBudgetUsdt,plan.theoreticalMaximumLoss)
+                .enginePlan(CvCorePolicy.ENGINE_ID,CvCorePolicy.POLICY_ID,CvCorePolicy.SCHEMA_ID,
+                        plan.route.routeId,plan.episodeId,plan.qualificationAt,plan.entryValidUntil,
+                        "VALIDE",plan.route.riskBudgetUsdt).build();
+        boolean persisted;try{persisted=activePlanPersistence!=null&&activePlanPersistence.saveForMarket(state);}
+        catch(RuntimeException error){persisted=false;cvSummary.error();}
+        if(!persisted){
+            recordCvEvent("CV_CORE_PERSISTENCE_FAILED","CV_CORE_PERSISTENCE_FAILED",result,plan,now);
+            return new CvCorePublicationGuard.PublicationResult(false,"CV_CORE_PERSISTENCE_FAILED");}
+        if(!cvEngine.markOpened(result)){activePlanPersistence.clear(MarketProfile.ETH_SYMBOL);
+            return new CvCorePublicationGuard.PublicationResult(false,"CV_CORE_DUPLICATE_EPISODE");}
+        ObservedSignal item=new ObservedSignal(++observedSignalId,now,decision,snapshot.marketLast,snapshot);
+        item.status="ACTIVE";item.entryTriggered=true;item.entryTriggeredAt=now;item.entryTriggerPrice=plan.entry;
+        item.simulatedFillAt=now;item.simulatedFillPrice=plan.entry;item.finalConfirmedAt=now;
+        item.notificationSignature=plan.signature;item.notificationId=notificationId;item.candidateSignature=plan.signature;
+        item.engineId=CvCorePolicy.ENGINE_ID;item.policyId=CvCorePolicy.POLICY_ID;item.schemaId=CvCorePolicy.SCHEMA_ID;
+        item.routeId=plan.route.routeId;item.episodeId=plan.episodeId;item.routeRiskBudgetUsdt=plan.route.riskBudgetUsdt;item.qualificationAt=plan.qualificationAt;
+        item.entryValidUntil=plan.entryValidUntil;item.entryWindowStatus="VALIDE";
+        observedSignals.addLast(item);while(observedSignals.size()>200)observedSignals.removeFirst();
+        activeCvPlan=plan;cvEntryExpiredRecorded=false;lastSignal=decision;lastDecision=decision;
+        lastSignalAt=now;lastActivePlanPersistAt=now;
+        Map<String,Object> persistedDetails=new LinkedHashMap<>();persistedDetails.put("persisted",true);
+        persistedDetails.put("entryWindowStatus","VALIDE");
+        recordCvEconomicOpen(result,plan,item,snapshot,now,persistedDetails);
+        notifyCvCorePlan(item,plan);broadcastStatus("cv_core_plan","Nouveau plan manuel CV Core");
+        return new CvCorePublicationGuard.PublicationResult(true,"");
+    }
+
+    private void notifyCvCorePlan(ObservedSignal item,CvCorePlan plan){
+        String title="NMC CV CORE · ETH "+plan.side;
+        String body=String.format(Locale.US,"Voie : %s · Entrée : %.2f · TP : %.2f · SL : %.2f · Quantité : %d · Entrée valable 5 s. Après expiration, ne pas entrer.",
+                plan.route.routeId,plan.entry,plan.takeProfit,plan.stopLoss,plan.quantity);
+        AudiblePostResult result=postAudibleFinalSignalAlert(title,body,item.notificationId,
+                MarketProfile.ETH_SYMBOL,false,item.notificationSignature);item.alertSent=result.posted;
+        if(result.alreadyAlerted)postSilentSignalNotification(item.notificationId,title,body);
+        else if(!result.posted)scheduleAudibleFinalSignalRetry(title,body,item.notificationId,
+                MarketProfile.ETH_SYMBOL,item.notificationSignature,0);
+        if(result.posted||result.alreadyAlerted)cvSummary.alert();
+        Map<String,Object> alert=CvCoreTelemetry.alert(result.posted,result.alreadyAlerted);
+        recordCvEvent("CV_CORE_ALERT_POSTED",result.posted?"POSTED":"RETRY",
+                null,plan,System.currentTimeMillis(),alert);
+    }
+
+    private void recordCvEvent(String type,String reason,CvCoreEngine.Result result,
+                               CvCorePlan plan,long now){
+        recordCvEvent(type,reason,result,plan,now,null);
+    }
+
+    private void recordCvEvent(String type,String reason,CvCoreEngine.Result result,
+                               CvCorePlan plan,long now,Map<String,Object> extra){
+        try{Map<String,Object>d=new LinkedHashMap<>(CvCoreTelemetry.details(result,plan,now));
+            d.put("versionName",BuildConfig.VERSION_NAME);
+            MarketSnapshot current=buildSnapshot(now);
+            if(result==null&&(plan==null||plan.observation==null)){
+                d.put("marketFeedFresh",ethMarketFeedFresh(now));
+                d.put("btcFeedFresh",sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
+                MarketRuntime sol=marketCoordinator.runtime(MarketProfile.SOL_SYMBOL);
+                long solAge=sol==null||sol.lastTickerAt<=0?-1:Math.max(0,now-sol.lastTickerAt);
+                d.put("solFeedFresh",solAge>=0&&solAge<=5_000L);d.put("solQuoteAgeMs",solAge);
+                d.put("publicPlanActive",activeFinalSignal()!=null||marketCoordinator.activePlanCount()>0);}
+            if(extra!=null)d.putAll(extra);
+            marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,type,reason,
+                    reason,"CV_CORE_V1","","",lastDecision,current,0,
+                    ethMarketFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,d);
+        }catch(RuntimeException ignored){}
+    }
+
+    private void recordCvEconomicOpen(CvCoreEngine.Result result,CvCorePlan plan,
+                                      ObservedSignal item,MarketSnapshot snapshot,long now,
+                                      Map<String,Object> details){
+        try{CvCoreEconomicEventJournal.Result recorded=cvEconomicEvents().recordOpen(now,result,plan,
+                    item.signal,snapshot,ethMarketFeedFresh(now),
+                    sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),details);
+            if(recorded.recorded){persistCvEconomicEventKeys();flushRuntimeRecorder(
+                    marketCoordinator.runtime(MarketProfile.ETH_SYMBOL),now,false);}
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",
+                "CV_CORE_ECONOMIC_OPEN_FAILED",result,plan,now);}
+    }
+
+    private void recordCvTerminalEvent(CvCorePlan plan,CvCorePlan.Terminal terminal,long now){
+        try{CvCoreEconomicEventJournal.Result recorded=cvEconomicEvents().recordTerminal(now,plan,terminal,
+                    lastSignal,buildSnapshot(now),ethMarketFeedFresh(now),
+                    sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS));
+            if(recorded.recorded){persistCvEconomicEventKeys();flushRuntimeRecorder(
+                    marketCoordinator.runtime(MarketProfile.ETH_SYMBOL),now,false);}
+        }catch(RuntimeException error){cvSummary.error();recordCvEvent("CV_CORE_INTERNAL_ERROR",
+                "CV_CORE_ECONOMIC_TERMINAL_FAILED",null,plan,now);}
+    }
+
+    private CvCoreEconomicEventJournal cvEconomicEvents(){
+        if(cvEconomicEvents==null)cvEconomicEvents=new CvCoreEconomicEventJournal(
+                marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder,cvSummary);
+        return cvEconomicEvents;
+    }
+
+    private void restoreCvEconomicEventKeys(){
+        try{String serialized=getSharedPreferences(CV_ECONOMIC_EVENT_PREFERENCES,MODE_PRIVATE)
+                    .getString(CV_ECONOMIC_EVENT_KEYS,"[]");JSONArray values=new JSONArray(serialized);
+            List<String> keys=new ArrayList<>();for(int i=0;i<values.length();i++){
+                String key=values.optString(i,"");if(!key.isEmpty())keys.add(key);}
+            cvEconomicEvents().restore(keys);
+        }catch(RuntimeException ignored){cvEconomicEvents().restore(Collections.emptyList());}
+        catch(Exception ignored){cvEconomicEvents().restore(Collections.emptyList());}
+    }
+
+    private void persistCvEconomicEventKeys(){
+        try{JSONArray values=new JSONArray();for(String key:cvEconomicEvents().rememberedKeys())values.put(key);
+            getSharedPreferences(CV_ECONOMIC_EVENT_PREFERENCES,MODE_PRIVATE).edit()
+                    .putString(CV_ECONOMIC_EVENT_KEYS,values.toString()).commit();
+        }catch(RuntimeException ignored){}
+    }
+
+    private static void putFinite(Map<String,Object> out,String key,double value){if(Double.isFinite(value))out.put(key,value);else out.put(key,null);}
 
     private boolean hasActiveFinalSignal(ObservedSignal candidate) {
         for (ObservedSignal item : observedSignals) {
@@ -3306,7 +3647,9 @@ public class MarketWatchService extends Service {
     private String marketStatusForSignal(SignalDecision signal, MarketSnapshot snapshot) {
         if (signal == null) return "NONE";
 
-        double price = snapshot.ethLast;
+        double price = signal!=null&&signal.family!=null&&(signal.family.startsWith(CvCorePolicy.ENGINE_ID)
+                ||LegacyV23448ActivePlanCompatibility.isRestoredFamily(signal.family))
+                ?("LONG".equals(signal.side)?snapshot.ethBid:snapshot.ethAsk):snapshot.ethLast;
         if (!Double.isFinite(price) || price <= 0) return "NO_PRICE";
 
         if ("LONG".equals(signal.side)) {
@@ -4063,7 +4406,9 @@ public class MarketWatchService extends Service {
             return journalStatus;
         }
 
-        double price = snapshot.ethLast;
+        double price = lastSignal.family!=null&&(lastSignal.family.startsWith(CvCorePolicy.ENGINE_ID)
+                ||LegacyV23448ActivePlanCompatibility.isRestoredFamily(lastSignal.family))
+                ?("LONG".equals(lastSignal.side)?snapshot.ethBid:snapshot.ethAsk):snapshot.ethLast;
         if (!Double.isFinite(price) || price <= 0) {
             return observed != null && SignalSafetyPolicies.blocksNewFinalSignal(
                     observed.status, observed.entryTriggered, observed.finalConfirmedAt)
@@ -4378,24 +4723,31 @@ public class MarketWatchService extends Service {
     private AudiblePostResult postAudibleFinalSignalAlert(String title,String body,
                                                             int notificationId,String symbol,
                                                             boolean test,String signature) {
+        return postAudibleFinalSignalAlert(title,body,notificationId,symbol,test,signature,1);
+    }
+
+    private AudiblePostResult postAudibleFinalSignalAlert(String title,String body,
+                                                            int notificationId,String symbol,
+                                                            boolean test,String signature,int attempt) {
         ensureChannels(this);
+        scheduleAudibleSoundResourceProbe(test?"TEST_ALERT":"CHANNEL_RECREATED");
         String key=test?"":"signature_"+(signature==null?"":signature);
         boolean signatureAlreadyAlerted=!test&&getSharedPreferences(
                 ALERT_DEDUPE_PREFERENCES,MODE_PRIVATE).getBoolean(key,false);
         if(!FinalSignalAlertPolicy.shouldAttempt(test,signatureAlreadyAlerted)) {
-            recordAudibleAlertDiagnostic(test,symbol,notificationId,false,true,false,null);
+            recordAudibleAlertDiagnostic(test,symbol,notificationId,false,true,false,null,attempt,signature);
             return AudiblePostResult.alreadyAlerted();
         }
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         if(manager==null) {
             recordAudibleAlertDiagnostic(test,symbol,notificationId,false,false,false,
-                    "NotificationManager indisponible");
+                    "NotificationManager indisponible",attempt,signature);
             return AudiblePostResult.failed();
         }
         FinalSignalAlertChannelStatus.State channelState=audibleChannelState();
         if(channelState!=FinalSignalAlertChannelStatus.State.CHANNEL_READY){
             recordAudibleAlertDiagnostic(test,symbol,notificationId,false,false,false,
-                    "Canal sonore indisponible : "+channelState.name());
+                    "Canal sonore indisponible : "+channelState.name(),attempt,signature);
             return AudiblePostResult.failed();
         }
         try {
@@ -4407,11 +4759,11 @@ public class MarketWatchService extends Service {
                 dedupeWritten=getSharedPreferences(ALERT_DEDUPE_PREFERENCES,MODE_PRIVATE)
                         .edit().putBoolean(key,true).commit();
             }
-            recordAudibleAlertDiagnostic(test,symbol,notificationId,true,false,dedupeWritten,null);
+            recordAudibleAlertDiagnostic(test,symbol,notificationId,true,false,dedupeWritten,null,attempt,signature);
             return AudiblePostResult.posted();
         } catch(RuntimeException error) {
             recordAudibleAlertDiagnostic(test,symbol,notificationId,false,false,false,
-                    error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage()));
+                    error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage()),attempt,signature);
             return AudiblePostResult.failed();
         }
     }
@@ -4428,7 +4780,7 @@ public class MarketWatchService extends Service {
                 if(manager!=null)manager.cancel(notificationId);
             }
             AudiblePostResult result=postAudibleFinalSignalAlert(title,body,notificationId,
-                    symbol,false,signature);
+                    symbol,false,signature,attempt+2);
             if(!result.posted&&!result.alreadyAlerted){
                 postSilentSignalNotification(notificationId,title,body);
                 scheduleAudibleFinalSignalRetry(title,body,notificationId,symbol,signature,attempt+1);
@@ -4454,6 +4806,12 @@ public class MarketWatchService extends Service {
     }
 
     private JSONObject audibleChannelJson() throws Exception {
+        return audibleObservabilityJson(-1,"",false,0,"",false,false,null);
+    }
+
+    private JSONObject audibleObservabilityJson(int notificationId,String symbol,boolean test,
+                                                 int attempt,String signature,boolean posted,
+                                                 boolean dedupeWritten,String error)throws Exception{
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         NotificationChannel channel=manager==null?null:
                 manager.getNotificationChannel(FINAL_SIGNAL_LOUD_CHANNEL_ID);
@@ -4462,16 +4820,81 @@ public class MarketWatchService extends Service {
         value.put("channelId",FINAL_SIGNAL_LOUD_CHANNEL_ID);
         value.put("state",audibleChannelState().name());
         value.put("notificationsEnabled",manager!=null&&manager.areNotificationsEnabled());
+        value.put("postNotificationsPermission",Build.VERSION.SDK_INT<33||checkSelfPermission(
+                Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED);
         value.put("importance",channel==null?0:channel.getImportance());
         value.put("soundUri",sound==null?JSONObject.NULL:sound.toString());
         value.put("vibrationEnabled",channel!=null&&channel.shouldVibrate());
         value.put("ready",audibleChannelState()==FinalSignalAlertChannelStatus.State.CHANNEL_READY);
+        AudibleSoundResourceSnapshot resource=audibleSoundResourceSnapshot;
+        value.put("soundUriResolvable",resource.resolvable);value.put("soundResourceOpenable",resource.openable);
+        value.put("soundResourceBytes",resource.bytes);value.put("soundDurationMs",resource.durationMs);
+        value.put("soundProbeCompleted",resource.completed);value.put("soundProbeAt",resource.probedAt);
+        value.put("soundProbeReason",resource.reason);value.put("soundProbeError",resource.error);
+        AudioManager audio=(AudioManager)getSystemService(AUDIO_SERVICE);
+        value.put("alarmVolume",audio==null?-1:audio.getStreamVolume(AudioManager.STREAM_ALARM));
+        value.put("alarmMaxVolume",audio==null?-1:audio.getStreamMaxVolume(AudioManager.STREAM_ALARM));
+        value.put("ringerMode",audio==null?-1:audio.getRingerMode());
+        value.put("interruptionFilter",manager==null?-1:manager.getCurrentInterruptionFilter());
+        PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);
+        value.put("batteryOptimizationExempt",power!=null&&power.isIgnoringBatteryOptimizations(getPackageName()));
+        ActivityManager activity=(ActivityManager)getSystemService(ACTIVITY_SERVICE);
+        value.put("backgroundRestricted",Build.VERSION.SDK_INT>=28&&activity!=null&&activity.isBackgroundRestricted());
+        value.put("attempt",attempt);value.put("notificationId",notificationId);value.put("symbol",symbol==null?"":symbol);
+        value.put("signature",signature==null?"":signature);value.put("observedAt",System.currentTimeMillis());
+        value.put("posted",posted);value.put("dedupeWritten",dedupeWritten);
+        value.put("failureReason",error==null?JSONObject.NULL:error);
         return value;
+    }
+
+    /** Schedules the expensive sound-resource probe off the synchronized market/status path. */
+    private void scheduleAudibleSoundResourceProbe(String reason){
+        synchronized(this){if(audibleSoundProbeScheduled)return;audibleSoundProbeScheduled=true;}
+        try{diagnosticIoExecutor.execute(()->{
+            try{audibleSoundResourceSnapshot=probeAudibleSoundResource(reason);}
+            finally{synchronized(MarketWatchService.this){audibleSoundProbeScheduled=false;}}
+        });}catch(RuntimeException error){
+            synchronized(this){audibleSoundProbeScheduled=false;}
+            audibleSoundResourceSnapshot=AudibleSoundResourceSnapshot.failed(reason,error);
+        }
+    }
+
+    /** Runs only on nmc-diagnostic-io; never call from broadcastStatus(). */
+    private AudibleSoundResourceSnapshot probeAudibleSoundResource(String reason){
+        NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        NotificationChannel channel=manager==null?null:
+                manager.getNotificationChannel(FINAL_SIGNAL_LOUD_CHANNEL_ID);
+        Uri sound=channel==null?null:channel.getSound();
+        if(sound==null)return AudibleSoundResourceSnapshot.failed(reason,
+                new IllegalStateException("CHANNEL_SOUND_MISSING"));
+        boolean resolvable=false,openable=false;long bytes=-1,durationMs=-1;String failure="";
+        try(AssetFileDescriptor descriptor=getContentResolver().openAssetFileDescriptor(sound,"r")){
+            resolvable=descriptor!=null;
+            if(descriptor!=null){openable=true;bytes=descriptor.getLength();MediaMetadataRetriever retriever=null;
+                try{retriever=new MediaMetadataRetriever();long length=descriptor.getLength();
+                    if(length>=0)retriever.setDataSource(descriptor.getFileDescriptor(),descriptor.getStartOffset(),length);
+                    else retriever.setDataSource(descriptor.getFileDescriptor());
+                    String duration=retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                    if(duration!=null)durationMs=Long.parseLong(duration);
+                }catch(Exception error){failure=error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage());}
+                finally{if(retriever!=null)try{retriever.release();}catch(RuntimeException ignored){}}
+            }
+        }catch(Exception error){failure=error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage());}
+        return new AudibleSoundResourceSnapshot(true,resolvable,openable,bytes,durationMs,
+                System.currentTimeMillis(),reason,failure);
     }
 
     private void recordAudibleAlertDiagnostic(boolean test,String symbol,int notificationId,
                                                boolean success,boolean alreadyAlerted,
                                                boolean dedupeWritten,String error) {
+        recordAudibleAlertDiagnostic(test,symbol,notificationId,success,alreadyAlerted,
+                dedupeWritten,error,1,"");
+    }
+
+    private void recordAudibleAlertDiagnostic(boolean test,String symbol,int notificationId,
+                                               boolean success,boolean alreadyAlerted,
+                                               boolean dedupeWritten,String error,int attempt,
+                                               String signature) {
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         NotificationChannel channel=manager==null?null:
                 manager.getNotificationChannel(FINAL_SIGNAL_LOUD_CHANNEL_ID);
@@ -4495,6 +4918,10 @@ public class MarketWatchService extends Service {
             event.put("notificationId",notificationId);event.put("audible",true);
             event.put("vibrationRequested",true);event.put("posted",success);
             event.put("dedupeWritten",dedupeWritten);event.put("alreadyAlerted",alreadyAlerted);
+            JSONObject observability=audibleObservabilityJson(notificationId,symbol,test,attempt,
+                    signature,success,dedupeWritten,error);
+            Iterator<String> keys=observability.keys();while(keys.hasNext()){String key=keys.next();
+                event.put(key,observability.opt(key));}
             appendPersistentJsonLine(PERSISTENT_OBSERVATIONS_FILE,event);
         } catch(Exception ignored) {}
         Log.i("NMC_ALERT","channel="+FINAL_SIGNAL_LOUD_CHANNEL_ID+" state="+state
@@ -4509,6 +4936,22 @@ public class MarketWatchService extends Service {
 
     private String profileVersionForSymbol(String symbol) {
         try{return marketRegistry.require(symbol).profileVersion;}catch(Exception ignored){return "";}
+    }
+
+    private static final class AudibleSoundResourceSnapshot {
+        final boolean completed,resolvable,openable;final long bytes,durationMs,probedAt;
+        final String reason,error;
+        AudibleSoundResourceSnapshot(boolean completed,boolean resolvable,boolean openable,
+                                     long bytes,long durationMs,long probedAt,String reason,String error){
+            this.completed=completed;this.resolvable=resolvable;this.openable=openable;
+            this.bytes=bytes;this.durationMs=durationMs;this.probedAt=probedAt;
+            this.reason=reason==null?"":reason;this.error=error==null?"":error;
+        }
+        static AudibleSoundResourceSnapshot pending(){return new AudibleSoundResourceSnapshot(
+                false,false,false,-1,-1,0,"PENDING","");}
+        static AudibleSoundResourceSnapshot failed(String reason,Exception error){return new AudibleSoundResourceSnapshot(
+                true,false,false,-1,-1,System.currentTimeMillis(),reason,
+                error==null?"UNKNOWN":error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage()));}
     }
 
     private static final class AudiblePostResult {
@@ -4593,7 +5036,31 @@ public class MarketWatchService extends Service {
         summary.put("version",BuildConfig.VERSION_NAME);
         summary.put("marketSampleIntervalSec",PERSISTENT_MARKET_FRAME_INTERVAL_MS/1000);
         summary.put("available",recorderIndex!=null);
+        summary.put("SHADOW_EXPERIMENT_SUMMARY",shadowExperimentSummaryJson(System.currentTimeMillis()));
+        summary.put("FROZEN_PROFITABILITY_SUMMARY",frozenProfitabilitySummaryJson(System.currentTimeMillis()));
         return summary;
+    }
+
+    private JSONObject shadowExperimentSummaryJson(long now) throws Exception {
+        JSONObject shadow=new JSONObject();
+        List<ShadowExperimentSummary> all=new ArrayList<>();
+        for(Map.Entry<String,MarketRuntime> entry:marketCoordinator.runtimes().entrySet()){
+            ShadowExperimentSummary experiment=entry.getValue().shadowExperiment;
+            all.add(experiment);
+            shadow.put(entry.getKey(),new JSONObject(experiment.safeSnapshot(now)));
+        }
+        shadow.put("ALL",new JSONObject(ShadowExperimentSummary.aggregate(all,now)));
+        return shadow;
+    }
+
+    private JSONObject frozenProfitabilitySummaryJson(long now) throws Exception {
+        JSONObject frozen=new JSONObject();List<Map<String,Object>> all=new ArrayList<>();
+        for(Map.Entry<String,MarketRuntime> entry:marketCoordinator.runtimes().entrySet()){
+            Map<String,Object> snapshot=entry.getValue().frozenProfitability.safeSnapshot(entry.getValue(),now);
+            all.add(snapshot);frozen.put(entry.getKey(),new JSONObject(snapshot));
+        }
+        frozen.put("ALL",new JSONObject(FrozenProfitabilityShadowSummary.aggregate(all,now)));
+        return frozen;
     }
 
     private interface StatusObjectSupplier { JSONObject get() throws Exception; }
@@ -4608,6 +5075,11 @@ public class MarketWatchService extends Service {
     }
 
     private synchronized void broadcastStatus(String type, String message) {
+        broadcastStatus(type,message,"",false);
+    }
+
+    private synchronized void broadcastStatus(String type,String message,String requestId,
+                                               boolean flushCompleted) {
         try {
             long now = System.currentTimeMillis();
             recordFeedTransitions(now);
@@ -4704,6 +5176,13 @@ public class MarketWatchService extends Service {
             state.put("activeSignalValidity", "TP_SL_ONLY_NO_TIMEOUT");
             state.put("executionMode", "RESEARCH_ONLY");
             state.put("realTradingAllowed", SignalSafetyPolicies.realTradingAllowed());
+            state.put("cvCoreEngineId",CvCorePolicy.ENGINE_ID);
+            state.put("cvCorePolicyId",CvCorePolicy.POLICY_ID);
+            state.put("cvCoreSchema",CvCorePolicy.SCHEMA_ID);
+            state.put("cvCoreState","ACTIVE");
+            state.put("cvCorePublicEnabled",true);
+            state.put("cvCoreActivePlan",activeCvPlan!=null);
+            state.put("cvCoreSummary",new JSONObject(cvSummary.snapshot(activeCvPlan!=null)));
             state.put("aiEnabled", AiAdvisor.isEnabled(this));
             state.put("aiMode", AiAdvisor.isEnabled(this)
                     ? "INFORMATIONAL_POST_SIGNAL_ONLY" : "ENGINE_COMPLETE_AI_OFF");
@@ -4771,17 +5250,48 @@ public class MarketWatchService extends Service {
                 state.put("lastPlan", signal);
             }
             StatusPayloadPolicy.compact(state,marketCoordinator.runtimes().values());
-            String output = state.toString();
-            LAST_STATUS_JSON = output;
-            getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().putString(STATE_JSON, output).apply();
-            Intent broadcast = new Intent(BROADCAST_STATUS).setPackage(getPackageName());
-            broadcast.putExtra(EXTRA_PAYLOAD, output);
-            sendBroadcast(broadcast);
+            SafeJsonNormalizer.Result normalized=SafeJsonNormalizer.normalizeAndSerialize(state);
+            if(!normalized.issues.isEmpty())recordStatusNormalization(normalized);
+            publishValidatedStatus(normalized.serialized,"FULL",requestId,flushCompleted,now);
         } catch (Exception error) {
             Log.e("NMC_STATUS","Status complet impossible; publication du statut minimal",error);
             recordStatusSerializationFailure(error);
-            publishMinimalStatus(type,message,error);
+            publishMinimalStatus(type,message,error,requestId,flushCompleted);
         }
+    }
+
+    private void publishValidatedStatus(String output,String mode,String requestId,
+                                        boolean flushCompleted,long snapshotAt){
+        if(!SafeJsonNormalizer.isValidObject(output))throw new IllegalArgumentException("invalid status");
+        LAST_STATUS_JSON=output;lastValidStatusJson=output;
+        getSharedPreferences(STATE_PREFERENCES,MODE_PRIVATE).edit().putString(STATE_JSON,output).apply();
+        Intent broadcast=new Intent(BROADCAST_STATUS).setPackage(getPackageName());
+        broadcast.putExtra(EXTRA_PAYLOAD,output);broadcast.putExtra(EXTRA_REQUEST_ID,requestId);
+        broadcast.putExtra(EXTRA_FLUSH_COMPLETED,flushCompleted);broadcast.putExtra(EXTRA_STATUS_MODE,mode);
+        broadcast.putExtra(EXTRA_SNAPSHOT_AT,snapshotAt);sendBroadcast(broadcast);
+    }
+
+    private void publishLastValidStatus(String requestId,boolean flushCompleted,long snapshotAt){
+        String candidate=StatusPublicationPolicy.validatedOrNull(lastValidStatusJson);
+        if(candidate==null)candidate=StatusPublicationPolicy.validatedOrNull(getLastStatusJson(this));
+        if(candidate==null)throw new IllegalStateException("last valid status unavailable");
+        Intent broadcast=new Intent(BROADCAST_STATUS).setPackage(getPackageName());
+        broadcast.putExtra(EXTRA_PAYLOAD,candidate);broadcast.putExtra(EXTRA_REQUEST_ID,requestId);
+        broadcast.putExtra(EXTRA_FLUSH_COMPLETED,flushCompleted);broadcast.putExtra(EXTRA_STATUS_MODE,"LAST_VALID");
+        broadcast.putExtra(EXTRA_SNAPSHOT_AT,snapshotAt);sendBroadcast(broadcast);
+    }
+
+    private void recordStatusNormalization(SafeJsonNormalizer.Result result){
+        try{long now=System.currentTimeMillis();Map<String,Object> details=new LinkedHashMap<>();
+            details.put("problemSection",result.firstProblemSection());details.put("issueCount",result.issues.size());
+            List<Map<String,Object>> issues=new ArrayList<>();
+            for(SafeJsonNormalizer.Issue issue:result.issues)issues.add(issue.asMap());
+            details.put("issues",issues);marketCoordinator.runtime(MarketProfile.ETH_SYMBOL).recorder.record(now,
+                    "STATUS_VALUE_NORMALIZED","NMC_STATUS_VALUE_NORMALIZED",
+                    "Valeur de statut non sérialisable normalisée dans "+result.firstProblemSection(),
+                    "DIAGNOSTIC_RUNTIME","","",null,null,0,ethExecutionFeedFresh(now),
+                    sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,details);
+        }catch(Exception ignored){}
     }
 
     private void recordStatusSerializationFailure(Exception error){
@@ -4789,17 +5299,24 @@ public class MarketWatchService extends Service {
         if(lastStatusFallbackDiagnosticAt>0&&now-lastStatusFallbackDiagnosticAt<60_000L)return;
         lastStatusFallbackDiagnosticAt=now;
         try{MarketRuntime runtime=marketCoordinator.runtime(MarketProfile.ETH_SYMBOL);
+            Map<String,Object> details=new LinkedHashMap<>();String stack=Log.getStackTraceString(error);
+            details.put("exception",error.getClass().getName());details.put("message",String.valueOf(error.getMessage()));
+            details.put("stackTrace",stack==null?"":stack.substring(0,Math.min(2000,stack.length())));
             runtime.recorder.record(now,"STATUS_SERIALIZATION_FALLBACK",
                     "NMC_STATUS_SERIALIZATION_FALLBACK",
                     error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage()),
                     "DIAGNOSTIC_RUNTIME","","",null,null,0,
-                    ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,
-                    Collections.emptyMap());
+                    ethExecutionFeedFresh(now),sharedBtc.fresh(now,ETH_BOOK_MAX_AGE_MS),0,details);
         }catch(Exception ignored){}
     }
 
     /** A status serialization problem must never leave the UI blank or affect market ingestion. */
     private void publishMinimalStatus(String type,String message,Exception error) {
+        publishMinimalStatus(type,message,error,"",false);
+    }
+
+    private void publishMinimalStatus(String type,String message,Exception error,String requestId,
+                                      boolean flushCompleted) {
         try {
             long now=System.currentTimeMillis();
             JSONObject state=new JSONObject();
@@ -4811,6 +5328,7 @@ public class MarketWatchService extends Service {
             state.put("marketDataSource",activeMarketDataSource);
             state.put("executionFeedAuthoritative",executionFeedAuthoritative);
             state.put("networkAvailable",isNetworkAvailable());
+            state.put("lastFeedError",lastFeedError==null?"":lastFeedError);
             state.put("type",type);state.put("message",message);
             state.put("statusSerializationFallback",true);
             state.put("statusError",error==null?"UNKNOWN":error.getClass().getSimpleName()
@@ -4853,12 +5371,12 @@ public class MarketWatchService extends Service {
             }
             state.put("activePlans",activePlans);
             state.put("realTradingAllowed",SignalSafetyPolicies.realTradingAllowed());
-            String output=state.toString();LAST_STATUS_JSON=output;
-            getSharedPreferences(STATE_PREFERENCES,MODE_PRIVATE).edit().putString(STATE_JSON,output).apply();
-            Intent broadcast=new Intent(BROADCAST_STATUS).setPackage(getPackageName());
-            broadcast.putExtra(EXTRA_PAYLOAD,output);sendBroadcast(broadcast);
+            SafeJsonNormalizer.Result normalized=SafeJsonNormalizer.normalizeAndSerialize(state);
+            publishValidatedStatus(normalized.serialized,"MINIMAL",requestId,flushCompleted,now);
         } catch(Exception fallbackError){
             Log.e("NMC_STATUS","Statut minimal impossible",fallbackError);
+            try{publishLastValidStatus(requestId,flushCompleted,System.currentTimeMillis());}
+            catch(Exception lastValidError){Log.e("NMC_STATUS","Aucun dernier statut valide",lastValidError);}
         }
     }
 
@@ -4913,37 +5431,45 @@ public class MarketWatchService extends Service {
         putPrice(value,"lastPrice",p.lastPrice);putPrice(value,"lastBid",p.lastBid);putPrice(value,"lastAsk",p.lastAsk);
         value.put("createdAt",p.createdAt);value.put("entryTriggeredAt",p.entryTriggeredAt);
         value.put("finalConfirmedAt",p.finalConfirmedAt);value.put("resultCostPerUnit",p.resultCostPerUnit);
-        value.put("riskAllowancePerUnit",p.riskAllowancePerUnit);value.put("qualityRiskBudget",p.qualityRiskBudget);
-        value.put("theoreticalMaximumLoss",p.theoreticalMaximumLoss);
+        boolean cv=CvCorePolicy.ENGINE_ID.equals(p.engineId);
+        if(cv){for(Map.Entry<String,Object> field:CvCoreRiskFields.cv(p.quantity,p.stopDistance,p.routeRiskBudgetUsdt).entrySet())
+                value.put(field.getKey(),field.getValue());}
+        else{value.put("riskAllowancePerUnit",p.riskAllowancePerUnit);value.put("qualityRiskBudget",p.qualityRiskBudget);
+            value.put("theoreticalMaximumLoss",p.theoreticalMaximumLoss);}
         double gross=Math.abs(p.entry-p.stopLoss)*p.quantity;
         double fees=p.resultCostPerUnit*p.quantity;
-        value.put("grossLossAtSl",gross);value.put("estimatedRoundTripFees",fees);
-        value.put("estimatedTotalLossAtSl",gross+fees);
-        value.put("riskBudgetExcludingFees",DynamicTradePlan.GROSS_RISK_BUDGET_USDT);
-        value.put("modeledRiskUsdt",gross);return value;
+        if(!cv){value.put("grossLossAtSl",gross);value.put("estimatedRoundTripFees",fees);
+            value.put("estimatedTotalLossAtSl",gross+fees);
+            value.put("riskBudgetExcludingFees",DynamicTradePlan.GROSS_RISK_BUDGET_USDT);
+            value.put("modeledRiskUsdt",gross);}return value;
     }
 
     private JSONObject ethActivePlanJson(SignalDecision signal,ObservedSignal observed,
                                          MarketSnapshot snapshot)throws Exception{
         JSONObject value=signalJson(signal);value.put("status","ACTIVE");
         value.put("quantity",signal.quantity);value.put("takeProfit",signal.takeProfit);
-        value.put("stopLoss",signal.stopLoss);value.put("sleeve",observed==null?"P01":observed.sleeve);
+        value.put("stopLoss",signal.stopLoss);boolean cv=observed!=null&&CvCorePolicy.ENGINE_ID.equals(observed.engineId);
+        value.put("sleeve",cv?"CV CORE V1":observed==null?"P01":observed.sleeve);
         if(observed!=null){value.put("createdAt",observed.createdAt);
             value.put("entryTriggeredAt",observed.entryTriggeredAt);
-            value.put("finalConfirmedAt",observed.finalConfirmedAt);}
+            value.put("finalConfirmedAt",observed.finalConfirmedAt);
+            if(cv){value.put("engineId",observed.engineId);value.put("policyId",observed.policyId);value.put("schemaId",observed.schemaId);
+                value.put("routeId",observed.routeId);value.put("riskBudgetUsdt",observed.routeRiskBudgetUsdt);value.put("entryValidUntil",observed.entryValidUntil);
+                value.put("entryWindowStatus",observed.entryWindowStatus);}}
         putPrice(value,"lastPrice",snapshot.ethLast);putPrice(value,"lastBid",snapshot.ethBid);
         putPrice(value,"lastAsk",snapshot.ethAsk);
         DynamicTradePlan.Result plan=observed==null?null:observed.dynamicTradePlan;
+        if(cv){for(Map.Entry<String,Object> field:CvCoreRiskFields.cv(signal.quantity,signal.stopDistance,observed.routeRiskBudgetUsdt).entrySet())
+                value.put(field.getKey(),field.getValue());return value;}
         value.put("resultCostPerUnit",plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:plan.resultCostPerUnit);
         value.put("riskAllowancePerUnit",plan==null?DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH:plan.riskAllowancePerUnit);
         value.put("qualityRiskBudget",plan==null?DynamicTradePlan.DEFAULT_RISK_BUDGET_USDT:plan.qualityRiskBudget);
-        double loss=signal.quantity*signal.stopDistance;
-        double fees=signal.quantity*(plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:
-                plan.resultCostPerUnit);
-        value.put("theoreticalMaximumLoss",loss);value.put("grossLossAtSl",loss);
-        value.put("estimatedRoundTripFees",fees);value.put("estimatedTotalLossAtSl",loss+fees);
-        value.put("riskBudgetExcludingFees",DynamicTradePlan.GROSS_RISK_BUDGET_USDT);
-        value.put("modeledRiskUsdt",loss);return value;
+        double legacyCost=plan==null?DynamicTradePlan.RESULT_ROUND_TRIP_COST_PER_ETH:plan.resultCostPerUnit;
+        double legacyAllowance=plan==null?DynamicTradePlan.RISK_EXECUTION_ALLOWANCE_PER_ETH:plan.riskAllowancePerUnit;
+        double legacyBudget=plan==null?DynamicTradePlan.DEFAULT_RISK_BUDGET_USDT:plan.qualityRiskBudget;
+        for(Map.Entry<String,Object> field:CvCoreRiskFields.legacy(signal.quantity,
+                signal.stopDistance,legacyCost,legacyAllowance,legacyBudget).entrySet())
+            value.put(field.getKey(),field.getValue());return value;
     }
 
 
@@ -5613,6 +6139,18 @@ public class MarketWatchService extends Service {
         double p01EarlyTriggerAsk = Double.NaN;
         double p01EarlyQuoteDistance = Double.NaN;
         double p01EarlySecondsSaved = Double.NaN;
+        final LinkedHashMap<String,String> lastShadowStateByComponent = new LinkedHashMap<>();
+        long shadowDuplicateEventsSuppressed;
+        long shadowExtendedQualificationAt;
+        long shadowExtendedFirstExecutableAt;
+        long solEarlyQualitySince, solEarlyStabilityMs, solEarlyConfirmedAt;
+        String solEarlyQualityMode = "", solEarlyLastReasonCode = "";
+        long reaccelQualitySince, reaccelStabilityMs, reaccelConfirmedAt;
+        String reaccelBranch = "", reaccelLastReasonCode = "";
+        String engineId="",policyId="",schemaId="",routeId="",episodeId="";
+        double routeRiskBudgetUsdt;
+        long qualificationAt,entryValidUntil;
+        String entryWindowStatus="";
 
         final double signalEthLast;
         final double signalBid;

@@ -5,7 +5,7 @@ import java.util.Map;
 
 /** Immutable, validated representation of the one live final plan. */
 public final class ActivePlanState {
-    public static final int FORMAT_VERSION = 2;
+    public static final int FORMAT_VERSION = 4;
 
     public final int formatVersion;
     public final String symbol;
@@ -63,6 +63,15 @@ public final class ActivePlanState {
     public final double riskPerUnit;
     public final int riskQuantity;
     public final int qualityCap;
+    public final String engineId;
+    public final String policyId;
+    public final String schemaId;
+    public final String routeId;
+    public final String episodeId;
+    public final long qualificationAt;
+    public final long entryValidUntil;
+    public final String entryWindowStatus;
+    public final double routeRiskBudgetUsdt;
 
     private ActivePlanState(Builder b) {
         formatVersion = b.formatVersion;
@@ -114,6 +123,10 @@ public final class ActivePlanState {
         structuralBuffer=b.structuralBuffer;stopCalculationType=text(b.stopCalculationType);
         stopReasonCode=text(b.stopReasonCode);selectedBudgetReason=text(b.selectedBudgetReason);
         riskPerUnit=b.riskPerUnit;riskQuantity=b.riskQuantity;qualityCap=b.qualityCap;
+        engineId=text(b.engineId);policyId=text(b.policyId);schemaId=text(b.schemaId);
+        routeId=text(b.routeId);episodeId=text(b.episodeId);
+        qualificationAt=b.qualificationAt;entryValidUntil=b.entryValidUntil;
+        entryWindowStatus=text(b.entryWindowStatus);routeRiskBudgetUsdt=b.routeRiskBudgetUsdt;
     }
 
     public static Builder builder() {
@@ -121,7 +134,7 @@ public final class ActivePlanState {
     }
 
     public boolean isValid() {
-        if (formatVersion != FORMAT_VERSION || !"ACTIVE".equals(status)) return false;
+        if ((formatVersion < 1 || formatVersion > FORMAT_VERSION) || !"ACTIVE".equals(status)) return false;
         if (!MarketProfile.ETH_SYMBOL.equals(symbol) && !MarketProfile.SOL_SYMBOL.equals(symbol)) return false;
         if (!"LONG".equals(side) && !"SHORT".equals(side)) return false;
         int maximum = MarketProfile.SOL_SYMBOL.equals(symbol) ? 120 : 7;
@@ -133,6 +146,13 @@ public final class ActivePlanState {
         if ("SHORT".equals(side) && !(takeProfit < entry && stopLoss > entry)) return false;
         if (createdAt <= 0 || entryTriggeredAt < createdAt || finalConfirmedAt < entryTriggeredAt) return false;
         if (lastP01ConfirmedAt < 0 || notificationSignature.isEmpty() || notificationId <= 0) return false;
+        if (formatVersion >= 3 && (!engineId.isEmpty() || !routeId.isEmpty() || !episodeId.isEmpty())) {
+            if (engineId.isEmpty() || routeId.isEmpty() || episodeId.isEmpty()
+                    || qualificationAt <= 0 || entryValidUntil < qualificationAt) return false;
+        }
+        if(formatVersion>=4&&(!CvCorePolicy.ENGINE_ID.equals(engineId)
+                ||!CvCorePolicy.POLICY_ID.equals(policyId)||!CvCorePolicy.SCHEMA_ID.equals(schemaId)
+                ||!positive(routeRiskBudgetUsdt)))return false;
         return finite(movementOrigin) && finite(movementExtreme) && finite(movementDistance)
                 && finite(resultCostPerUnit) && resultCostPerUnit >= 0.0
                 && finite(riskAllowancePerUnit) && riskAllowancePerUnit >= 0.0
@@ -184,6 +204,10 @@ public final class ActivePlanState {
         put(out,"stopReasonCode",stopReasonCode);put(out,"selectedBudgetReason",selectedBudgetReason);
         put(out,"riskPerUnit",riskPerUnit);put(out,"riskQuantity",riskQuantity);
         put(out,"qualityCap",qualityCap);
+        put(out,"engineId",engineId);put(out,"policyId",policyId);put(out,"schemaId",schemaId);
+        put(out,"routeId",routeId);put(out,"episodeId",episodeId);
+        put(out,"qualificationAt",qualificationAt);put(out,"entryValidUntil",entryValidUntil);
+        put(out,"entryWindowStatus",entryWindowStatus);put(out,"routeRiskBudgetUsdt",routeRiskBudgetUsdt);
         return out;
     }
 
@@ -193,8 +217,9 @@ public final class ActivePlanState {
             String symbol = optional(values, "symbol", MarketProfile.ETH_SYMBOL);
             MarketProfile profile = MarketProfile.SOL_SYMBOL.equals(symbol)
                     ? MarketProfile.sol() : MarketProfile.eth();
+            int storedVersion=optionalInteger(values,"formatVersion",2);
             Builder b = builder()
-                    .formatVersion(FORMAT_VERSION)
+                    .formatVersion(storedVersion)
                     .market(profile)
                     .status(value(values, "status")).side(value(values, "side"))
                     .family(value(values, "family")).reasonCode(value(values, "reasonCode"))
@@ -232,7 +257,13 @@ public final class ActivePlanState {
                             optional(values,"selectedBudgetReason",""),
                             optionalDecimal(values,"riskPerUnit",Double.NaN),
                             optionalInteger(values,"riskQuantity",0),
-                            optionalInteger(values,"qualityCap",0));
+                            optionalInteger(values,"qualityCap",0))
+                    .enginePlan(optional(values,"engineId",""),optional(values,"policyId",""),
+                            optional(values,"schemaId",""),optional(values,"routeId",""),
+                            optional(values,"episodeId",""),optionalLong(values,"qualificationAt",0L),
+                            optionalLong(values,"entryValidUntil",0L),
+                            optional(values,"entryWindowStatus",""),
+                            optionalDecimal(values,"routeRiskBudgetUsdt",0d));
             ActivePlanState state = b.build();
             return state.isValid() ? state : null;
         } catch (RuntimeException ignored) {
@@ -254,6 +285,9 @@ public final class ActivePlanState {
     private static int optionalInteger(Map<String,String> map,String key,int fallback) {
         String value=map.get(key); return value==null?fallback:Integer.parseInt(value);
     }
+    private static long optionalLong(Map<String,String> map,String key,long fallback) {
+        String value=map.get(key); return value==null?fallback:Long.parseLong(value);
+    }
 
     private static int integer(Map<String, String> map, String key) { return Integer.parseInt(value(map, key)); }
     private static long longValue(Map<String, String> map, String key) { return Long.parseLong(value(map, key)); }
@@ -269,7 +303,9 @@ public final class ActivePlanState {
     private static String text(String value) { return value == null ? "" : value; }
 
     public static final class Builder {
-        private int formatVersion = FORMAT_VERSION;
+        // Generic legacy/diagnostic builders remain format 2 unless a public engine explicitly
+        // selects its format. CV Core publication always writes format 4.
+        private int formatVersion = 2;
         private String symbol = MarketProfile.ETH_SYMBOL, asset = "ETH", profileVersion = "ETH_V23321";
         private String status = "ACTIVE", side = "", family = "", reasonCode = "", reasonText = "";
         private int score, quantity;
@@ -290,6 +326,9 @@ public final class ActivePlanState {
         private double structuralAnchor=Double.NaN,structuralBuffer=Double.NaN,riskPerUnit=Double.NaN;
         private int structuralWindowMinutes,riskQuantity,qualityCap;
         private String stopCalculationType="",stopReasonCode="",selectedBudgetReason="";
+        private String engineId="",policyId="",schemaId="",routeId="",episodeId="",entryWindowStatus="";
+        private long qualificationAt,entryValidUntil;
+        private double routeRiskBudgetUsdt;
 
         public Builder formatVersion(int v) { formatVersion=v; return this; }
         public Builder market(MarketProfile profile) { symbol=profile.symbol;asset=profile.asset;profileVersion=profile.profileVersion;return this; }
@@ -320,6 +359,12 @@ public final class ActivePlanState {
             structuralWindowMinutes=window;structuralBuffer=buffer;stopCalculationType=type;
             stopReasonCode=stopReason;selectedBudgetReason=budgetReason;riskPerUnit=perUnit;
             riskQuantity=riskQty;qualityCap=cap;return this;
+        }
+        public Builder enginePlan(String engine,String policy,String schema,String route,String episode,
+                                  long qualified,long validUntil,String windowStatus,double riskBudget) {
+            engineId=engine;policyId=policy;schemaId=schema;routeId=route;episodeId=episode;
+            qualificationAt=qualified;entryValidUntil=validUntil;entryWindowStatus=windowStatus;
+            routeRiskBudgetUsdt=riskBudget;return this;
         }
         public ActivePlanState build() { return new ActivePlanState(this); }
     }
