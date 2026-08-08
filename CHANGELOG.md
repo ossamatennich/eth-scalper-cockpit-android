@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.5.0 — capture causale prospective et laboratoire anti-surapprentissage
+
+- conserve strictement le moteur public CV Core 4.9 : aucun candidat ETH/SOL n’a franchi les gates de robustesse, donc aucun seuil, signal, plan, sizing, TP/SL ou alerte n’est modifié ;
+- ajoute une capture fail-open des `bookTicker` et `aggTrade` publics Binance Futures pour ETHUSDT, SOLUSDT et BTCUSDT, ordonnée par temps de réception local ;
+- agrège les trades par seconde avec OHLC, flow acheteur/vendeur, notionnel, VWAP, trous d’identifiants, sessions et gaps explicites ;
+- stocke des blocs compressés CRC32 dans une rétention FIFO bornée, avec file non bloquante et export ZIP en streaming ;
+- ajoute un replay strict bid/ask sans point futur ainsi qu’un laboratoire reproductible qui garde le holdout avril–juillet 2026 fermé tant qu’ETH et SOL n’ont pas chacun un finaliste robuste ;
+- documente le rejet des meilleurs backtests fragiles après frais/latence, sans promesse de rentabilité, et maintient `realTradingAllowed=false`.
+
 ## 2.34.4.9 — CV Core V1, moteur public unique
 
 - correctif d’audit : un plan CV Core produit désormais exactement une ouverture économique et un seul terminal TP ou SL dans le recorder, l’index persistant et l’export FULL ;

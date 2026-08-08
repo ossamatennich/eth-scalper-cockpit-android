@@ -50,6 +50,7 @@ import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.UUID;
 import java.util.Locale;
 import java.util.Map;
@@ -250,20 +251,25 @@ public class MainActivity extends Activity {
 
     private void startDiagnosticExport(final JSONObject snapshot,String requestId,boolean flushCompleted,
                                        String statusMode,long snapshotAt){
-        if(!usableSnapshot(snapshot)){finishExportError("Statut export invalide");return;}
+        if(!usableSnapshot(snapshot)){MarketWatchService.releaseCausalCaptureSnapshot();
+            finishExportError("Statut export invalide");return;}
         exportExecutor.execute(()->{Uri uri=null;String name=DiagnosticExportContract.zipPrefix(BuildConfig.VERSION_NAME)+new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.FRANCE).format(new Date())+".zip";
+            boolean snapshotReleased=false;List<File> causalSnapshotFiles=MarketWatchService.causalCaptureSnapshotFiles();
             try{try(OutputTarget target=openExportTarget(name)){uri=target.uri;
                 Map<String,String> small=smallExportEntries(snapshot);String status=small.get("status.json");
                 DiagnosticStreamingExporter.ExportSnapshotMetadata metadata=new DiagnosticStreamingExporter.ExportSnapshotMetadata(
                         snapshotAt,requestId,flushCompleted,statusMode==null?"LAST_VALID":statusMode,sha256(status));
                 DiagnosticStreamingExporter.export(target.output,
                         MarketWatchService.persistentEventsFile(this),MarketWatchService.persistentFramesFile(this),small,
-                        BuildConfig.VERSION_NAME,System.currentTimeMillis(),metadata,(percent,stage)->runOnUiThread(()->setChanged(exportProgress,stage+" · "+percent+" %")),exportCancelled::get);
-                }runOnUiThread(()->{setChanged(exportProgress,"Export terminé");Toast.makeText(this,"Diagnostic exporté : "+name,Toast.LENGTH_LONG).show();
+                        BuildConfig.VERSION_NAME,System.currentTimeMillis(),metadata,causalSnapshotFiles,
+                        (percent,stage)->runOnUiThread(()->setChanged(exportProgress,stage+" · "+percent+" %")),exportCancelled::get);
+                }MarketWatchService.releaseCausalCaptureSnapshot();snapshotReleased=true;
+                runOnUiThread(()->{setChanged(exportProgress,"Export terminé");Toast.makeText(this,"Diagnostic exporté : "+name,Toast.LENGTH_LONG).show();
                     if(resetAfterExport.getAndSet(false))sendServiceAction(MarketWatchService.ACTION_RESET_DIAGNOSTICS,"Diagnostic réinitialisé — plans actifs conservés");});
             }catch(Exception error){if(uri!=null)try{getContentResolver().delete(uri,null,null);}catch(Exception ignored){}resetAfterExport.set(false);
                 runOnUiThread(()->{setChanged(exportProgress,"Erreur d’export : "+error.getClass().getSimpleName());Toast.makeText(this,"Export impossible",Toast.LENGTH_LONG).show();});}
-            finally{exportRunning.set(false);runOnUiThread(()->exportButton.setEnabled(true));}});}
+            finally{if(!snapshotReleased)MarketWatchService.releaseCausalCaptureSnapshot();
+                exportRunning.set(false);runOnUiThread(()->exportButton.setEnabled(true));}});}
 
     private void finishExportError(String message){exportHandshake=null;startupHandler.removeCallbacks(exportTimeout);
         exportRunning.set(false);exportButton.setEnabled(true);setChanged(exportProgress,message);Toast.makeText(this,message,Toast.LENGTH_LONG).show();}

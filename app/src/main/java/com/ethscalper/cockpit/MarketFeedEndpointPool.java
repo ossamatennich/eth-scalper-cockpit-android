@@ -79,7 +79,7 @@ public final class MarketFeedEndpointPool {
         }
 
         value.append(
-                "/btcusdt@kline_1m/btcusdt@bookTicker"
+                "/btcusdt@kline_1m/btcusdt@aggTrade/btcusdt@bookTicker"
         );
 
         return value.toString();

@@ -28,6 +28,7 @@ public final class DiagnosticStreamingExporter {
             "status.json","markets.json","active_plans.json","profiles_manifest.json",
             "market_events.jsonl","market_frames.jsonl","market_candidates.jsonl",
             "market_candidates.csv","market_plans.jsonl","market_plans.csv",
+            "causal_market_stream.jsonl","causal_market_manifest.json",
             "market_summary.json","market_summary.txt","feed_health.json",
             "health_check.txt","instructions.txt","export_manifest.json"));
     private static final Pattern TYPE=Pattern.compile("\\\"eventType\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
@@ -41,12 +42,19 @@ public final class DiagnosticStreamingExporter {
                                 Map<String,String> smallEntries,String version,long exportedAt,
                                 Progress progress,BooleanSupplier cancelled)throws Exception {
         return export(destination,events,frames,smallEntries,version,exportedAt,
-                ExportSnapshotMetadata.legacy(exportedAt),progress,cancelled);
+                ExportSnapshotMetadata.legacy(exportedAt),Collections.emptyList(),progress,cancelled);
     }
     public static Result export(OutputStream destination,File events,File frames,
                                 Map<String,String> smallEntries,String version,long exportedAt,
                                 ExportSnapshotMetadata metadata,Progress progress,
                                 BooleanSupplier cancelled)throws Exception {
+        return export(destination,events,frames,smallEntries,version,exportedAt,metadata,
+                Collections.emptyList(),progress,cancelled);
+    }
+    public static Result export(OutputStream destination,File events,File frames,
+                                Map<String,String> smallEntries,String version,long exportedAt,
+                                ExportSnapshotMetadata metadata,List<File> causalSnapshotFiles,
+                                Progress progress,BooleanSupplier cancelled)throws Exception {
         if(destination==null)throw new IllegalArgumentException("destination");
         LinkedHashMap<String,EntryDigest> manifest=new LinkedHashMap<>();
         try(ZipOutputStream zip=new ZipOutputStream(destination,StandardCharsets.UTF_8)){
@@ -62,6 +70,10 @@ public final class DiagnosticStreamingExporter {
             writeCsv(zip,"market_candidates.csv",events,line->DiagnosticExportContract.isCandidate(type(line)),"candidateRecord",manifest,cancelled);
             writeJsonl(zip,"market_plans.jsonl",events,line->DiagnosticExportContract.isPlan(type(line)),"market_plans",manifest,cancelled);
             writeCsv(zip,"market_plans.csv",events,line->DiagnosticExportContract.isPlan(type(line)),"planRecord",manifest,cancelled);
+            check(cancelled);progress(progress,62,"Capture causale");
+            CausalExportStats causal=writeCausalJsonl(zip,"causal_market_stream.jsonl",
+                    causalSnapshotFiles,manifest,cancelled);
+            writeSmall(zip,"causal_market_manifest.json",causalManifestJson(causal),manifest);
             check(cancelled);progress(progress,70,"Synthèse");
             writeSmall(zip,"market_summary.json",small(smallEntries,"market_summary.json","{}"),manifest);
             writeSmall(zip,"market_summary.txt",small(smallEntries,"market_summary.txt",""),manifest);
@@ -74,6 +86,59 @@ public final class DiagnosticStreamingExporter {
         }
         return new Result(manifest,ENTRY_NAMES,COPY_BUFFER_BYTES);
     }
+
+    private static CausalExportStats writeCausalJsonl(ZipOutputStream zip,String name,
+                                                       List<File> files,
+                                                       Map<String,EntryDigest> manifest,
+                                                       BooleanSupplier cancelled)throws Exception {
+        MessageDigest digest=sha();CountingDigestOutput output=new CountingDigestOutput(zip,digest);
+        List<File> snapshot=files==null?Collections.emptyList():new ArrayList<>(files);
+        zip.putNextEntry(new ZipEntry(name));CausalCaptureStore.ScanResult scan;
+        try{scan=CausalCaptureStore.scan(snapshot,true,record->{
+            try{check(cancelled);output.write((json(record.toMap())+"\n").getBytes(StandardCharsets.UTF_8));}
+            catch(RuntimeException error){throw error;}
+            catch(Exception error){throw new CausalExportFailure(error);}
+        });}catch(IllegalStateException error){RuntimeException cancellation=findRuntimeCause(error,
+                ExportCancelledException.class);if(cancellation!=null)throw cancellation;
+            RuntimeException writeFailure=findRuntimeCause(error,CausalExportFailure.class);
+            if(writeFailure instanceof CausalExportFailure
+                    &&writeFailure.getCause() instanceof Exception)
+                throw (Exception)writeFailure.getCause();throw error;}
+        zip.closeEntry();manifest.put(name,new EntryDigest(output.count,hex(digest.digest())));
+        long sourceBytes=0;ArrayList<String> sourceNames=new ArrayList<>();
+        for(File file:snapshot)if(file!=null&&file.exists()){sourceBytes+=Math.max(0,file.length());
+            sourceNames.add(file.getName());}
+        Collections.sort(sourceNames);return new CausalExportStats(scan.records,scan.corruptBlocks,
+                scan.truncatedTails,sourceBytes,sourceNames);
+    }
+
+    private static String causalManifestJson(CausalExportStats value){StringBuilder out=new StringBuilder();
+        out.append("{\"schema\":\"").append(CausalMarketRecord.SCHEMA)
+                .append("\",\"formatVersion\":").append(CausalMarketRecord.FORMAT_VERSION)
+                .append(",\"streamEntry\":\"causal_market_stream.jsonl\"")
+                .append(",\"recordCount\":").append(value.records)
+                .append(",\"sourceFileCount\":").append(value.sourceFiles.size())
+                .append(",\"sourceBytes\":").append(value.sourceBytes)
+                .append(",\"corruptBlocks\":").append(value.corruptBlocks)
+                .append(",\"truncatedTails\":").append(value.truncatedTails)
+                .append(",\"strictCrc\":true,\"sourceFiles\":[");
+        for(int i=0;i<value.sourceFiles.size();i++){if(i>0)out.append(',');
+            out.append('"').append(escape(value.sourceFiles.get(i))).append('"');}
+        return out.append("]}").toString();}
+
+    private static String json(Map<String,Object> value){StringBuilder out=new StringBuilder("{");
+        boolean first=true;for(Map.Entry<String,Object> entry:value.entrySet()){if(!first)out.append(',');first=false;
+            out.append('"').append(escape(entry.getKey())).append("\":");Object item=entry.getValue();
+            if(item==null)out.append("null");else if(item instanceof Boolean)out.append(item);
+            else if(item instanceof Number){double numeric=((Number)item).doubleValue();
+                if(Double.isFinite(numeric))out.append(item);else out.append("null");}
+            else out.append('"').append(escape(String.valueOf(item))).append('"');}
+        return out.append('}').toString();}
+
+    private static RuntimeException findRuntimeCause(Throwable value,
+                                                       Class<? extends RuntimeException> type){
+        for(Throwable current=value;current!=null;current=current.getCause())
+            if(type.isInstance(current))return (RuntimeException)current;return null;}
 
     private static void writeSmall(ZipOutputStream zip,String name,String text,
                                    Map<String,EntryDigest> manifest)throws Exception {
@@ -147,6 +212,13 @@ public final class DiagnosticStreamingExporter {
     private static final class CountingDigestOutput{final OutputStream output;final MessageDigest digest;long count;
         CountingDigestOutput(OutputStream output,MessageDigest digest){this.output=output;this.digest=digest;}
         void write(byte[] bytes)throws Exception{output.write(bytes);digest.update(bytes);count+=bytes.length;}}
+    private static final class CausalExportFailure extends RuntimeException{
+        CausalExportFailure(Exception cause){super(cause);}}
+    private static final class CausalExportStats{final long records,sourceBytes;final int corruptBlocks,truncatedTails;
+        final List<String> sourceFiles;
+        CausalExportStats(long records,int corruptBlocks,int truncatedTails,long sourceBytes,List<String> sourceFiles){
+            this.records=records;this.corruptBlocks=corruptBlocks;this.truncatedTails=truncatedTails;
+            this.sourceBytes=sourceBytes;this.sourceFiles=Collections.unmodifiableList(new ArrayList<>(sourceFiles));}}
     public static final class EntryDigest{public final long bytes;public final String sha256;
         EntryDigest(long bytes,String sha256){this.bytes=bytes;this.sha256=sha256;}}
     public static final class ExportSnapshotMetadata {

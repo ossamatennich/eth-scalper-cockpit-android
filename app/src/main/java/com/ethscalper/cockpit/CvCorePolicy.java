@@ -7,7 +7,7 @@ public final class CvCorePolicy {
     public static final String ENGINE_ID="NMC_SCALP_CV_CORE_V1";
     public static final String POLICY_ID="SCALP_CV_CORE_V1_20260806";
     public static final String SCHEMA_ID="SCALP_CV_SCHEMA_V1";
-    public static final String VERSION_NAME="2.34.4.9";
+    public static final String VERSION_NAME="2.34.5.0";
     public static final String RAW="RAW",LEGACY_CONFIRMATION="LEGACY_CONFIRMATION";
     public static final double RESULT_COST_PER_UNIT=1.43;
 

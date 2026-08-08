@@ -44,6 +44,7 @@ public class V23439FuturesOnlyFeedTest {
 
         assertTrue(url.contains("btcusdt@kline_1m"));
         assertTrue(url.contains("btcusdt@bookTicker"));
+        assertTrue(url.contains("btcusdt@aggTrade"));
 
         assertFalse(url.contains("fstream-auth"));
         assertFalse(url.contains("binance.vision"));

@@ -118,7 +118,10 @@ public class V23439StatusExportDiagnosticsTest {
         assertTrue(service.contains("alarmVolume"));assertTrue(service.contains("interruptionFilter"));
         assertTrue(service.contains("backgroundRestricted"));assertTrue(service.contains("batteryOptimizationExempt"));
         assertTrue(service.contains("postAudibleFinalSignalAlert"));assertTrue(service.contains("nmc_final_signal_loud_v2"));
-        assertTrue(service.contains("boolean flushCompleted=flushDiagnosticsBlocking(10_000L)"));
+        assertTrue(service.contains("boolean recorderFlushed=flushDiagnosticsBlocking(10_000L)"));
+        assertTrue(service.contains("long captureTimeout=Math.max(0L,flushDeadline-SystemClock.elapsedRealtime())"));
+        assertTrue(service.contains("boolean captureFlushed=captureTimeout>0&&sealCausalCaptureSnapshot(captureTimeout)"));
+        assertTrue(service.contains("boolean flushCompleted=recorderFlushed&&captureFlushed"));
         assertTrue(service.contains("requestId==null?\"\":requestId,false"));
         assertTrue(service.contains("requestId==null?\"\":requestId,true"));
     }
