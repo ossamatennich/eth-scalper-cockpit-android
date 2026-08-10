@@ -172,7 +172,7 @@ public class MarketWatchService extends Service {
 
     private OkHttpClient client;
     private WebSocket socket;
-    private WebSocket researchSocket;
+    private WebSocket marketSocket;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
     private PowerManager.WakeLock wakeLock;
@@ -180,13 +180,13 @@ public class MarketWatchService extends Service {
     private boolean explicitStopRequested;
     private boolean healthScheduled;
     private int websocketEndpointIndex;
-    private int researchReconnectAttempt;
+    private int marketReconnectAttempt;
     private String activeMarketDataSource = "NONE";
     private boolean executionFeedAuthoritative;
     private String lastFeedError = "";
     private long lastNetworkAvailableAt;
     private long lastMessageAt;
-    private long lastResearchMessageAt;
+    private long lastMarketMessageAt;
     private long lastBtcResearchRestAggAt;
     private long lastSignalAt;
     private long lastP01ConfirmedAt;
@@ -399,10 +399,10 @@ public class MarketWatchService extends Service {
         }catch(RuntimeException ignored){}
     }
 
-    private synchronized void recordResearchCausalGap(String reasonCode){if(causalCaptureWriter==null)
-        return;try{long now=System.currentTimeMillis();if(lastResearchMessageAt>0
-                &&now>lastResearchMessageAt)causalCapture.gap(lastResearchMessageAt,now,now,
-                SystemClock.elapsedRealtime(),"BINANCE_FUTURES_RESEARCH_WS",reasonCode);}
+    private synchronized void recordMarketCausalGap(String reasonCode){if(causalCaptureWriter==null)
+        return;try{long now=System.currentTimeMillis();if(lastMarketMessageAt>0
+                &&now>lastMarketMessageAt)causalCapture.gap(lastMarketMessageAt,now,now,
+                SystemClock.elapsedRealtime(),"BINANCE_FUTURES_MARKET_WS",reasonCode);}
         catch(RuntimeException ignored){}
     }
 
@@ -432,8 +432,11 @@ public class MarketWatchService extends Service {
         status.put("snapshotPinned",causalCaptureSnapshotPinned());
         status.put("capture",new JSONObject(causalCapture.stats().toMap()));
         if(causalCaptureWriter!=null){CausalCaptureWriter.Stats writer=causalCaptureWriter.stats();
-            status.put("writer",new JSONObject(writer.toMap()));status.put("health",new JSONObject(
-                    microCaptureHealth.snapshot(System.currentTimeMillis(),causalCapture.stats(),writer)));}
+            Map<String,Object> health=microCaptureHealth.snapshot(System.currentTimeMillis(),
+                    causalCapture.stats(),writer);status.put("writer",new JSONObject(writer.toMap()));
+            status.put("health",new JSONObject(health));status.put("usableForMicrostructureResearch",
+                    Boolean.TRUE.equals(health.get("usableForMicrostructureResearch")));}
+        else status.put("usableForMicrostructureResearch",false);
         if(causalCaptureStore!=null){status.put("retentionMaxSegments",
                     causalCaptureStore.maximumSegments());
             status.put("retentionSegmentBytes",causalCaptureStore.maximumSegmentBytes());
@@ -633,7 +636,7 @@ public class MarketWatchService extends Service {
             explicitStopRequested = true;
             running = false;
             stopSocket();
-            stopResearchSocket();
+            stopMarketSocket();
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
@@ -649,7 +652,7 @@ public class MarketWatchService extends Service {
             microHealthStarted=true;}
         ensureCausalCaptureSession("BINANCE_FUTURES_MICROSTRUCTURE_V2");
         connectIfNeeded();
-        connectResearchIfNeeded();
+        connectMarketIfNeeded();
         prefillHistoricalCandlesIfNeeded();
         // Do not wait for the first 3-second health tick. A fresh install can briefly delay the
         // WebSocket while Android is displaying permission UI, so request public REST quotes now.
@@ -922,7 +925,7 @@ public class MarketWatchService extends Service {
         running = false;
         handler.removeCallbacksAndMessages(null);
         stopSocket();
-        stopResearchSocket();
+        stopMarketSocket();
         flushCausalCapture();
         if(causalCaptureWriter!=null)try{causalCaptureWriter.shutdown(2_000L);}
         catch(RuntimeException ignored){}
@@ -1016,7 +1019,7 @@ public class MarketWatchService extends Service {
                         if (!running) return;
                         reconnectAttempt = 0;
                         if (socket == null) connectIfNeeded();
-                        if (researchSocket == null) connectResearchIfNeeded();
+                        if (marketSocket == null) connectMarketIfNeeded();
                         if (ethLast <= 0 || btcLast <= 0) historyPrefillRequested = false;
                         prefillHistoricalCandlesIfNeeded();
                         lastRestBookRefreshAt = 0;
@@ -1031,8 +1034,18 @@ public class MarketWatchService extends Service {
                 @Override public void onLost(Network network) {
                     postMarketState(() -> {
                         if (!running || isNetworkAvailable()) return;
+                        long now=System.currentTimeMillis();if(socket!=null)microCaptureHealth.socketFailure(
+                                MicrostructureCaptureHealth.PUBLIC_WS,
+                                MarketFeedEndpointPool.publicCombinedStreamUrl(websocketEndpointIndex,
+                                        marketRegistry),now,-1,"NetworkUnavailable","Android network lost",
+                                reconnectAttempt,elapsedSince(now,lastMessageAt));
+                        if(marketSocket!=null)microCaptureHealth.socketFailure(
+                                MicrostructureCaptureHealth.MARKET_WS,
+                                MarketFeedEndpointPool.marketCombinedStreamUrl(websocketEndpointIndex,
+                                        marketRegistry),now,-1,"NetworkUnavailable","Android network lost",
+                                marketReconnectAttempt,elapsedSince(now,lastMarketMessageAt));
                         stopSocket();
-                        stopResearchSocket();
+                        stopMarketSocket();
                         activeMarketDataSource = "NONE";
                         executionFeedAuthoritative = false;
                         lastFeedError = "NETWORK_UNAVAILABLE";
@@ -1075,6 +1088,8 @@ public class MarketWatchService extends Service {
         return name + ":" + message.substring(0, Math.min(180, message.length()));
     }
 
+    private static long elapsedSince(long now,long at){return at<=0?-1:Math.max(0,now-at);}
+
     private long marketFeedAgeMs(long now) {
         long oldest = sharedBtc.lastTickerAt;
         if (oldest <= 0) return Long.MAX_VALUE;
@@ -1094,9 +1109,11 @@ public class MarketWatchService extends Service {
         final int endpointIndex = websocketEndpointIndex;
         final MarketFeedEndpointPool.Endpoint endpoint =
                 MarketFeedEndpointPool.webSocket(endpointIndex);
+        final String endpointUrl=MarketFeedEndpointPool.publicCombinedStreamUrl(endpointIndex,
+                marketRegistry);
         executionFeedAuthoritative = false;
         Request request = new Request.Builder()
-                .url(MarketFeedEndpointPool.combinedStreamUrl(endpointIndex, marketRegistry))
+                .url(endpointUrl)
                 .header("User-Agent", "NMC/" + BuildConfig.VERSION_NAME)
                 .build();
         socket = client.newWebSocket(request, new WebSocketListener() {
@@ -1104,6 +1121,8 @@ public class MarketWatchService extends Service {
                 if (socket != webSocket) return;
                 reconnectAttempt = 0;
                 lastMessageAt = System.currentTimeMillis();
+                microCaptureHealth.socketConnected(MicrostructureCaptureHealth.PUBLIC_WS,
+                        endpointUrl,lastMessageAt,response==null?-1:response.code());
                 activeMarketDataSource = endpoint.name;
                 lastFeedError = "";
                 ensureCausalCaptureSession(endpoint.name);
@@ -1113,16 +1132,20 @@ public class MarketWatchService extends Service {
 
             @Override public void onMessage(WebSocket webSocket, String text) {
                 if (socket != webSocket) return;
-                lastMessageAt = System.currentTimeMillis();
+                long receivedAt=System.currentTimeMillis();if(!handlePublicMessage(text))return;
+                lastMessageAt=receivedAt;microCaptureHealth.socketMessage(
+                        MicrostructureCaptureHealth.PUBLIC_WS,receivedAt);
                 executionFeedAuthoritative = !endpoint.spotFallback;
-                handleMessage(text);
             }
 
             @Override public void onFailure(WebSocket webSocket, Throwable error, Response response) {
                 if (socket != webSocket) return;
+                long now=System.currentTimeMillis();int status=response==null?-1:response.code();
+                microCaptureHealth.socketFailure(MicrostructureCaptureHealth.PUBLIC_WS,endpointUrl,
+                        now,status,error==null?"":error.getClass().getName(),
+                        error==null?"":error.getMessage(),reconnectAttempt,elapsedSince(now,lastMessageAt));
                 recordCausalGap("FUTURES_WS_FAILURE");
                 socket = null;
-                int status = response == null ? -1 : response.code();
                 lastFeedError = endpoint.name + ":WS:" + status + ":" + safeError(error);
                 websocketEndpointIndex = (endpointIndex + 1)
                         % MarketFeedEndpointPool.webSocketCount();
@@ -1133,6 +1156,9 @@ public class MarketWatchService extends Service {
 
             @Override public void onClosed(WebSocket webSocket, int code, String reason) {
                 if (socket != webSocket) return;
+                long now=System.currentTimeMillis();microCaptureHealth.socketClosed(
+                        MicrostructureCaptureHealth.PUBLIC_WS,endpointUrl,now,code,reason,
+                        reconnectAttempt,elapsedSince(now,lastMessageAt));
                 recordCausalGap("FUTURES_WS_CLOSED_"+code);
                 socket = null;
                 if (running) {
@@ -1145,39 +1171,52 @@ public class MarketWatchService extends Service {
         });
     }
 
-    private void connectResearchIfNeeded(){
-        if(!running||researchSocket!=null||client==null)return;
-        final MarketFeedEndpointPool.Endpoint endpoint=MarketFeedEndpointPool.webSocket(0);
-        Request request=new Request.Builder().url(MarketFeedEndpointPool.researchCombinedStreamUrl(
-                0,marketRegistry)).header("User-Agent","NMC-Research/"+BuildConfig.VERSION_NAME).build();
-        researchSocket=client.newWebSocket(request,new WebSocketListener(){
+    private void connectMarketIfNeeded(){
+        if(!running||marketSocket!=null||client==null)return;
+        final int endpointIndex=websocketEndpointIndex;
+        final MarketFeedEndpointPool.Endpoint endpoint=MarketFeedEndpointPool.webSocket(endpointIndex);
+        final String endpointUrl=MarketFeedEndpointPool.marketCombinedStreamUrl(endpointIndex,
+                marketRegistry);Request request=new Request.Builder().url(endpointUrl)
+                .header("User-Agent","NMC-Market/"+BuildConfig.VERSION_NAME).build();
+        marketSocket=client.newWebSocket(request,new WebSocketListener(){
             @Override public void onOpen(WebSocket webSocket,Response response){
-                if(researchSocket!=webSocket)return;researchReconnectAttempt=0;
-                lastResearchMessageAt=System.currentTimeMillis();ensureCausalCaptureSession(
-                        "BINANCE_FUTURES_RESEARCH_WS");try{causalCapture.health(lastResearchMessageAt,
-                        SystemClock.elapsedRealtime(),"BINANCE_FUTURES_RESEARCH_WS",
-                        "RESEARCH_WS_CONNECTED");}catch(RuntimeException ignored){}
+                if(marketSocket!=webSocket)return;marketReconnectAttempt=0;
+                lastMarketMessageAt=System.currentTimeMillis();microCaptureHealth.socketConnected(
+                        MicrostructureCaptureHealth.MARKET_WS,endpointUrl,lastMarketMessageAt,
+                        response==null?-1:response.code());ensureCausalCaptureSession(
+                        "BINANCE_FUTURES_MARKET_WS");try{causalCapture.health(lastMarketMessageAt,
+                        SystemClock.elapsedRealtime(),"BINANCE_FUTURES_MARKET_WS",
+                        "MARKET_WS_CONNECTED");}catch(RuntimeException ignored){}
             }
             @Override public void onMessage(WebSocket webSocket,String text){
-                if(researchSocket!=webSocket)return;lastResearchMessageAt=System.currentTimeMillis();
-                handleResearchMessage(text);
+                if(marketSocket!=webSocket)return;long receivedAt=System.currentTimeMillis();
+                if(!handleMarketMessage(text))return;lastMarketMessageAt=receivedAt;
+                microCaptureHealth.socketMessage(MicrostructureCaptureHealth.MARKET_WS,receivedAt);
             }
             @Override public void onFailure(WebSocket webSocket,Throwable error,Response response){
-                if(researchSocket!=webSocket)return;recordResearchCausalGap("RESEARCH_WS_FAILURE");
-                researchSocket=null;microCaptureHealth.reconnect();scheduleResearchReconnect();}
+                if(marketSocket!=webSocket)return;long now=System.currentTimeMillis();
+                microCaptureHealth.socketFailure(MicrostructureCaptureHealth.MARKET_WS,endpointUrl,
+                        now,response==null?-1:response.code(),error==null?"":error.getClass().getName(),
+                        error==null?"":error.getMessage(),marketReconnectAttempt,
+                        elapsedSince(now,lastMarketMessageAt));recordMarketCausalGap("MARKET_WS_FAILURE");
+                marketSocket=null;scheduleMarketReconnect();}
             @Override public void onClosed(WebSocket webSocket,int code,String reason){
-                if(researchSocket!=webSocket)return;recordResearchCausalGap("RESEARCH_WS_CLOSED_"+code);
-                researchSocket=null;if(running){microCaptureHealth.reconnect();scheduleResearchReconnect();}}
+                if(marketSocket!=webSocket)return;long now=System.currentTimeMillis();
+                microCaptureHealth.socketClosed(MicrostructureCaptureHealth.MARKET_WS,endpointUrl,
+                        now,code,reason,marketReconnectAttempt,elapsedSince(now,lastMarketMessageAt));
+                recordMarketCausalGap("MARKET_WS_CLOSED_"+code);marketSocket=null;
+                if(running)scheduleMarketReconnect();}
         });
     }
 
-    private void stopResearchSocket(){WebSocket current=researchSocket;researchSocket=null;
-        try{if(current!=null)current.close(1000,"research stop");}catch(Exception ignored){}}
+    private void stopMarketSocket(){WebSocket current=marketSocket;marketSocket=null;
+        try{if(current!=null)current.close(1000,"market stop");}catch(Exception ignored){}}
 
-    private void scheduleResearchReconnect(){if(!running)return;researchReconnectAttempt=
-            Math.min(researchReconnectAttempt+1,6);long delay=Math.min(30_000L,
-            1_000L<<Math.max(0,researchReconnectAttempt-1));handler.postDelayed(
-                    this::connectResearchIfNeeded,delay);}
+    private void scheduleMarketReconnect(){if(!running)return;marketReconnectAttempt=
+            Math.min(marketReconnectAttempt+1,6);microCaptureHealth.socketReconnect(
+                    MicrostructureCaptureHealth.MARKET_WS,System.currentTimeMillis(),marketReconnectAttempt);
+        long delay=Math.min(30_000L,1_000L<<Math.max(0,marketReconnectAttempt-1));
+        handler.postDelayed(this::connectMarketIfNeeded,delay);}
 
     private void stopSocket() {
         WebSocket current = socket;
@@ -1188,6 +1227,8 @@ public class MarketWatchService extends Service {
     private void scheduleReconnect() {
         if (!running) return;
         reconnectAttempt = Math.min(reconnectAttempt + 1, 6);
+        microCaptureHealth.socketReconnect(MicrostructureCaptureHealth.PUBLIC_WS,
+                System.currentTimeMillis(),reconnectAttempt);
         long delay = Math.min(30_000L, 1000L << Math.max(0, reconnectAttempt - 1));
         handler.postDelayed(this::connectIfNeeded, delay);
     }
@@ -1202,16 +1243,29 @@ public class MarketWatchService extends Service {
                 long now = System.currentTimeMillis();
                 maybeRefreshRestFallback(now);
                 flushCausalCapture();
-                if(researchSocket==null)connectResearchIfNeeded();
-                else if(lastResearchMessageAt>0&&now-lastResearchMessageAt>30_000L){
-                    recordResearchCausalGap("RESEARCH_WS_STALE");stopResearchSocket();
-                    microCaptureHealth.reconnect();connectResearchIfNeeded();}
+                if(marketSocket==null)connectMarketIfNeeded();
+                else if(lastMarketMessageAt>0&&now-lastMarketMessageAt>30_000L){String endpoint=
+                        MarketFeedEndpointPool.marketCombinedStreamUrl(websocketEndpointIndex,
+                                marketRegistry);microCaptureHealth.socketFailure(
+                        MicrostructureCaptureHealth.MARKET_WS,endpoint,now,-1,"StaleTimeout",
+                        "No valid MARKET_WS message for 30000 ms",marketReconnectAttempt,
+                        elapsedSince(now,lastMarketMessageAt));recordMarketCausalGap("MARKET_WS_STALE");
+                    stopMarketSocket();marketReconnectAttempt=Math.min(marketReconnectAttempt+1,6);
+                    microCaptureHealth.socketReconnect(MicrostructureCaptureHealth.MARKET_WS,now,
+                            marketReconnectAttempt);connectMarketIfNeeded();}
                 long age = lastMessageAt == 0 ? Long.MAX_VALUE : now - lastMessageAt;
                 if (age > 65_000L) {
+                    String endpoint=MarketFeedEndpointPool.publicCombinedStreamUrl(
+                            websocketEndpointIndex,marketRegistry);microCaptureHealth.socketFailure(
+                            MicrostructureCaptureHealth.PUBLIC_WS,endpoint,now,-1,"StaleTimeout",
+                            "No valid PUBLIC_WS message for 65000 ms",reconnectAttempt,
+                            elapsedSince(now,lastMessageAt));
                     recordCausalGap("FUTURES_WS_STALE");
                     stopSocket();
                     websocketEndpointIndex = (websocketEndpointIndex + 1)
                             % MarketFeedEndpointPool.webSocketCount();
+                    reconnectAttempt=Math.min(reconnectAttempt+1,6);microCaptureHealth.socketReconnect(
+                            MicrostructureCaptureHealth.PUBLIC_WS,now,reconnectAttempt);
                     lastFeedError = "WEBSOCKET_STALE:" + age;
                     updateWatch("Flux retardé · reconnexion forcée", true);
                     broadcastStatus("reconnect", "Flux retardé, reconnexion forcée");
@@ -1689,21 +1743,17 @@ public class MarketWatchService extends Service {
         });
     }
 
-    private synchronized void handleMessage(String text) {
+    private synchronized boolean handlePublicMessage(String text) {
         try {
-            BinanceCombinedStreamRouter.Event event=streamRouter.parse(text);if(event==null){
-                microCaptureHealth.malformed();return;}
-            boolean captureOnlyReferenceTrade=event.type==BinanceCombinedStreamRouter.Type.AGG_TRADE
-                    &&MarketProfile.BTC_SYMBOL.equals(event.symbol);
+            BinanceCombinedStreamRouter.Event event=streamRouter.parse(text);if(event==null
+                    ||!BinanceCombinedStreamRouter.accepts(
+                    BinanceCombinedStreamRouter.SocketType.PUBLIC_WS,event.type)){
+                microCaptureHealth.malformed();return false;}
             if(event.type==BinanceCombinedStreamRouter.Type.BOOK_TICKER)
                 handleBookTicker(event.stream,event.data,"PUBLIC_WS");
-            else if(event.type==BinanceCombinedStreamRouter.Type.KLINE_1M)
-                handleKline(event.stream,event.data,"PUBLIC_WS");
-            else if(event.type==BinanceCombinedStreamRouter.Type.AGG_TRADE)
-                handleAggTrade(event.stream,event.data,"PUBLIC_WS");
             else if(event.type==BinanceCombinedStreamRouter.Type.DEPTH20)
                 handleDepth20(event.symbol,event.data,"PUBLIC_WS");
-            if(captureOnlyReferenceTrade)return;
+            if(event.type==BinanceCombinedStreamRouter.Type.DEPTH20)return true;
 
             long now = System.currentTimeMillis();
             if (now - lastEvaluationAt >= 1000) {
@@ -1714,19 +1764,26 @@ public class MarketWatchService extends Service {
                 lastStatusAt = now;
                 broadcastStatus("live", "Prix natifs actualisés");
             }
-        } catch (Exception ignored) {microCaptureHealth.malformed();}
+            return true;
+        } catch (Exception ignored) {microCaptureHealth.malformed();return false;}
     }
 
-    private synchronized void handleResearchMessage(String text){try{
-        BinanceCombinedStreamRouter.Event event=streamRouter.parse(text);if(event==null){
-            microCaptureHealth.malformed();return;}
+    private synchronized boolean handleMarketMessage(String text){try{
+        BinanceCombinedStreamRouter.Event event=streamRouter.parse(text);if(event==null
+                ||!BinanceCombinedStreamRouter.accepts(
+                BinanceCombinedStreamRouter.SocketType.MARKET_WS,event.type)){
+            microCaptureHealth.malformed();return false;}
+        boolean captureOnlyReferenceTrade=event.type==BinanceCombinedStreamRouter.Type.AGG_TRADE
+                &&MarketProfile.BTC_SYMBOL.equals(event.symbol);
         if(event.type==BinanceCombinedStreamRouter.Type.AGG_TRADE)
-            handleResearchAggTrade(event.symbol,event.data);
+            handleAggTrade(event.stream,event.data,"MARKET_WS");
         else if(event.type==BinanceCombinedStreamRouter.Type.KLINE_1M)
-            handleKline(event.stream,event.data,"RESEARCH_WS");
-        else if(event.type==BinanceCombinedStreamRouter.Type.DEPTH20)
-            handleDepth20(event.symbol,event.data,"RESEARCH_WS");
-    }catch(RuntimeException ignored){microCaptureHealth.malformed();}}
+            handleKline(event.stream,event.data,"MARKET_WS");
+        if(captureOnlyReferenceTrade)return true;long now=System.currentTimeMillis();
+        if(now-lastEvaluationAt>=1000){lastEvaluationAt=now;evaluateSignal(now);}
+        if(now-lastStatusAt>=1500){lastStatusAt=now;broadcastStatus("live",
+                "Prix natifs actualisÃ©s");}return true;
+    }catch(RuntimeException ignored){microCaptureHealth.malformed();return false;}}
 
     private void handleBookTicker(String stream, JSONObject data,String transportSource) {
         bookTickerMessages++;
@@ -1773,20 +1830,18 @@ public class MarketWatchService extends Service {
     private void handleAggTrade(String stream,JSONObject data,String transportSource){
         aggTradeMessages++;String symbol=MarketDataRouter.symbolFromStream(stream);
         long receivedAt=System.currentTimeMillis();microCaptureHealth.wsAgg(symbol,transportSource,
-                receivedAt);captureCausalAggregateTrade(symbol,data,receivedAt,
-                "BINANCE_FUTURES_"+transportSource);if(marketRegistry.contains(symbol)){
+                receivedAt);boolean captured=captureCausalAggregateTrade(symbol,data,receivedAt,
+                "BINANCE_FUTURES_"+transportSource);if(captured&&"MARKET_WS".equals(transportSource))
+            microCaptureHealth.marketAggAccepted(symbol,receivedAt);if(marketRegistry.contains(symbol)){
             MarketRuntime runtime=marketCoordinator.runtime(symbol);long time=data.optLong("T",receivedAt);
             marketDataRouter.routeAggTrade(symbol,new MarketRuntime.AggTrade(data.optLong("a",-1),time,
                     data.optDouble("p",runtime.last),data.optDouble("q",0),
                     data.optBoolean("m",false)),receivedAt);}}
 
-    private void handleResearchAggTrade(String symbol,JSONObject data){long receivedAt=
-            System.currentTimeMillis();microCaptureHealth.wsAgg(symbol,"RESEARCH_WS",receivedAt);
-        captureCausalAggregateTrade(symbol,data,receivedAt,"BINANCE_FUTURES_RESEARCH_WS");}
-
     private void handleDepth20(String symbol,JSONObject data,String transportSource){long receivedAt=
-            System.currentTimeMillis();microCaptureHealth.wsDepth(symbol,transportSource,receivedAt);
-        captureCausalDepth(symbol,data,receivedAt,"BINANCE_FUTURES_"+transportSource);}
+            System.currentTimeMillis();boolean accepted=captureCausalDepth(symbol,data,receivedAt,
+                "BINANCE_FUTURES_"+transportSource);microCaptureHealth.wsDepth(symbol,
+                transportSource,receivedAt,accepted);}
 
     private synchronized void evaluateSignal(long now) {
         cvArbiter.beginCycle(now);

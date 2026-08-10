@@ -7,6 +7,7 @@ import java.util.Locale;
 /** Pure, fail-closed parser/dispatcher for Binance Futures combined public streams. */
 public final class BinanceCombinedStreamRouter {
     public enum Type { BOOK_TICKER, AGG_TRADE, KLINE_1M, DEPTH20 }
+    public enum SocketType { PUBLIC_WS, MARKET_WS }
 
     public interface Listener {
         void onEvent(Event event);
@@ -24,6 +25,19 @@ public final class BinanceCombinedStreamRouter {
             if(event==null){listener.onMalformed("UNSUPPORTED_OR_MALFORMED_STREAM");return false;}
             listener.onEvent(event);return true;}catch(RuntimeException error){
             listener.onMalformed("STREAM_PARSE_ERROR");return false;}}
+
+    public boolean dispatch(String payload,SocketType socketType,Listener listener){if(listener==null
+            ||socketType==null)throw new IllegalArgumentException("listener/socketType");try{Event event=
+            parse(payload);if(event==null){listener.onMalformed("UNSUPPORTED_OR_MALFORMED_STREAM");
+                return false;}if(!accepts(socketType,event.type)){listener.onMalformed(
+                    "STREAM_NOT_ALLOWED_ON_"+socketType.name());return false;}listener.onEvent(event);
+            return true;}catch(RuntimeException error){listener.onMalformed("STREAM_PARSE_ERROR");
+            return false;}}
+
+    public static boolean accepts(SocketType socketType,Type type){if(socketType==null||type==null)
+        return false;return socketType==SocketType.PUBLIC_WS
+                ?type==Type.BOOK_TICKER||type==Type.DEPTH20
+                :type==Type.AGG_TRADE||type==Type.KLINE_1M;}
 
     public Event parse(String payload){if(payload==null||payload.trim().isEmpty())return null;
         try{JSONObject root=new JSONObject(payload);String stream=root.optString("stream","").trim();

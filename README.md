@@ -2,7 +2,7 @@
 
 Application Android de recherche qui analyse en continu **ETHUSDT** et **SOLUSDT**. **BTCUSDT** sert uniquement de contexte partagé.
 
-La version courante est **2.34.5.1** (`versionCode 23451`). L’APK recommandée est **NMC Stable 5.1 — Reliable Microstructure Capture V2**, signée durablement. `NMC_SCALP_CV_CORE_V1` reste l’unique source des nouveaux plans finaux manuels ETH et n’est pas recalibré dans cette version. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
+La version courante est **2.34.5.2** (`versionCode 23452`). L’APK recommandée est **NMC Stable 5.2 — Market/Public WebSocket Namespace Fix**, signée durablement. `NMC_SCALP_CV_CORE_V1` reste l’unique source des nouveaux plans finaux manuels ETH et n’est pas recalibré dans cette version. L’application ne passe aucun ordre : l’exécution reste entièrement manuelle.
 
 Les épisodes ETH sont fixés avant les règles à partir des observations RAW et des confirmations P01/P02. Les qualifications d’un même cycle sont arbitrées ensemble avant toute publication. Une seule des trois voies peut gagner selon la priorité figée ; la publication revalide ensuite fraîcheur, unicité du plan, fenêtre d’entrée et risque sans déplacer l’entrée, le TP ou le SL.
 
@@ -20,7 +20,7 @@ Les épisodes ETH sont fixés avant les règles à partir des observations RAW e
 - la politique `SHADOW_V23447_20260804` et le schéma `SHADOW_SCHEMA_V8` restent silencieux et purement observationnels ;
 - les diagnostics shadow/frozen historiques restent observationnels et ne participent jamais à une décision publique CV Core ;
 - la capture V2 coalesce le top-of-book à 250 ms, agrège les `aggTrade` en buckets causaux de 100 ms et conserve les snapshots `depth20@100ms` à 250 ms pour ETH/SOL/BTC ;
-- une socket recherche Futures publique indépendante, une déduplication WS/REST par aggTrade ID et des compteurs de santé par flux rendent toute session incomplète immédiatement visible ;
+- une socket `PUBLIC_WS` (`/public/stream`) transporte uniquement `bookTicker` et `depth20`, tandis qu’une socket `MARKET_WS` (`/market/stream`) transporte uniquement `aggTrade` et `kline_1m` ; la déduplication WS/REST par aggTrade ID et les compteurs de santé rendent toute session incomplète immédiatement visible ;
 - le laboratoire `tools/scalp_research.py` isole physiquement le holdout et rejette les candidats qui ne résistent pas aux frais, à la latence et aux tests hors échantillon ;
 - `realTradingAllowed=false` et aucune API Binance privée n’est utilisée.
 

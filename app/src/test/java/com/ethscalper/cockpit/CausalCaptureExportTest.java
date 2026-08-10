@@ -21,14 +21,14 @@ public class CausalCaptureExportTest {
     @Test public void v2ManifestProvesFlowDepthSymbolsSourcesAndIntegrity()throws Exception{
         Path directory=Files.createTempDirectory("causal-export-v2");CausalCaptureStore store=
                 new CausalCaptureStore(directory.toFile(),"v2",4,64*1024);store.appendBatch(List.of(
-                MicrostructureMarketRecord.session("s",1,1_000,1,"RESEARCH_WS","START"),
-                MicrostructureMarketRecord.flow100("s",2,1_150,2,"ETHUSDT","RESEARCH_WS",
+                MicrostructureMarketRecord.session("s",1,1_000,1,"BINANCE_FUTURES_MARKET_WS","START"),
+                MicrostructureMarketRecord.flow100("s",2,1_150,2,"ETHUSDT","BINANCE_FUTURES_MARKET_WS",
                         1_100,1_110,1_150,1,1,900,900,1,0,100,100,100,100,1,0,100,0),
-                MicrostructureMarketRecord.depth20("s",3,1_200,3,"ETHUSDT","RESEARCH_WS",
+                MicrostructureMarketRecord.depth20("s",3,1_200,3,"ETHUSDT","BINANCE_FUTURES_PUBLIC_WS",
                         1_190,1_195,1,2,0,levels(100,false),levels(101,true))));
         try(CausalCaptureStore.Snapshot snapshot=store.checkpoint()){ByteArrayOutputStream bytes=
                 new ByteArrayOutputStream();DiagnosticStreamingExporter.export(bytes,empty(directory,
-                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(),"2.34.5.1",2_000,
+                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(true),"2.34.5.2",2_000,
                 new DiagnosticStreamingExporter.ExportSnapshotMetadata(1_500,"v2",true,"FULL","sha"),
                 snapshot.files,null,()->false);Map<String,String> zip=entries(bytes.toByteArray());
             JSONObject manifest=new JSONObject(zip.get("causal_market_manifest.json"));
@@ -36,8 +36,10 @@ public class CausalCaptureExportTest {
             assertEquals(2,manifest.getInt("formatVersion"));assertTrue(manifest.getBoolean(
                     "usableForMicrostructureResearch"));assertEquals(1,manifest.getJSONObject(
                     "recordCountByKind").getInt("FLOW_100MS"));assertEquals(2,manifest.getJSONObject(
-                    "recordCountBySymbol").getInt("ETHUSDT"));assertEquals(3,manifest.getJSONObject(
-                    "recordCountBySource").getInt("RESEARCH_WS"));String stream=
+                    "recordCountBySymbol").getInt("ETHUSDT"));assertEquals(2,manifest.getJSONObject(
+                    "recordCountBySource").getInt("BINANCE_FUTURES_MARKET_WS"));
+            assertEquals(1,manifest.getJSONObject("recordCountBySource").getInt(
+                    "BINANCE_FUTURES_PUBLIC_WS"));String stream=
                     zip.get("causal_market_stream.jsonl");assertTrue(stream.contains("\"bids\":[["));
             assertFalse(stream.contains("NaN"));assertFalse(stream.contains("Infinity"));}}
     @Test public void snapshotStreamsEveryRecordAndPublishesBoundedManifest()throws Exception{
@@ -98,6 +100,22 @@ public class CausalCaptureExportTest {
         assertEquals(0,manifest.getLong("sourceBytes"));
     }
 
+    @Test public void validV2FilesAreNotUsableWhenRuntimeMarketWsHealthIsDegraded()throws Exception{
+        Path directory=Files.createTempDirectory("causal-export-degraded");CausalCaptureStore store=
+                new CausalCaptureStore(directory.toFile(),"v2-degraded",4,64*1024);store.appendBatch(List.of(
+                MicrostructureMarketRecord.session("s",1,1_000,1,"BINANCE_FUTURES_REST","START"),
+                MicrostructureMarketRecord.flow100("s",2,1_150,2,"ETHUSDT","BINANCE_FUTURES_REST",
+                        1_100,1_110,1_150,1,1,900,900,1,0,100,100,100,100,1,0,100,0),
+                MicrostructureMarketRecord.depth20("s",3,1_200,3,"ETHUSDT","BINANCE_FUTURES_PUBLIC_WS",
+                        1_190,1_195,1,2,0,levels(100,false),levels(101,true))));
+        try(CausalCaptureStore.Snapshot snapshot=store.checkpoint()){ByteArrayOutputStream bytes=
+                new ByteArrayOutputStream();DiagnosticStreamingExporter.export(bytes,empty(directory,
+                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(false),"2.34.5.2",2_000,
+                new DiagnosticStreamingExporter.ExportSnapshotMetadata(1_500,"v2",true,"FULL","sha"),
+                snapshot.files,null,()->false);JSONObject manifest=new JSONObject(entries(
+                bytes.toByteArray()).get("causal_market_manifest.json"));assertFalse(manifest.getBoolean(
+                "usableForMicrostructureResearch"));assertFalse(manifest.getBoolean("runtimeHealthUsable"));}}
+
     @Test public void activityReleasesPinnedSnapshotBeforeOptionalReset()throws Exception{
         Path activity=Path.of("src/main/java/com/ethscalper/cockpit/MainActivity.java");
         if(!Files.exists(activity))activity=Path.of("app").resolve(activity);
@@ -112,10 +130,12 @@ public class CausalCaptureExportTest {
 
     private static File empty(Path directory,String name)throws Exception{
         Path value=directory.resolve(name);Files.write(value,new byte[0]);return value.toFile();}
-    private static Map<String,String> smallEntries(){LinkedHashMap<String,String> out=new LinkedHashMap<>();
+    private static Map<String,String> smallEntries(){return smallEntries(false);}
+    private static Map<String,String> smallEntries(boolean usable){LinkedHashMap<String,String> out=new LinkedHashMap<>();
         for(String name:List.of("status.json","markets.json","active_plans.json","profiles_manifest.json",
                 "market_summary.json","market_summary.txt","feed_health.json","health_check.txt","instructions.txt"))
-            out.put(name,name.endsWith(".json")?"{}":"");return out;}
+            out.put(name,name.endsWith(".json")?"{}":"");out.put("status.json",
+                "{\"causalMarketCapture\":{\"usableForMicrostructureResearch\":"+usable+"}}");return out;}
     private static Map<String,String> entries(byte[] bytes)throws Exception{
         LinkedHashMap<String,String> out=new LinkedHashMap<>();
         try(ZipInputStream zip=new ZipInputStream(new ByteArrayInputStream(bytes))){ZipEntry entry;

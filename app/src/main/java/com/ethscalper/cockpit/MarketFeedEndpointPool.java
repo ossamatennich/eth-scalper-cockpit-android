@@ -9,7 +9,7 @@ import java.util.Locale;
  * de l'ancienne application :
  *
  * - Binance USD-M Futures uniquement ;
- * - un seul WebSocket combiné ;
+ * - deux WebSockets combinés et séparés par namespace PUBLIC/MARKET ;
  * - REST Futures uniquement ;
  * - ETHUSDT et SOLUSDT comme marchés analysés ;
  * - BTCUSDT comme contexte partagé.
@@ -52,52 +52,32 @@ public final class MarketFeedEndpointPool {
         ];
     }
 
-    public static String combinedStreamUrl(
-            int index,
-            MarketRegistry registry
-    ) {
-        Endpoint endpoint = webSocket(index);
-
-        StringBuilder value =
-                new StringBuilder(endpoint.baseUrl)
-                        .append("/stream?streams=");
-
-        for (MarketProfile profile : registry.tradedMarkets()) {
-            if (value.charAt(value.length() - 1) != '=') {
-                value.append('/');
-            }
-
-            String symbol =
-                    profile.symbol.toLowerCase(Locale.ROOT);
-
-            value.append(symbol)
-                    .append("@kline_1m/")
-                    .append(symbol)
-                    .append("@aggTrade/")
-                    .append(symbol)
-                    .append("@bookTicker");
-        }
-
-        value.append(
-                "/btcusdt@kline_1m/btcusdt@aggTrade/btcusdt@bookTicker"
-        );
-
-        return value.toString();
-    }
-
-    /** Independent public research socket: aggressive flow plus top-20 partial depth. */
-    public static String researchCombinedStreamUrl(int index,MarketRegistry registry) {
+    /** Public namespace: executable top-of-book plus partial depth snapshots only. */
+    public static String publicCombinedStreamUrl(int index,MarketRegistry registry){
         Endpoint endpoint=webSocket(index);StringBuilder value=new StringBuilder(endpoint.baseUrl)
-                .append("/stream?streams=");
-        for(MarketProfile profile:registry.tradedMarkets())appendResearchStreams(value,
+                .append("/public/stream?streams=");
+        for(MarketProfile profile:registry.tradedMarkets())appendPublicStreams(value,
                 profile.symbol.toLowerCase(Locale.ROOT));
-        appendResearchStreams(value,"btcusdt");return value.toString();
+        appendPublicStreams(value,"btcusdt");return value.toString();
     }
 
-    private static void appendResearchStreams(StringBuilder value,String symbol){
+    /** Market namespace: aggressive trades and one-minute klines only. */
+    public static String marketCombinedStreamUrl(int index,MarketRegistry registry){
+        Endpoint endpoint=webSocket(index);StringBuilder value=new StringBuilder(endpoint.baseUrl)
+                .append("/market/stream?streams=");
+        for(MarketProfile profile:registry.tradedMarkets())appendMarketStreams(value,
+                profile.symbol.toLowerCase(Locale.ROOT));
+        appendMarketStreams(value,"btcusdt");return value.toString();
+    }
+
+    private static void appendPublicStreams(StringBuilder value,String symbol){
         if(value.charAt(value.length()-1)!='=')value.append('/');
-        value.append(symbol).append("@aggTrade/").append(symbol).append("@kline_1m/")
-                .append(symbol).append("@depth20@100ms");
+        value.append(symbol).append("@bookTicker/").append(symbol).append("@depth20@100ms");
+    }
+
+    private static void appendMarketStreams(StringBuilder value,String symbol){
+        if(value.charAt(value.length()-1)!='=')value.append('/');
+        value.append(symbol).append("@aggTrade/").append(symbol).append("@kline_1m");
     }
 
     public static List<RestEndpoint> klineEndpoints(

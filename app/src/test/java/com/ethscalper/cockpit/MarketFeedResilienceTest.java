@@ -47,26 +47,25 @@ public class MarketFeedResilienceTest {
 
         assertFalse(endpoint.spotFallback);
 
-        String url =
-                MarketFeedEndpointPool.combinedStreamUrl(
-                        0,
-                        registry
-                );
+        String publicUrl=MarketFeedEndpointPool.publicCombinedStreamUrl(0,registry);
+        String marketUrl=MarketFeedEndpointPool.marketCombinedStreamUrl(0,registry);
 
         for (MarketProfile profile : registry.tradedMarkets()) {
             String symbol = profile.symbol.toLowerCase();
-
-            assertTrue(url.contains(symbol + "@bookTicker"));
-            assertTrue(url.contains(symbol + "@kline_1m"));
-            assertTrue(url.contains(symbol + "@aggTrade"));
+            assertTrue(publicUrl.contains(symbol+"@bookTicker"));
+            assertTrue(publicUrl.contains(symbol+"@depth20@100ms"));
+            assertTrue(marketUrl.contains(symbol+"@kline_1m"));
+            assertTrue(marketUrl.contains(symbol+"@aggTrade"));
         }
-
-        assertTrue(url.contains("btcusdt@bookTicker"));
-        assertTrue(url.contains("btcusdt@kline_1m"));
-        assertTrue(url.contains("btcusdt@aggTrade"));
-
-        assertFalse(url.contains("fstream-auth"));
-        assertFalse(url.contains("binance.vision"));
+        assertTrue(publicUrl.contains("btcusdt@bookTicker"));
+        assertTrue(publicUrl.contains("btcusdt@depth20@100ms"));
+        assertTrue(marketUrl.contains("btcusdt@kline_1m"));
+        assertTrue(marketUrl.contains("btcusdt@aggTrade"));
+        assertTrue(publicUrl.startsWith("wss://fstream.binance.com/public/stream?streams="));
+        assertTrue(marketUrl.startsWith("wss://fstream.binance.com/market/stream?streams="));
+        assertFalse(publicUrl.contains("@aggTrade"));assertFalse(publicUrl.contains("@kline_1m"));
+        assertFalse(marketUrl.contains("@bookTicker"));assertFalse(marketUrl.contains("@depth20"));
+        assertFalse(publicUrl.contains("fstream-auth"));assertFalse(marketUrl.contains("binance.vision"));
     }
 
     @Test

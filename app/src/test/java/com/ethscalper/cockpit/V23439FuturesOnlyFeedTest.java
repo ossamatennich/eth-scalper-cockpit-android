@@ -28,26 +28,16 @@ public class V23439FuturesOnlyFeedTest {
 
         assertFalse(endpoint.spotFallback);
 
-        String url =
-                MarketFeedEndpointPool.combinedStreamUrl(
-                        0,
-                        MarketRegistry.production()
-                );
-
-        assertTrue(url.contains("ethusdt@kline_1m"));
-        assertTrue(url.contains("ethusdt@aggTrade"));
-        assertTrue(url.contains("ethusdt@bookTicker"));
-
-        assertTrue(url.contains("solusdt@kline_1m"));
-        assertTrue(url.contains("solusdt@aggTrade"));
-        assertTrue(url.contains("solusdt@bookTicker"));
-
-        assertTrue(url.contains("btcusdt@kline_1m"));
-        assertTrue(url.contains("btcusdt@bookTicker"));
-        assertTrue(url.contains("btcusdt@aggTrade"));
-
-        assertFalse(url.contains("fstream-auth"));
-        assertFalse(url.contains("binance.vision"));
+        String publicUrl=MarketFeedEndpointPool.publicCombinedStreamUrl(0,MarketRegistry.production());
+        String marketUrl=MarketFeedEndpointPool.marketCombinedStreamUrl(0,MarketRegistry.production());
+        for(String symbol:new String[]{"ethusdt","solusdt","btcusdt"}){
+            assertTrue(publicUrl.contains(symbol+"@bookTicker"));
+            assertTrue(publicUrl.contains(symbol+"@depth20@100ms"));
+            assertTrue(marketUrl.contains(symbol+"@kline_1m"));
+            assertTrue(marketUrl.contains(symbol+"@aggTrade"));}
+        assertFalse(publicUrl.contains("@aggTrade"));assertFalse(publicUrl.contains("@kline_1m"));
+        assertFalse(marketUrl.contains("@bookTicker"));assertFalse(marketUrl.contains("@depth20"));
+        assertFalse(publicUrl.contains("fstream-auth"));assertFalse(marketUrl.contains("binance.vision"));
     }
 
     @Test

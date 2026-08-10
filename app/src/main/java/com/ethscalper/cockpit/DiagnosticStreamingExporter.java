@@ -32,6 +32,8 @@ public final class DiagnosticStreamingExporter {
             "market_summary.json","market_summary.txt","feed_health.json",
             "health_check.txt","instructions.txt","export_manifest.json"));
     private static final Pattern TYPE=Pattern.compile("\\\"eventType\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+    private static final Pattern MICRO_USABLE=Pattern.compile(
+            "\\\"usableForMicrostructureResearch\\\"\\s*:\\s*true");
     private static final String[] CSV_FIELDS={"eventAt","symbol","asset","profileVersion","eventType","reasonCode",
             "classification","sleeve","side","family","entry","tp","sl","quantity","score","terminalStatus"};
 
@@ -58,7 +60,8 @@ public final class DiagnosticStreamingExporter {
         if(destination==null)throw new IllegalArgumentException("destination");
         LinkedHashMap<String,EntryDigest> manifest=new LinkedHashMap<>();
         try(ZipOutputStream zip=new ZipOutputStream(destination,StandardCharsets.UTF_8)){
-            writeSmall(zip,"status.json",small(smallEntries,"status.json","{}"),manifest);
+            String statusJson=small(smallEntries,"status.json","{}");
+            writeSmall(zip,"status.json",statusJson,manifest);
             writeSmall(zip,"markets.json",small(smallEntries,"markets.json","{}"),manifest);
             writeSmall(zip,"active_plans.json",small(smallEntries,"active_plans.json","[]"),manifest);
             writeSmall(zip,"profiles_manifest.json",small(smallEntries,"profiles_manifest.json","{}"),manifest);
@@ -73,7 +76,7 @@ public final class DiagnosticStreamingExporter {
             check(cancelled);progress(progress,62,"Capture causale");
             CausalExportStats causal=writeCausalJsonl(zip,"causal_market_stream.jsonl",
                     causalSnapshotFiles,manifest,cancelled);
-            writeSmall(zip,"causal_market_manifest.json",causalManifestJson(causal),manifest);
+            writeSmall(zip,"causal_market_manifest.json",causalManifestJson(causal,statusJson),manifest);
             check(cancelled);progress(progress,70,"Synthèse");
             writeSmall(zip,"market_summary.json",small(smallEntries,"market_summary.json","{}"),manifest);
             writeSmall(zip,"market_summary.txt",small(smallEntries,"market_summary.txt",""),manifest);
@@ -113,7 +116,10 @@ public final class DiagnosticStreamingExporter {
                 scan.truncatedTails,sourceBytes,sourceNames,captureStats);
     }
 
-    private static String causalManifestJson(CausalExportStats value){StringBuilder out=new StringBuilder();
+    private static String causalManifestJson(CausalExportStats value,String statusJson){boolean runtimeUsable=
+            statusJson!=null&&MICRO_USABLE.matcher(statusJson).find();boolean usable=runtimeUsable
+            &&value.capture.flows>0&&value.capture.depth>0&&value.corruptBlocks==0
+            &&value.truncatedTails==0;StringBuilder out=new StringBuilder();
         out.append("{\"schema\":\"").append(escape(value.capture.schema))
                 .append("\",\"formatVersion\":").append(value.capture.formatVersion)
                 .append(",\"streamEntry\":\"causal_market_stream.jsonl\"")
@@ -126,8 +132,8 @@ public final class DiagnosticStreamingExporter {
                 .append(",\"lastReceivedAt\":").append(value.capture.lastAt>0?value.capture.lastAt:"null")
                 .append(",\"explicitGapRecords\":").append(value.capture.gaps)
                 .append(",\"dropSummaryRecords\":").append(value.capture.dropSummaries)
-                .append(",\"usableForMicrostructureResearch\":").append(value.capture.flows>0
-                        &&value.capture.depth>0&&value.corruptBlocks==0&&value.truncatedTails==0)
+                .append(",\"runtimeHealthUsable\":").append(runtimeUsable)
+                .append(",\"usableForMicrostructureResearch\":").append(usable)
                 .append(",\"recordCountByKind\":").append(json(value.capture.byKind))
                 .append(",\"recordCountBySymbol\":").append(json(value.capture.bySymbol))
                 .append(",\"recordCountBySource\":").append(json(value.capture.bySource))

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.5.2 — Market/Public WebSocket Namespace Fix
+
+- sépare les flux Binance USD-M Futures entre `PUBLIC_WS` (`bookTicker`, `depth20@100ms`) via `/public/stream` et `MARKET_WS` (`aggTrade`, `kline_1m`) via `/market/stream` pour ETH/SOL/BTC ;
+- interdit par routage testable qu’une famille de messages soit acceptée sur la mauvaise socket ;
+- exige un `aggTrade` MARKET_WS récent sur les trois symboles pour rendre une capture utilisable : le fallback REST seul reste dégradé ;
+- expose connexions, reconnexions, échecs et fermetures bornées avec endpoint, code/reason, statut handshake, exception et âge du dernier message ;
+- conserve Capture V2, queue/writer, CRC, REST gap-fill et le moteur public `NMC_SCALP_CV_CORE_V1` sans aucune recalibration ; `realTradingAllowed=false`.
+
 ## 2.34.5.1 — Reliable Microstructure Capture V2
 
 - découple la recherche microstructure sur une socket Futures publique `aggTrade` + `depth20@100ms`, sans changer le flux de décision CV Core ;
