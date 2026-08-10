@@ -85,6 +85,21 @@ public final class MarketFeedEndpointPool {
         return value.toString();
     }
 
+    /** Independent public research socket: aggressive flow plus top-20 partial depth. */
+    public static String researchCombinedStreamUrl(int index,MarketRegistry registry) {
+        Endpoint endpoint=webSocket(index);StringBuilder value=new StringBuilder(endpoint.baseUrl)
+                .append("/stream?streams=");
+        for(MarketProfile profile:registry.tradedMarkets())appendResearchStreams(value,
+                profile.symbol.toLowerCase(Locale.ROOT));
+        appendResearchStreams(value,"btcusdt");return value.toString();
+    }
+
+    private static void appendResearchStreams(StringBuilder value,String symbol){
+        if(value.charAt(value.length()-1)!='=')value.append('/');
+        value.append(symbol).append("@aggTrade/").append(symbol).append("@kline_1m/")
+                .append(symbol).append("@depth20@100ms");
+    }
+
     public static List<RestEndpoint> klineEndpoints(
             String symbol,
             int limit

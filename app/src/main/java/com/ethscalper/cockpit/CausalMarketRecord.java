@@ -11,11 +11,14 @@ import java.util.Map;
  * never used to move information into an earlier local bucket. Numeric values exposed by
  * {@link #toMap()} are always finite or {@code null}.</p>
  */
-public final class CausalMarketRecord {
+public class CausalMarketRecord {
     public static final String SCHEMA = "NMC_CAUSAL_MARKET_CAPTURE_V1";
     public static final int FORMAT_VERSION = 1;
 
-    public enum Kind { SESSION, QUOTE, FLOW_1S, GAP }
+    public enum Kind {
+        SESSION, QUOTE, FLOW_1S, GAP,
+        TOP_OF_BOOK_SAMPLE, FLOW_100MS, DEPTH20_SAMPLE, DROP_SUMMARY, HEALTH
+    }
 
     public final Kind kind;
     public final String sessionId;
@@ -40,7 +43,7 @@ public final class CausalMarketRecord {
     public final long gapFromAt, gapToAt;
     public final String reasonCode;
 
-    private CausalMarketRecord(Kind kind, String sessionId, long sequence, long receivedAt,
+    protected CausalMarketRecord(Kind kind, String sessionId, long sequence, long receivedAt,
                                long monotonicAt, String symbol, String source,
                                long exchangeEventAt, long transactionAt, long updateId,
                                double bid, double bidQuantity, double ask, double askQuantity,

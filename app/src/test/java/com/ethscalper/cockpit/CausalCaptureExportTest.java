@@ -18,6 +18,28 @@ import java.util.zip.ZipInputStream;
 import static org.junit.Assert.*;
 
 public class CausalCaptureExportTest {
+    @Test public void v2ManifestProvesFlowDepthSymbolsSourcesAndIntegrity()throws Exception{
+        Path directory=Files.createTempDirectory("causal-export-v2");CausalCaptureStore store=
+                new CausalCaptureStore(directory.toFile(),"v2",4,64*1024);store.appendBatch(List.of(
+                MicrostructureMarketRecord.session("s",1,1_000,1,"RESEARCH_WS","START"),
+                MicrostructureMarketRecord.flow100("s",2,1_150,2,"ETHUSDT","RESEARCH_WS",
+                        1_100,1_110,1_150,1,1,900,900,1,0,100,100,100,100,1,0,100,0),
+                MicrostructureMarketRecord.depth20("s",3,1_200,3,"ETHUSDT","RESEARCH_WS",
+                        1_190,1_195,1,2,0,levels(100,false),levels(101,true))));
+        try(CausalCaptureStore.Snapshot snapshot=store.checkpoint()){ByteArrayOutputStream bytes=
+                new ByteArrayOutputStream();DiagnosticStreamingExporter.export(bytes,empty(directory,
+                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(),"2.34.5.1",2_000,
+                new DiagnosticStreamingExporter.ExportSnapshotMetadata(1_500,"v2",true,"FULL","sha"),
+                snapshot.files,null,()->false);Map<String,String> zip=entries(bytes.toByteArray());
+            JSONObject manifest=new JSONObject(zip.get("causal_market_manifest.json"));
+            assertEquals(MicrostructureMarketRecord.SCHEMA,manifest.getString("schema"));
+            assertEquals(2,manifest.getInt("formatVersion"));assertTrue(manifest.getBoolean(
+                    "usableForMicrostructureResearch"));assertEquals(1,manifest.getJSONObject(
+                    "recordCountByKind").getInt("FLOW_100MS"));assertEquals(2,manifest.getJSONObject(
+                    "recordCountBySymbol").getInt("ETHUSDT"));assertEquals(3,manifest.getJSONObject(
+                    "recordCountBySource").getInt("RESEARCH_WS"));String stream=
+                    zip.get("causal_market_stream.jsonl");assertTrue(stream.contains("\"bids\":[["));
+            assertFalse(stream.contains("NaN"));assertFalse(stream.contains("Infinity"));}}
     @Test public void snapshotStreamsEveryRecordAndPublishesBoundedManifest()throws Exception{
         Path directory=Files.createTempDirectory("causal-export-store");
         CausalCaptureStore store=new CausalCaptureStore(directory.toFile(),"export",4,64*1024);
@@ -100,4 +122,6 @@ public class CausalCaptureExportTest {
             while((entry=zip.getNextEntry())!=null){assertNull("duplicate ZIP entry",out.put(entry.getName(),
                     new String(zip.readAllBytes(),StandardCharsets.UTF_8)));}}
         return out;}
+    private static double[][] levels(double start,boolean ascending){double[][] out=new double[20][2];
+        for(int i=0;i<20;i++){out[i][0]=start+(ascending?i:-i)*.01;out[i][1]=i+1;}return out;}
 }

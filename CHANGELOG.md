@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.5.1 — Reliable Microstructure Capture V2
+
+- découple la recherche microstructure sur une socket Futures publique `aggTrade` + `depth20@100ms`, sans changer le flux de décision CV Core ;
+- capture les trades agressifs en buckets de réception locale de 100 ms avec convention maker documentée, déduplication WS/REST, gaps d’IDs et provenance ;
+- conserve les niveaux bruts bid/ask top 20 à cadence bornée de 250 ms et coalesce aussi le top-of-book avant la file ;
+- remplace l’attente writer de deux secondes par un drain signalé à haute pression et une latence maximale de 75 ms, avec pertes explicites par type ;
+- expose la santé indépendante de chaque stream/symbole, le manifeste V2 et l’outil offline `microstructure_research.py` sans activer de nouvelle règle ;
+- maintient `NMC_SCALP_CV_CORE_V1`, `realTradingAllowed=false`, les alertes et le lifecycle public strictement inchangés.
+
 ## 2.34.5.0 — capture causale prospective et laboratoire anti-surapprentissage
 
 - conserve strictement le moteur public CV Core 4.9 : aucun candidat ETH/SOL n’a franchi les gates de robustesse, donc aucun seuil, signal, plan, sizing, TP/SL ou alerte n’est modifié ;

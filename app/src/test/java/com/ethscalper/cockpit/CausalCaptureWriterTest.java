@@ -6,6 +6,25 @@ import java.nio.file.Files;
 import static org.junit.Assert.*;
 
 public class CausalCaptureWriterTest {
+    @Test public void highWaterSignalDrainsNominalBurstWithoutRejects()throws Exception{
+        File directory=Files.createTempDirectory("capture-writer-burst").toFile();
+        CausalCaptureQueue queue=new CausalCaptureQueue(2_048);CausalCaptureStore store=
+                new CausalCaptureStore(directory,"burst",8,256_000);CausalCaptureWriter writer=
+                new CausalCaptureWriter(queue,store);writer.start();for(int i=1;i<=1_000;i++)
+            assertTrue(queue.offer(CausalMarketRecord.quote("s",i,i,i,"ETHUSDT","WS",i,i,i,
+                    100,1,101,1)));assertTrue(writer.flush(10_000));assertEquals(0,queue.rejected());
+        assertEquals(1_000,writer.stats().written);assertTrue(writer.stats().queueHighWaterMark>0);
+        writer.close();}
+
+    @Test public void storageBatchFailureIsCountedAndWriterRemainsFailOpen()throws Exception{
+        File directory=Files.createTempDirectory("capture-writer-failure").toFile();
+        CausalCaptureQueue queue=new CausalCaptureQueue(8);CausalCaptureStore store=
+                new CausalCaptureStore(directory,"failure",4,64_000);CausalCaptureWriter writer=
+                new CausalCaptureWriter(queue,store);writer.start();assertTrue(queue.offer(
+                CausalMarketRecord.session("v1",1,1,1,"WS","START")));assertTrue(queue.offer(
+                MicrostructureMarketRecord.session("v2",1,2,2,"WS","START")));
+        assertTrue(writer.flush(2_000));assertEquals(2,writer.stats().failed);
+        assertTrue(writer.stats().running);writer.close();}
     @Test public void writerDrainsAcceptedRecordsAndCheckpointsImmutably()throws Exception{
         File directory=Files.createTempDirectory("capture-writer").toFile();
         CausalCaptureQueue queue=new CausalCaptureQueue(8);

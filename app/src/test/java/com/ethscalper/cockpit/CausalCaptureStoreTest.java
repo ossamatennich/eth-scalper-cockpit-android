@@ -12,6 +12,22 @@ import java.util.List;
 import static org.junit.Assert.*;
 
 public final class CausalCaptureStoreTest {
+    @Test public void v2DepthAndFlowRoundTripWithCrcAndV1RemainsReadable()throws Exception{
+        File dir=temp();CausalCaptureStore store=new CausalCaptureStore(dir,"v2",4,64_000);
+        double[][] bids=levels(100,false),asks=levels(101,true);List<CausalMarketRecord> values=List.of(
+                MicrostructureMarketRecord.session("v2",1,1_000,1,"WS","START"),
+                MicrostructureMarketRecord.flow100("v2",2,1_150,2,"ETHUSDT","WS",1_100,
+                        1_110,1_150,1,2,900,901,2,0,100,101,100,101,1,1,100,101),
+                MicrostructureMarketRecord.depth20("v2",3,1_200,3,"ETHUSDT","WS",1_190,
+                        1_195,1,2,0,bids,asks));store.appendBatch(values);
+        try(CausalCaptureStore.Snapshot snapshot=store.checkpoint()){List<CausalMarketRecord> read=
+                CausalCaptureStore.read(snapshot.files,true).records;assertEquals(3,read.size());
+            assertTrue(read.get(1) instanceof MicrostructureMarketRecord);assertEquals(20,
+                    ((MicrostructureMarketRecord)read.get(2)).bids.length);
+            assertEquals(0,CausalCaptureReplay.replay(snapshot.files,null).corruptBlocks);}
+        CausalCaptureStore legacy=new CausalCaptureStore(Files.createTempDirectory("legacy-v1").toFile(),
+                "v1",2,4096);legacy.appendBatch(records());try(CausalCaptureStore.Snapshot snapshot=
+                legacy.checkpoint()){assertEquals(4,CausalCaptureStore.read(snapshot.files,true).records.size());}}
     @Test public void compressedCrcStoreRoundTripsEveryRecordKind()throws Exception {
         File dir=temp();CausalCaptureStore store=new CausalCaptureStore(dir,"test",4,4096);
         List<CausalMarketRecord> input=records();store.appendBatch(input);
@@ -114,4 +130,6 @@ public final class CausalCaptureStoreTest {
     private static CausalMarketRecord quote(long sequence,long at){return CausalMarketRecord.quote(
             "s",sequence,at,at,"ETHUSDT","WS",at,at,sequence,100,1,101,1);}
     private static File temp()throws Exception{return Files.createTempDirectory("nmc-capture-").toFile();}
+    private static double[][] levels(double start,boolean ascending){double[][] out=new double[20][2];
+        for(int i=0;i<20;i++){out[i][0]=start+(ascending?i:-i)*.01;out[i][1]=i+1;}return out;}
 }

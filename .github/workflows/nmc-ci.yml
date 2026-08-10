@@ -1,4 +1,4 @@
-name: NMC v2.34.5.0 Stable CI
+name: NMC v2.34.5.1 Stable CI
 
 on:
   push:
@@ -55,6 +55,8 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check -r tools/research-requirements.txt
       - name: Causal research laboratory tests
         run: python3 -m unittest tools/test_scalp_research.py
+      - name: Microstructure capture research tests
+        run: python3 -m unittest tools/test_microstructure_research.py
       - name: Build stable APK
         run: gradle assembleStable
       - name: Build debug APK
@@ -71,6 +73,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NMC-v2.34.5.0-stable-apk
+          name: NMC-v2.34.5.1-stable-apk
           path: app/build/outputs/apk/stable/app-stable.apk
           if-no-files-found: error

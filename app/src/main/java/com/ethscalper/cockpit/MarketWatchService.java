@@ -100,7 +100,7 @@ public class MarketWatchService extends Service {
     private static final String PERSISTENT_OBSERVATIONS_FILE = "persistent_market_events.jsonl";
     private static final String PERSISTENT_MARKET_FRAMES_FILE = "persistent_market_frames.jsonl";
     private static final String PERSISTENT_RECORDER_INDEX_FILE = "persistent_recorder_index.properties";
-    private static final String CAUSAL_CAPTURE_DIR = "causal_market_capture_v1";
+    private static final String CAUSAL_CAPTURE_DIR = "causal_market_capture_v2";
     private static final long PERSISTENT_MARKET_FRAME_INTERVAL_MS = PersistentMarketLog.FRAME_INTERVAL_MS;
     private static final String ALERT_DEDUPE_PREFERENCES = "confirmed_signal_alerts_v2330";
 
@@ -126,12 +126,14 @@ public class MarketWatchService extends Service {
     private final CvCoreCandidateArbiter cvArbiter = new CvCoreCandidateArbiter();
     private final CvCoreSummary cvSummary = new CvCoreSummary();
     private final CausalCaptureQueue causalCaptureQueue=new CausalCaptureQueue();
-    private final CausalMarketCapture causalCapture=new CausalMarketCapture(causalCaptureQueue);
+    private final MicrostructureCaptureV2 causalCapture=new MicrostructureCaptureV2(causalCaptureQueue);
+    private final MicrostructureCaptureHealth microCaptureHealth=new MicrostructureCaptureHealth();
+    private final BinanceCombinedStreamRouter streamRouter=new BinanceCombinedStreamRouter();
     private CausalCaptureStore causalCaptureStore;
     private CausalCaptureWriter causalCaptureWriter;
     private static volatile CausalCaptureStore.Snapshot causalExportSnapshot;
     private long causalSessionOrdinal;
-    private boolean causalGapRecordedForSession;
+    private boolean microHealthStarted;
     private CvCoreEconomicEventJournal cvEconomicEvents;
     private CvCorePlan activeCvPlan;
     private boolean cvEntryExpiredRecorded;
@@ -170,6 +172,7 @@ public class MarketWatchService extends Service {
 
     private OkHttpClient client;
     private WebSocket socket;
+    private WebSocket researchSocket;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
     private PowerManager.WakeLock wakeLock;
@@ -177,11 +180,14 @@ public class MarketWatchService extends Service {
     private boolean explicitStopRequested;
     private boolean healthScheduled;
     private int websocketEndpointIndex;
+    private int researchReconnectAttempt;
     private String activeMarketDataSource = "NONE";
     private boolean executionFeedAuthoritative;
     private String lastFeedError = "";
     private long lastNetworkAvailableAt;
     private long lastMessageAt;
+    private long lastResearchMessageAt;
+    private long lastBtcResearchRestAggAt;
     private long lastSignalAt;
     private long lastP01ConfirmedAt;
     private long lastTerminalAt;
@@ -327,28 +333,56 @@ public class MarketWatchService extends Service {
         try{long receivedAt=System.currentTimeMillis();
             String source=endpoint==null||endpoint.trim().isEmpty()?"FUTURES_WS":endpoint;
             String id=BuildConfig.VERSION_NAME+"-"+receivedAt+"-"+(++causalSessionOrdinal);
-            if(causalCapture.startSession(id,source,receivedAt,SystemClock.elapsedRealtime()))
-                causalGapRecordedForSession=false;
+            causalCapture.startSession(id,source,receivedAt,SystemClock.elapsedRealtime());
         }catch(RuntimeException ignored){}
     }
 
-    private synchronized void captureCausalBookTicker(String symbol,JSONObject data,long receivedAt){
+    private synchronized void ensureCausalCaptureSession(String endpoint){
+        if(causalCapture.stats().sessionId.isEmpty())startCausalCaptureSession(endpoint);
+    }
+
+    private synchronized void captureCausalBookTicker(String symbol,JSONObject data,long receivedAt,
+                                                       String source){
         if(causalCaptureWriter==null||data==null)return;
-        try{causalCapture.observeBookTicker(symbol,receivedAt,SystemClock.elapsedRealtime(),
+        try{causalCapture.observeTopBook(symbol,source,receivedAt,SystemClock.elapsedRealtime(),
                 data.optLong("E",0),data.optLong("T",0),data.optLong("u",-1),
                 data.optDouble("b",Double.NaN),data.optDouble("B",Double.NaN),
                 data.optDouble("a",Double.NaN),data.optDouble("A",Double.NaN));
         }catch(RuntimeException ignored){}
     }
 
-    private synchronized void captureCausalAggregateTrade(String symbol,JSONObject data,
-                                                           long receivedAt){
-        if(causalCaptureWriter==null||data==null)return;
-        try{causalCapture.observeAggregateTrade(symbol,receivedAt,SystemClock.elapsedRealtime(),
+    private synchronized void captureCausalBookTicker(String symbol,double bid,double ask,
+                                                       long receivedAt,String source){
+        if(causalCaptureWriter==null)return;try{causalCapture.observeTopBook(symbol,source,
+                receivedAt,SystemClock.elapsedRealtime(),0,0,0,bid,0,ask,0);}
+        catch(RuntimeException ignored){}
+    }
+
+    private synchronized boolean captureCausalAggregateTrade(String symbol,JSONObject data,
+                                                           long receivedAt,String source){
+        if(causalCaptureWriter==null||data==null)return false;
+        try{return causalCapture.observeAggTrade(symbol,source,receivedAt,SystemClock.elapsedRealtime(),
                 data.optLong("a",-1),data.optLong("T",0),
                 data.optDouble("p",Double.NaN),data.optDouble("q",Double.NaN),
                 data.optBoolean("m",false));
-        }catch(RuntimeException ignored){}
+        }catch(RuntimeException ignored){return false;}
+    }
+
+    private synchronized boolean captureCausalAggregateTrade(String symbol,
+            MarketRuntime.AggTrade trade,long receivedAt,String source){
+        if(causalCaptureWriter==null||trade==null)return false;try{return causalCapture.observeAggTrade(
+                symbol,source,receivedAt,SystemClock.elapsedRealtime(),trade.id,trade.at,trade.price,
+                trade.quantity,trade.buyerMaker);}catch(RuntimeException ignored){return false;}
+    }
+
+    private synchronized boolean captureCausalDepth(String symbol,JSONObject data,long receivedAt,
+                                                     String source){
+        if(causalCaptureWriter==null||data==null)return false;try{double[][] bids=depthLevels(
+                data.optJSONArray("b")),asks=depthLevels(data.optJSONArray("a"));
+            return causalCapture.observeDepth20(symbol,source,receivedAt,SystemClock.elapsedRealtime(),
+                    data.optLong("E",0),data.optLong("T",0),data.optLong("U",0),
+                    data.optLong("u",data.optLong("lastUpdateId",-1)),data.optLong("pu",0),bids,asks);
+        }catch(RuntimeException ignored){return false;}
     }
 
     private synchronized void flushCausalCapture(){
@@ -358,11 +392,18 @@ public class MarketWatchService extends Service {
     }
 
     private synchronized void recordCausalGap(String reasonCode){
-        if(causalCaptureWriter==null||causalGapRecordedForSession)return;
+        if(causalCaptureWriter==null)return;
         try{long now=System.currentTimeMillis();if(lastMessageAt>0&&now>lastMessageAt
-                &&causalCapture.gap(lastMessageAt,now,now,SystemClock.elapsedRealtime(),reasonCode))
-            causalGapRecordedForSession=true;
+                )causalCapture.gap(lastMessageAt,now,now,SystemClock.elapsedRealtime(),
+                "BINANCE_FUTURES_WS",reasonCode);
         }catch(RuntimeException ignored){}
+    }
+
+    private synchronized void recordResearchCausalGap(String reasonCode){if(causalCaptureWriter==null)
+        return;try{long now=System.currentTimeMillis();if(lastResearchMessageAt>0
+                &&now>lastResearchMessageAt)causalCapture.gap(lastResearchMessageAt,now,now,
+                SystemClock.elapsedRealtime(),"BINANCE_FUTURES_RESEARCH_WS",reasonCode);}
+        catch(RuntimeException ignored){}
     }
 
     private synchronized boolean sealCausalCaptureSnapshot(long timeoutMs){
@@ -378,19 +419,21 @@ public class MarketWatchService extends Service {
     private synchronized void resetCausalCapture(){
         releaseCausalCaptureSnapshot();initializeCausalCaptureIfNeeded();
         if(causalCaptureWriter==null)return;
-        try{causalCaptureWriter.reset(5_000L);
+        try{causalCaptureWriter.reset(5_000L);microCaptureHealth.reset(System.currentTimeMillis());
+            microHealthStarted=true;
             startCausalCaptureSession(activeMarketDataSource+"_DIAGNOSTIC_RESET");
         }catch(RuntimeException ignored){}
     }
 
     private synchronized JSONObject causalCaptureStatusJson()throws Exception{
-        JSONObject status=new JSONObject();status.put("schema",CausalMarketRecord.SCHEMA);
-        status.put("formatVersion",CausalMarketRecord.FORMAT_VERSION);
+        JSONObject status=new JSONObject();status.put("schema",MicrostructureMarketRecord.SCHEMA);
+        status.put("formatVersion",MicrostructureMarketRecord.FORMAT_VERSION);
         status.put("available",causalCaptureWriter!=null);
         status.put("snapshotPinned",causalCaptureSnapshotPinned());
         status.put("capture",new JSONObject(causalCapture.stats().toMap()));
-        if(causalCaptureWriter!=null)
-            status.put("writer",new JSONObject(causalCaptureWriter.stats().toMap()));
+        if(causalCaptureWriter!=null){CausalCaptureWriter.Stats writer=causalCaptureWriter.stats();
+            status.put("writer",new JSONObject(writer.toMap()));status.put("health",new JSONObject(
+                    microCaptureHealth.snapshot(System.currentTimeMillis(),causalCapture.stats(),writer)));}
         if(causalCaptureStore!=null){status.put("retentionMaxSegments",
                     causalCaptureStore.maximumSegments());
             status.put("retentionSegmentBytes",causalCaptureStore.maximumSegmentBytes());
@@ -398,6 +441,11 @@ public class MarketWatchService extends Service {
                     *causalCaptureStore.maximumSegmentBytes());}
         return status;
     }
+
+    private static double[][] depthLevels(JSONArray rows){if(rows==null||rows.length()<20)
+        return null;double[][] out=new double[20][2];for(int i=0;i<20;i++){JSONArray level=
+                rows.optJSONArray(i);if(level==null||level.length()<2)return null;
+            out[i][0]=level.optDouble(0,Double.NaN);out[i][1]=level.optDouble(1,Double.NaN);}return out;}
 
     private static String readTextFile(File file) {
         if (file == null || !file.exists()) return "";
@@ -585,6 +633,7 @@ public class MarketWatchService extends Service {
             explicitStopRequested = true;
             running = false;
             stopSocket();
+            stopResearchSocket();
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
@@ -595,8 +644,12 @@ public class MarketWatchService extends Service {
         startForeground(NOTIF_WATCH_ID, buildWatchNotification("Initialisation du moteur natif…"));
         // Start primary market I/O before any status or diagnostic persistence. Recorder files
         // can survive many upgrades; their state must never delay the first Futures request.
-        connectIfNeeded();
         initializeCausalCaptureIfNeeded();
+        if(!microHealthStarted){microCaptureHealth.reset(System.currentTimeMillis());
+            microHealthStarted=true;}
+        ensureCausalCaptureSession("BINANCE_FUTURES_MICROSTRUCTURE_V2");
+        connectIfNeeded();
+        connectResearchIfNeeded();
         prefillHistoricalCandlesIfNeeded();
         // Do not wait for the first 3-second health tick. A fresh install can briefly delay the
         // WebSocket while Android is displaying permission UI, so request public REST quotes now.
@@ -869,6 +922,7 @@ public class MarketWatchService extends Service {
         running = false;
         handler.removeCallbacksAndMessages(null);
         stopSocket();
+        stopResearchSocket();
         flushCausalCapture();
         if(causalCaptureWriter!=null)try{causalCaptureWriter.shutdown(2_000L);}
         catch(RuntimeException ignored){}
@@ -962,6 +1016,7 @@ public class MarketWatchService extends Service {
                         if (!running) return;
                         reconnectAttempt = 0;
                         if (socket == null) connectIfNeeded();
+                        if (researchSocket == null) connectResearchIfNeeded();
                         if (ethLast <= 0 || btcLast <= 0) historyPrefillRequested = false;
                         prefillHistoricalCandlesIfNeeded();
                         lastRestBookRefreshAt = 0;
@@ -977,6 +1032,7 @@ public class MarketWatchService extends Service {
                     postMarketState(() -> {
                         if (!running || isNetworkAvailable()) return;
                         stopSocket();
+                        stopResearchSocket();
                         activeMarketDataSource = "NONE";
                         executionFeedAuthoritative = false;
                         lastFeedError = "NETWORK_UNAVAILABLE";
@@ -1050,7 +1106,7 @@ public class MarketWatchService extends Service {
                 lastMessageAt = System.currentTimeMillis();
                 activeMarketDataSource = endpoint.name;
                 lastFeedError = "";
-                startCausalCaptureSession(endpoint.name);
+                ensureCausalCaptureSession(endpoint.name);
                 updateWatch("Connecté · " + endpoint.name, true);
                 broadcastStatus("connected", "Source de marché connectée : " + endpoint.name);
             }
@@ -1089,6 +1145,40 @@ public class MarketWatchService extends Service {
         });
     }
 
+    private void connectResearchIfNeeded(){
+        if(!running||researchSocket!=null||client==null)return;
+        final MarketFeedEndpointPool.Endpoint endpoint=MarketFeedEndpointPool.webSocket(0);
+        Request request=new Request.Builder().url(MarketFeedEndpointPool.researchCombinedStreamUrl(
+                0,marketRegistry)).header("User-Agent","NMC-Research/"+BuildConfig.VERSION_NAME).build();
+        researchSocket=client.newWebSocket(request,new WebSocketListener(){
+            @Override public void onOpen(WebSocket webSocket,Response response){
+                if(researchSocket!=webSocket)return;researchReconnectAttempt=0;
+                lastResearchMessageAt=System.currentTimeMillis();ensureCausalCaptureSession(
+                        "BINANCE_FUTURES_RESEARCH_WS");try{causalCapture.health(lastResearchMessageAt,
+                        SystemClock.elapsedRealtime(),"BINANCE_FUTURES_RESEARCH_WS",
+                        "RESEARCH_WS_CONNECTED");}catch(RuntimeException ignored){}
+            }
+            @Override public void onMessage(WebSocket webSocket,String text){
+                if(researchSocket!=webSocket)return;lastResearchMessageAt=System.currentTimeMillis();
+                handleResearchMessage(text);
+            }
+            @Override public void onFailure(WebSocket webSocket,Throwable error,Response response){
+                if(researchSocket!=webSocket)return;recordResearchCausalGap("RESEARCH_WS_FAILURE");
+                researchSocket=null;microCaptureHealth.reconnect();scheduleResearchReconnect();}
+            @Override public void onClosed(WebSocket webSocket,int code,String reason){
+                if(researchSocket!=webSocket)return;recordResearchCausalGap("RESEARCH_WS_CLOSED_"+code);
+                researchSocket=null;if(running){microCaptureHealth.reconnect();scheduleResearchReconnect();}}
+        });
+    }
+
+    private void stopResearchSocket(){WebSocket current=researchSocket;researchSocket=null;
+        try{if(current!=null)current.close(1000,"research stop");}catch(Exception ignored){}}
+
+    private void scheduleResearchReconnect(){if(!running)return;researchReconnectAttempt=
+            Math.min(researchReconnectAttempt+1,6);long delay=Math.min(30_000L,
+            1_000L<<Math.max(0,researchReconnectAttempt-1));handler.postDelayed(
+                    this::connectResearchIfNeeded,delay);}
+
     private void stopSocket() {
         WebSocket current = socket;
         socket = null;
@@ -1112,6 +1202,10 @@ public class MarketWatchService extends Service {
                 long now = System.currentTimeMillis();
                 maybeRefreshRestFallback(now);
                 flushCausalCapture();
+                if(researchSocket==null)connectResearchIfNeeded();
+                else if(lastResearchMessageAt>0&&now-lastResearchMessageAt>30_000L){
+                    recordResearchCausalGap("RESEARCH_WS_STALE");stopResearchSocket();
+                    microCaptureHealth.reconnect();connectResearchIfNeeded();}
                 long age = lastMessageAt == 0 ? Long.MAX_VALUE : now - lastMessageAt;
                 if (age > 65_000L) {
                     recordCausalGap("FUTURES_WS_STALE");
@@ -1159,12 +1253,10 @@ public class MarketWatchService extends Service {
             if(runtime.candles.size()<30||runtime.lastKlineAt==0
                     ||now-runtime.lastKlineAt>120_000L)tradedKlineMissing=true;
         }
-        boolean needKlines = lastRestKlineRefreshAt == 0
-                || now - lastRestKlineRefreshAt >= 15_000L
-                || btcCandles.size() < 10
-                || tradedKlineMissing
-                || liveKlineAge < 0
-                || liveKlineAge > 120;
+        boolean klineMissing=btcCandles.size()<10||tradedKlineMissing||liveKlineAge<0
+                ||liveKlineAge>120;
+        boolean needKlines=klineMissing&&(lastRestKlineRefreshAt==0
+                ||now-lastRestKlineRefreshAt>=15_000L);
 
         if (needKlines) {
             lastRestKlineRefreshAt = now;
@@ -1179,17 +1271,18 @@ public class MarketWatchService extends Service {
             if(runtime.aggTrades.isEmpty()||runtime.lastAggTradeAt==0
                     ||now-runtime.lastAggTradeAt>120_000L)tradedTradeMissing=true;
         }
-        boolean needTrades = lastRestTradeRefreshAt == 0
-                || now - lastRestTradeRefreshAt >= 7_000L
-                || tradedTradeMissing
-                || liveTradeAge < 0
-                || liveTradeAge > 120;
+        boolean tradeMissing=tradedTradeMissing||liveTradeAge<0||liveTradeAge>120;
+        boolean needTrades=tradeMissing&&(lastRestTradeRefreshAt==0
+                ||now-lastRestTradeRefreshAt>=7_000L);
 
         if (needTrades) {
             lastRestTradeRefreshAt = now;
             for(MarketRuntime runtime:marketCoordinator.runtimes().values())
                 fetchRuntimeAggTrades(runtime);
         }
+        if(microCaptureHealth.aggStale(MarketProfile.BTC_SYMBOL,now)
+                &&(lastBtcResearchRestAggAt==0||now-lastBtcResearchRestAggAt>=7_000L)){
+            lastBtcResearchRestAggAt=now;fetchResearchReferenceAggTrades(0);}
     }
 
     private void fetchRestKlines(String symbol, boolean isEth) {
@@ -1398,6 +1491,8 @@ public class MarketWatchService extends Service {
                 if(!(bid>0&&ask>=bid))throw new IOException("INVALID_BOOK_TICKER");
                 postMarketState(()->{long receivedAt=System.currentTimeMillis();
                     marketDataRouter.routeBookTicker(runtime.profile.symbol,bid,ask,receivedAt);
+                    captureCausalBookTicker(runtime.profile.symbol,bid,ask,receivedAt,
+                            "BINANCE_FUTURES_REST");
                     if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L) {
                         activeMarketDataSource="REST:"+endpoint.name;
                         executionFeedAuthoritative=!endpoint.spotFallback;
@@ -1435,7 +1530,8 @@ public class MarketWatchService extends Service {
                         activeMarketDataSource="REST:"+endpoint.name;
                         executionFeedAuthoritative=!endpoint.spotFallback;
                     }
-                    lastFeedError="";evaluateSignal(receivedAt);});
+                    captureCausalBookTicker(MarketProfile.BTC_SYMBOL,bid,ask,receivedAt,
+                            "BINANCE_FUTURES_REST");lastFeedError="";evaluateSignal(receivedAt);});
             }catch(Exception error){lastFeedError=endpoint.name+":REST_BTC_BOOK:"
                     +safeError(error);fetchReferenceBookTicker(endpointIndex+1);
             }finally{try{response.close();}catch(Exception ignored){}}}
@@ -1515,10 +1611,47 @@ public class MarketWatchService extends Service {
                 JSONArray rows=new JSONArray(raw);List<MarketRuntime.AggTrade> trades=new ArrayList<>();
                 for(int i=0;i<rows.length();i++){JSONObject row=rows.optJSONObject(i);if(row==null)continue;long id=row.optLong("a",-1);double q=row.optDouble("q",0),price=row.optDouble("p",runtime.last);long at=row.optLong("T",System.currentTimeMillis());if(id>=0&&q>0&&price>0)trades.add(new MarketRuntime.AggTrade(id,at,price,q,row.optBoolean("m",false)));}
                 if(trades.isEmpty())throw new IOException("EMPTY_TRADES");
-                postMarketState(()->{long receivedAt=System.currentTimeMillis();marketDataRouter.mergeFallbackAggTrades(runtime.profile.symbol,trades,receivedAt);if(socket==null||lastMessageAt==0||receivedAt-lastMessageAt>70_000L){activeMarketDataSource="REST:"+endpoint.name;executionFeedAuthoritative=!endpoint.spotFallback;}lastFeedError="";evaluateSignal(receivedAt);});
+                final int rowsSeen=rows.length();postMarketState(()->{long receivedAt=
+                        System.currentTimeMillis();microCaptureHealth.restRowsSeen(
+                        runtime.profile.symbol,rowsSeen);long researchAccepted=0;
+                    for(MarketRuntime.AggTrade trade:trades)if(captureCausalAggregateTrade(
+                            runtime.profile.symbol,trade,receivedAt,"BINANCE_FUTURES_REST"))
+                        researchAccepted++;microCaptureHealth.restRowsAccepted(runtime.profile.symbol,
+                            researchAccepted,receivedAt);marketDataRouter.mergeFallbackAggTrades(
+                            runtime.profile.symbol,trades,receivedAt);if(socket==null||lastMessageAt==0
+                            ||receivedAt-lastMessageAt>70_000L){activeMarketDataSource="REST:"+endpoint.name;
+                        executionFeedAuthoritative=!endpoint.spotFallback;}lastFeedError="";
+                    evaluateSignal(receivedAt);});
             }catch(Exception error){lastFeedError=endpoint.name+":REST_TRADES:"
                     +safeError(error);fetchRuntimeAggTrades(runtime,endpointIndex+1);
             }finally{try{response.close();}catch(Exception ignored){}}}
+        });
+    }
+
+    private void fetchResearchReferenceAggTrades(int endpointIndex){
+        List<MarketFeedEndpointPool.RestEndpoint> endpoints=MarketFeedEndpointPool
+                .aggregateTradeEndpoints(MarketProfile.BTC_SYMBOL,500);if(endpointIndex>=endpoints.size())return;
+        MarketFeedEndpointPool.RestEndpoint endpoint=endpoints.get(endpointIndex);Request request=
+                new Request.Builder().url(endpoint.url).header("User-Agent","NMC-Research/"
+                        +BuildConfig.VERSION_NAME).build();client.newCall(request).enqueue(new Callback(){
+            @Override public void onFailure(Call call,IOException error){fetchResearchReferenceAggTrades(
+                    endpointIndex+1);}
+            @Override public void onResponse(Call call,Response response){try{String raw=
+                    response.body()==null?"":response.body().string();if(!response.isSuccessful())
+                    throw new IOException("HTTP_"+response.code());JSONArray rows=new JSONArray(raw);
+                List<MarketRuntime.AggTrade> trades=new ArrayList<>();for(int i=0;i<rows.length();i++){
+                    JSONObject row=rows.optJSONObject(i);if(row==null)continue;long id=row.optLong("a",-1);
+                    double price=row.optDouble("p",0),quantity=row.optDouble("q",0);long at=row.optLong("T",0);
+                    if(id>=0&&price>0&&quantity>0&&at>0)trades.add(new MarketRuntime.AggTrade(id,at,
+                            price,quantity,row.optBoolean("m",false)));}
+                final int rowsSeen=rows.length();postMarketState(()->{long receivedAt=
+                        System.currentTimeMillis();microCaptureHealth.restRowsSeen(MarketProfile.BTC_SYMBOL,
+                        rowsSeen);long accepted=0;for(MarketRuntime.AggTrade trade:trades)
+                    if(captureCausalAggregateTrade(MarketProfile.BTC_SYMBOL,trade,receivedAt,
+                            "BINANCE_FUTURES_REST"))accepted++;microCaptureHealth.restRowsAccepted(
+                            MarketProfile.BTC_SYMBOL,accepted,receivedAt);});
+            }catch(Exception error){fetchResearchReferenceAggTrades(endpointIndex+1);}
+            finally{try{response.close();}catch(Exception ignored){}}}
         });
     }
 
@@ -1558,16 +1691,18 @@ public class MarketWatchService extends Service {
 
     private synchronized void handleMessage(String text) {
         try {
-            JSONObject root = new JSONObject(text);
-            String stream = root.optString("stream", "");
-            JSONObject data = root.optJSONObject("data");
-            if (data == null) return;
-            String normalizedStream = stream.toLowerCase(Locale.ROOT);
-            boolean captureOnlyReferenceTrade=normalizedStream.contains("aggtrade")
-                    &&MarketProfile.BTC_SYMBOL.equals(MarketDataRouter.symbolFromStream(stream));
-            if (normalizedStream.contains("bookticker")) handleBookTicker(stream, data);
-            else if (normalizedStream.contains("kline_1m")) handleKline(stream, data);
-            else if (normalizedStream.contains("aggtrade")) handleAggTrade(stream, data);
+            BinanceCombinedStreamRouter.Event event=streamRouter.parse(text);if(event==null){
+                microCaptureHealth.malformed();return;}
+            boolean captureOnlyReferenceTrade=event.type==BinanceCombinedStreamRouter.Type.AGG_TRADE
+                    &&MarketProfile.BTC_SYMBOL.equals(event.symbol);
+            if(event.type==BinanceCombinedStreamRouter.Type.BOOK_TICKER)
+                handleBookTicker(event.stream,event.data,"PUBLIC_WS");
+            else if(event.type==BinanceCombinedStreamRouter.Type.KLINE_1M)
+                handleKline(event.stream,event.data,"PUBLIC_WS");
+            else if(event.type==BinanceCombinedStreamRouter.Type.AGG_TRADE)
+                handleAggTrade(event.stream,event.data,"PUBLIC_WS");
+            else if(event.type==BinanceCombinedStreamRouter.Type.DEPTH20)
+                handleDepth20(event.symbol,event.data,"PUBLIC_WS");
             if(captureOnlyReferenceTrade)return;
 
             long now = System.currentTimeMillis();
@@ -1579,14 +1714,26 @@ public class MarketWatchService extends Service {
                 lastStatusAt = now;
                 broadcastStatus("live", "Prix natifs actualisés");
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {microCaptureHealth.malformed();}
     }
 
-    private void handleBookTicker(String stream, JSONObject data) {
+    private synchronized void handleResearchMessage(String text){try{
+        BinanceCombinedStreamRouter.Event event=streamRouter.parse(text);if(event==null){
+            microCaptureHealth.malformed();return;}
+        if(event.type==BinanceCombinedStreamRouter.Type.AGG_TRADE)
+            handleResearchAggTrade(event.symbol,event.data);
+        else if(event.type==BinanceCombinedStreamRouter.Type.KLINE_1M)
+            handleKline(event.stream,event.data,"RESEARCH_WS");
+        else if(event.type==BinanceCombinedStreamRouter.Type.DEPTH20)
+            handleDepth20(event.symbol,event.data,"RESEARCH_WS");
+    }catch(RuntimeException ignored){microCaptureHealth.malformed();}}
+
+    private void handleBookTicker(String stream, JSONObject data,String transportSource) {
         bookTickerMessages++;
         long now = System.currentTimeMillis();
         lastBookTickerAt = now;
         String symbol=MarketDataRouter.symbolFromStream(stream);
+        microCaptureHealth.wsBook(symbol,transportSource,now);
         if (MarketProfile.BTC_SYMBOL.equals(symbol)) {
             btcBid = data.optDouble("b", btcBid);
             btcAsk = data.optDouble("a", btcAsk);
@@ -1594,17 +1741,17 @@ public class MarketWatchService extends Service {
             sharedBtc.bid=btcBid;sharedBtc.ask=btcAsk;sharedBtc.last=btcLast;
             sharedBtc.lastTickerAt=now;sharedBtc.bookTickerMessages++;
             cvContext.observe(symbol,btcBid,btcAsk,now);
-            captureCausalBookTicker(symbol,data,now);
+            captureCausalBookTicker(symbol,data,now,"BINANCE_FUTURES_"+transportSource);
         } else if(marketRegistry.contains(symbol)) {
             MarketRuntime runtime=marketCoordinator.runtime(symbol);
             double nextBid=data.optDouble("b",runtime.bid),nextAsk=data.optDouble("a",runtime.ask);
             boolean routed=marketDataRouter.routeBookTicker(symbol,nextBid,nextAsk,now);
             cvContext.observe(symbol,nextBid,nextAsk,now);
-            if(routed)captureCausalBookTicker(symbol,data,now);
+            if(routed)captureCausalBookTicker(symbol,data,now,"BINANCE_FUTURES_"+transportSource);
         }
     }
 
-    private void handleKline(String stream, JSONObject data) {
+    private void handleKline(String stream, JSONObject data,String transportSource) {
         klineMessages++;
         lastKlineAt = System.currentTimeMillis();
         JSONObject kline = data.optJSONObject("k");
@@ -1612,6 +1759,7 @@ public class MarketWatchService extends Service {
         Candle candle = new Candle(kline.optLong("t"), kline.optDouble("o"), kline.optDouble("h"),
                 kline.optDouble("l"), kline.optDouble("c"), kline.optDouble("v"));
         String symbol=MarketDataRouter.symbolFromStream(stream);
+        microCaptureHealth.wsKline(symbol,transportSource,lastKlineAt);
         if (MarketProfile.BTC_SYMBOL.equals(symbol)) {
             btcLast = candle.close;
             upsert(btcCandles, candle, 180);
@@ -1622,21 +1770,23 @@ public class MarketWatchService extends Service {
         }
     }
 
-    private void handleAggTrade(String stream, JSONObject data) {
-        aggTradeMessages++;
-        String symbol=MarketDataRouter.symbolFromStream(stream);
-        long receivedAt=System.currentTimeMillis();
-        if(marketRegistry.contains(symbol)){
-            MarketRuntime runtime=marketCoordinator.runtime(symbol);
-            long time=data.optLong("T",receivedAt);
-            boolean routed=marketDataRouter.routeAggTrade(symbol,new MarketRuntime.AggTrade(
-                    data.optLong("a",-1),time,data.optDouble("p",runtime.last),
-                    data.optDouble("q",0),data.optBoolean("m",false)),receivedAt);
-            if(routed)captureCausalAggregateTrade(symbol,data,receivedAt);
-        }else if(MarketProfile.BTC_SYMBOL.equals(symbol)){
-            captureCausalAggregateTrade(symbol,data,receivedAt);
-        }
-    }
+    private void handleAggTrade(String stream,JSONObject data,String transportSource){
+        aggTradeMessages++;String symbol=MarketDataRouter.symbolFromStream(stream);
+        long receivedAt=System.currentTimeMillis();microCaptureHealth.wsAgg(symbol,transportSource,
+                receivedAt);captureCausalAggregateTrade(symbol,data,receivedAt,
+                "BINANCE_FUTURES_"+transportSource);if(marketRegistry.contains(symbol)){
+            MarketRuntime runtime=marketCoordinator.runtime(symbol);long time=data.optLong("T",receivedAt);
+            marketDataRouter.routeAggTrade(symbol,new MarketRuntime.AggTrade(data.optLong("a",-1),time,
+                    data.optDouble("p",runtime.last),data.optDouble("q",0),
+                    data.optBoolean("m",false)),receivedAt);}}
+
+    private void handleResearchAggTrade(String symbol,JSONObject data){long receivedAt=
+            System.currentTimeMillis();microCaptureHealth.wsAgg(symbol,"RESEARCH_WS",receivedAt);
+        captureCausalAggregateTrade(symbol,data,receivedAt,"BINANCE_FUTURES_RESEARCH_WS");}
+
+    private void handleDepth20(String symbol,JSONObject data,String transportSource){long receivedAt=
+            System.currentTimeMillis();microCaptureHealth.wsDepth(symbol,transportSource,receivedAt);
+        captureCausalDepth(symbol,data,receivedAt,"BINANCE_FUTURES_"+transportSource);}
 
     private synchronized void evaluateSignal(long now) {
         cvArbiter.beginCycle(now);

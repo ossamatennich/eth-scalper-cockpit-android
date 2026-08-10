@@ -93,9 +93,10 @@ public final class DiagnosticStreamingExporter {
                                                        BooleanSupplier cancelled)throws Exception {
         MessageDigest digest=sha();CountingDigestOutput output=new CountingDigestOutput(zip,digest);
         List<File> snapshot=files==null?Collections.emptyList():new ArrayList<>(files);
+        CaptureManifestStats captureStats=new CaptureManifestStats();
         zip.putNextEntry(new ZipEntry(name));CausalCaptureStore.ScanResult scan;
         try{scan=CausalCaptureStore.scan(snapshot,true,record->{
-            try{check(cancelled);output.write((json(record.toMap())+"\n").getBytes(StandardCharsets.UTF_8));}
+            try{check(cancelled);captureStats.accept(record);output.write((json(record.toMap())+"\n").getBytes(StandardCharsets.UTF_8));}
             catch(RuntimeException error){throw error;}
             catch(Exception error){throw new CausalExportFailure(error);}
         });}catch(IllegalStateException error){RuntimeException cancellation=findRuntimeCause(error,
@@ -109,31 +110,44 @@ public final class DiagnosticStreamingExporter {
         for(File file:snapshot)if(file!=null&&file.exists()){sourceBytes+=Math.max(0,file.length());
             sourceNames.add(file.getName());}
         Collections.sort(sourceNames);return new CausalExportStats(scan.records,scan.corruptBlocks,
-                scan.truncatedTails,sourceBytes,sourceNames);
+                scan.truncatedTails,sourceBytes,sourceNames,captureStats);
     }
 
     private static String causalManifestJson(CausalExportStats value){StringBuilder out=new StringBuilder();
-        out.append("{\"schema\":\"").append(CausalMarketRecord.SCHEMA)
-                .append("\",\"formatVersion\":").append(CausalMarketRecord.FORMAT_VERSION)
+        out.append("{\"schema\":\"").append(escape(value.capture.schema))
+                .append("\",\"formatVersion\":").append(value.capture.formatVersion)
                 .append(",\"streamEntry\":\"causal_market_stream.jsonl\"")
                 .append(",\"recordCount\":").append(value.records)
                 .append(",\"sourceFileCount\":").append(value.sourceFiles.size())
                 .append(",\"sourceBytes\":").append(value.sourceBytes)
                 .append(",\"corruptBlocks\":").append(value.corruptBlocks)
                 .append(",\"truncatedTails\":").append(value.truncatedTails)
+                .append(",\"firstReceivedAt\":").append(value.capture.firstAt>0?value.capture.firstAt:"null")
+                .append(",\"lastReceivedAt\":").append(value.capture.lastAt>0?value.capture.lastAt:"null")
+                .append(",\"explicitGapRecords\":").append(value.capture.gaps)
+                .append(",\"dropSummaryRecords\":").append(value.capture.dropSummaries)
+                .append(",\"usableForMicrostructureResearch\":").append(value.capture.flows>0
+                        &&value.capture.depth>0&&value.corruptBlocks==0&&value.truncatedTails==0)
+                .append(",\"recordCountByKind\":").append(json(value.capture.byKind))
+                .append(",\"recordCountBySymbol\":").append(json(value.capture.bySymbol))
+                .append(",\"recordCountBySource\":").append(json(value.capture.bySource))
                 .append(",\"strictCrc\":true,\"sourceFiles\":[");
         for(int i=0;i<value.sourceFiles.size();i++){if(i>0)out.append(',');
             out.append('"').append(escape(value.sourceFiles.get(i))).append('"');}
         return out.append("]}").toString();}
 
-    private static String json(Map<String,Object> value){StringBuilder out=new StringBuilder("{");
-        boolean first=true;for(Map.Entry<String,Object> entry:value.entrySet()){if(!first)out.append(',');first=false;
-            out.append('"').append(escape(entry.getKey())).append("\":");Object item=entry.getValue();
-            if(item==null)out.append("null");else if(item instanceof Boolean)out.append(item);
-            else if(item instanceof Number){double numeric=((Number)item).doubleValue();
-                if(Double.isFinite(numeric))out.append(item);else out.append("null");}
-            else out.append('"').append(escape(String.valueOf(item))).append('"');}
-        return out.append('}').toString();}
+    private static String json(Map<String,?> value){StringBuilder out=new StringBuilder();appendJson(out,value);
+        return out.toString();}
+    @SuppressWarnings("unchecked") private static void appendJson(StringBuilder out,Object item){
+        if(item==null){out.append("null");return;}if(item instanceof Boolean){out.append(item);return;}
+        if(item instanceof Number){double numeric=((Number)item).doubleValue();out.append(
+                Double.isFinite(numeric)?item:"null");return;}if(item instanceof Map){out.append('{');
+            boolean first=true;for(Map.Entry<?,?> entry:((Map<?,?>)item).entrySet()){if(!first)out.append(',');
+                first=false;out.append('"').append(escape(String.valueOf(entry.getKey()))).append("\":");
+                appendJson(out,entry.getValue());}out.append('}');return;}if(item instanceof Iterable){
+            out.append('[');boolean first=true;for(Object child:(Iterable<?>)item){if(!first)out.append(',');
+                first=false;appendJson(out,child);}out.append(']');return;}out.append('"').append(
+                escape(String.valueOf(item))).append('"');}
 
     private static RuntimeException findRuntimeCause(Throwable value,
                                                        Class<? extends RuntimeException> type){
@@ -215,10 +229,27 @@ public final class DiagnosticStreamingExporter {
     private static final class CausalExportFailure extends RuntimeException{
         CausalExportFailure(Exception cause){super(cause);}}
     private static final class CausalExportStats{final long records,sourceBytes;final int corruptBlocks,truncatedTails;
-        final List<String> sourceFiles;
-        CausalExportStats(long records,int corruptBlocks,int truncatedTails,long sourceBytes,List<String> sourceFiles){
+        final List<String> sourceFiles;final CaptureManifestStats capture;
+        CausalExportStats(long records,int corruptBlocks,int truncatedTails,long sourceBytes,List<String> sourceFiles,
+                CaptureManifestStats capture){
             this.records=records;this.corruptBlocks=corruptBlocks;this.truncatedTails=truncatedTails;
-            this.sourceBytes=sourceBytes;this.sourceFiles=Collections.unmodifiableList(new ArrayList<>(sourceFiles));}}
+            this.sourceBytes=sourceBytes;this.sourceFiles=Collections.unmodifiableList(new ArrayList<>(sourceFiles));
+            this.capture=capture;}}
+    private static final class CaptureManifestStats{String schema=MicrostructureMarketRecord.SCHEMA;
+        int formatVersion=MicrostructureMarketRecord.FORMAT_VERSION;long firstAt,lastAt,gaps,dropSummaries,
+                flows,depth;final LinkedHashMap<String,Long> byKind=new LinkedHashMap<>(),
+                bySymbol=new LinkedHashMap<>(),bySource=new LinkedHashMap<>();void accept(CausalMarketRecord record){
+            if(record instanceof MicrostructureMarketRecord){schema=MicrostructureMarketRecord.SCHEMA;
+                formatVersion=2;}else if(firstAt==0){schema=CausalMarketRecord.SCHEMA;formatVersion=1;}
+            if(firstAt==0||record.receivedAt<firstAt)firstAt=record.receivedAt;
+            lastAt=Math.max(lastAt,record.receivedAt);increment(byKind,record.kind.name());
+            increment(bySymbol,record.symbol);increment(bySource,record.source);
+            if(record.kind==CausalMarketRecord.Kind.GAP)gaps++;
+            if(record.kind==CausalMarketRecord.Kind.DROP_SUMMARY)dropSummaries++;
+            if(record.kind==CausalMarketRecord.Kind.FLOW_100MS)flows++;
+            if(record.kind==CausalMarketRecord.Kind.DEPTH20_SAMPLE)depth++;}
+        private static void increment(Map<String,Long> values,String key){values.put(key,
+                values.getOrDefault(key,0L)+1L);}}
     public static final class EntryDigest{public final long bytes;public final String sha256;
         EntryDigest(long bytes,String sha256){this.bytes=bytes;this.sha256=sha256;}}
     public static final class ExportSnapshotMetadata {

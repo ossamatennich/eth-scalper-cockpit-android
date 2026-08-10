@@ -38,7 +38,9 @@ public final class CausalCaptureReplay {
             if(!session.equals(record.sessionId))return null;
             if(record.kind==CausalMarketRecord.Kind.GAP
                     &&record.gapToAt>observedAt)return null;
-            if(record.kind==CausalMarketRecord.Kind.QUOTE&&record.symbol.equals(symbol))return record;}
+            if((record.kind==CausalMarketRecord.Kind.QUOTE
+                    ||record.kind==CausalMarketRecord.Kind.TOP_OF_BOOK_SAMPLE)
+                    &&record.symbol.equals(symbol))return record;}
         return null;
     }
 
@@ -64,7 +66,8 @@ public final class CausalCaptureReplay {
     /** Evaluates one raw quote in recorded arrival order. */
     public static Terminal terminal(String side,double takeProfit,double stopLoss,
                                     CausalMarketRecord quote) {
-        if(quote==null||quote.kind!=CausalMarketRecord.Kind.QUOTE
+        if(quote==null||(quote.kind!=CausalMarketRecord.Kind.QUOTE
+                &&quote.kind!=CausalMarketRecord.Kind.TOP_OF_BOOK_SAMPLE)
                 ||!("LONG".equals(side)||"SHORT".equals(side))||!Double.isFinite(takeProfit)
                 ||!Double.isFinite(stopLoss))return null;double touch="LONG".equals(side)
                 ?quote.bid:quote.ask;boolean sl="LONG".equals(side)?touch<=stopLoss:touch>=stopLoss;
@@ -84,7 +87,7 @@ public final class CausalCaptureReplay {
 
     private static final class ValidationState {
         final boolean rejectSequenceGaps;long lastSequence,sequenceGaps,lastReceived,lastMonotonic;
-        String session="";int sessions,quotes,flows,gaps;
+        String session="";int sessions,quotes,flows,depthSamples,dropSummaries,healthMarkers,gaps;
         final Map<String,Long> lastFlow=new java.util.HashMap<>();
         ValidationState(boolean rejectSequenceGaps){this.rejectSequenceGaps=rejectSequenceGaps;}
         void accept(CausalMarketRecord record){if(record==null)throw new IllegalArgumentException("record");
@@ -103,31 +106,40 @@ public final class CausalCaptureReplay {
             if(lastSequence>0&&record.sequence>lastSequence+1){
                 sequenceGaps+=record.sequence-lastSequence-1;if(rejectSequenceGaps)
                     throw new IllegalStateException("incomplete capture sequence");}
-            if(record.kind==CausalMarketRecord.Kind.QUOTE)quotes++;
-            else if(record.kind==CausalMarketRecord.Kind.FLOW_1S){flows++;
+            if(record.kind==CausalMarketRecord.Kind.QUOTE
+                    ||record.kind==CausalMarketRecord.Kind.TOP_OF_BOOK_SAMPLE)quotes++;
+            else if(record.kind==CausalMarketRecord.Kind.FLOW_1S
+                    ||record.kind==CausalMarketRecord.Kind.FLOW_100MS){flows++;
                 long prior=lastFlow.getOrDefault(record.symbol,Long.MIN_VALUE);
                 if(prior!=Long.MIN_VALUE&&record.bucketStartAt<=prior)
                     throw new IllegalStateException("non-monotonic flow bucket");
-                if(record.bucketEndAt>record.receivedAt)
+                if(record.kind==CausalMarketRecord.Kind.FLOW_1S
+                        &&record.bucketEndAt>record.receivedAt)
                     throw new IllegalStateException("future flow bucket");
                 lastFlow.put(record.symbol,record.bucketStartAt);}
+            else if(record.kind==CausalMarketRecord.Kind.DEPTH20_SAMPLE)depthSamples++;
+            else if(record.kind==CausalMarketRecord.Kind.DROP_SUMMARY){dropSummaries++;gaps++;}
+            else if(record.kind==CausalMarketRecord.Kind.HEALTH)healthMarkers++;
             else if(record.kind==CausalMarketRecord.Kind.GAP)gaps++;
             if(!finiteOrNull(record.toMap()))throw new IllegalStateException("unsafe json value");
             lastSequence=record.sequence;}
         Validation result(long count,int corruptBlocks,int truncatedTails){return new Validation(
-                count,sessions,quotes,flows,gaps,sequenceGaps,lastSequence,corruptBlocks,
-                truncatedTails);}
+                count,sessions,quotes,flows,depthSamples,dropSummaries,healthMarkers,gaps,
+                sequenceGaps,lastSequence,corruptBlocks,truncatedTails);}
     }
 
     public static final class Validation {
-        public final long records;public final int sessions,quotes,flows,gaps;
+        public final long records;public final int sessions,quotes,flows,depthSamples,dropSummaries,
+                healthMarkers,gaps;
         public final long missingSequences,lastSequence;
         public final int corruptBlocks,truncatedTails;
         public final boolean complete;
-        Validation(long records,int sessions,int quotes,int flows,int gaps,long missingSequences,
+        Validation(long records,int sessions,int quotes,int flows,int depthSamples,int dropSummaries,
+                   int healthMarkers,int gaps,long missingSequences,
                    long lastSequence,int corruptBlocks,int truncatedTails){this.records=records;
             this.sessions=sessions;this.quotes=quotes;
-            this.flows=flows;this.gaps=gaps;this.missingSequences=missingSequences;
+            this.flows=flows;this.depthSamples=depthSamples;this.dropSummaries=dropSummaries;
+            this.healthMarkers=healthMarkers;this.gaps=gaps;this.missingSequences=missingSequences;
             this.lastSequence=lastSequence;this.corruptBlocks=corruptBlocks;
             this.truncatedTails=truncatedTails;
             this.complete=missingSequences==0&&corruptBlocks==0&&truncatedTails==0;}
