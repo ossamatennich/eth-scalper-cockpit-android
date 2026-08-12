@@ -87,7 +87,8 @@ public final class CausalCaptureReplay {
 
     private static final class ValidationState {
         final boolean rejectSequenceGaps;long lastSequence,sequenceGaps,lastReceived,lastMonotonic;
-        String session="";int sessions,quotes,flows,depthSamples,dropSummaries,healthMarkers,gaps;
+        String session="";int sessions,quotes,flows,depthSamples,liquidationSnapshots,
+                dropSummaries,healthMarkers,gaps;
         final Map<String,Long> lastFlow=new java.util.HashMap<>();
         ValidationState(boolean rejectSequenceGaps){this.rejectSequenceGaps=rejectSequenceGaps;}
         void accept(CausalMarketRecord record){if(record==null)throw new IllegalArgumentException("record");
@@ -118,27 +119,30 @@ public final class CausalCaptureReplay {
                     throw new IllegalStateException("future flow bucket");
                 lastFlow.put(record.symbol,record.bucketStartAt);}
             else if(record.kind==CausalMarketRecord.Kind.DEPTH20_SAMPLE)depthSamples++;
+            else if(record.kind==CausalMarketRecord.Kind.LIQUIDATION_SNAPSHOT)liquidationSnapshots++;
             else if(record.kind==CausalMarketRecord.Kind.DROP_SUMMARY){dropSummaries++;gaps++;}
             else if(record.kind==CausalMarketRecord.Kind.HEALTH)healthMarkers++;
             else if(record.kind==CausalMarketRecord.Kind.GAP)gaps++;
             if(!finiteOrNull(record.toMap()))throw new IllegalStateException("unsafe json value");
             lastSequence=record.sequence;}
         Validation result(long count,int corruptBlocks,int truncatedTails){return new Validation(
-                count,sessions,quotes,flows,depthSamples,dropSummaries,healthMarkers,gaps,
+                count,sessions,quotes,flows,depthSamples,liquidationSnapshots,dropSummaries,
+                healthMarkers,gaps,
                 sequenceGaps,lastSequence,corruptBlocks,truncatedTails);}
     }
 
     public static final class Validation {
-        public final long records;public final int sessions,quotes,flows,depthSamples,dropSummaries,
-                healthMarkers,gaps;
+        public final long records;public final int sessions,quotes,flows,depthSamples,
+                liquidationSnapshots,dropSummaries,healthMarkers,gaps;
         public final long missingSequences,lastSequence;
         public final int corruptBlocks,truncatedTails;
         public final boolean complete;
-        Validation(long records,int sessions,int quotes,int flows,int depthSamples,int dropSummaries,
-                   int healthMarkers,int gaps,long missingSequences,
+        Validation(long records,int sessions,int quotes,int flows,int depthSamples,
+                   int liquidationSnapshots,int dropSummaries,int healthMarkers,int gaps,long missingSequences,
                    long lastSequence,int corruptBlocks,int truncatedTails){this.records=records;
             this.sessions=sessions;this.quotes=quotes;
-            this.flows=flows;this.depthSamples=depthSamples;this.dropSummaries=dropSummaries;
+            this.flows=flows;this.depthSamples=depthSamples;
+            this.liquidationSnapshots=liquidationSnapshots;this.dropSummaries=dropSummaries;
             this.healthMarkers=healthMarkers;this.gaps=gaps;this.missingSequences=missingSequences;
             this.lastSequence=lastSequence;this.corruptBlocks=corruptBlocks;
             this.truncatedTails=truncatedTails;

@@ -385,6 +385,26 @@ public class MarketWatchService extends Service {
         }catch(RuntimeException ignored){return false;}
     }
 
+    private synchronized boolean captureCausalLiquidation(String symbol,JSONObject data,
+            long receivedAt,String source){if(causalCaptureWriter==null||data==null)return false;
+        try{BinanceForceOrderSnapshot.ParseResult parsed=BinanceForceOrderSnapshot.parse(symbol,data);
+            if(!parsed.accepted()){causalCapture.rejectLiquidation(symbol);return false;}
+            BinanceForceOrderSnapshot value=parsed.snapshot;
+            return causalCapture.observeLiquidation(symbol,source,receivedAt,
+                    SystemClock.elapsedRealtime(),value.exchangeEventAt,value.tradeAt,
+                    value.orderSide,value.orderType,value.timeInForce,value.originalQuantity,
+                    value.price,value.averagePrice,value.orderStatus,value.lastFilledQuantity,
+                    value.accumulatedFilledQuantity);
+        }catch(RuntimeException ignored){causalCapture.rejectLiquidation(symbol);return false;}}
+
+    private synchronized void countMalformedLiquidation(String text){try{JSONObject root=
+            new JSONObject(text);String stream=root.optString("stream","");if(!stream.toLowerCase(
+                    java.util.Locale.ROOT).endsWith("@forceorder"))return;String symbol=
+            MarketDataRouter.symbolFromStream(stream);if(CausalMarketRecord.supported(symbol))
+                {microCaptureHealth.wsForceOrder(symbol,"MARKET_WS",System.currentTimeMillis());
+                    causalCapture.rejectLiquidation(symbol);}}
+        catch(org.json.JSONException|RuntimeException ignored){}}
+
     private synchronized void flushCausalCapture(){
         if(causalCaptureWriter==null)return;
         try{causalCapture.flushThrough(System.currentTimeMillis(),SystemClock.elapsedRealtime());}
@@ -1772,13 +1792,17 @@ public class MarketWatchService extends Service {
         BinanceCombinedStreamRouter.Event event=streamRouter.parse(text);if(event==null
                 ||!BinanceCombinedStreamRouter.accepts(
                 BinanceCombinedStreamRouter.SocketType.MARKET_WS,event.type)){
-            microCaptureHealth.malformed();return false;}
+            countMalformedLiquidation(text);microCaptureHealth.malformed();return false;}
         boolean captureOnlyReferenceTrade=event.type==BinanceCombinedStreamRouter.Type.AGG_TRADE
                 &&MarketProfile.BTC_SYMBOL.equals(event.symbol);
         if(event.type==BinanceCombinedStreamRouter.Type.AGG_TRADE)
             handleAggTrade(event.stream,event.data,"MARKET_WS");
         else if(event.type==BinanceCombinedStreamRouter.Type.KLINE_1M)
             handleKline(event.stream,event.data,"MARKET_WS");
+        else if(event.type==BinanceCombinedStreamRouter.Type.LIQUIDATION_SNAPSHOT){
+            long receivedAt=System.currentTimeMillis();microCaptureHealth.wsForceOrder(event.symbol,
+                    "MARKET_WS",receivedAt);captureCausalLiquidation(event.symbol,event.data,
+                    receivedAt,"BINANCE_FUTURES_MARKET_WS");return true;}
         if(captureOnlyReferenceTrade)return true;long now=System.currentTimeMillis();
         if(now-lastEvaluationAt>=1000){lastEvaluationAt=now;evaluateSignal(now);}
         if(now-lastStatusAt>=1500){lastStatusAt=now;broadcastStatus("live",

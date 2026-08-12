@@ -6,7 +6,7 @@ import java.util.Locale;
 
 /** Pure, fail-closed parser/dispatcher for Binance Futures combined public streams. */
 public final class BinanceCombinedStreamRouter {
-    public enum Type { BOOK_TICKER, AGG_TRADE, KLINE_1M, DEPTH20 }
+    public enum Type { BOOK_TICKER, AGG_TRADE, KLINE_1M, DEPTH20, LIQUIDATION_SNAPSHOT }
     public enum SocketType { PUBLIC_WS, MARKET_WS }
 
     public interface Listener {
@@ -37,7 +37,7 @@ public final class BinanceCombinedStreamRouter {
     public static boolean accepts(SocketType socketType,Type type){if(socketType==null||type==null)
         return false;return socketType==SocketType.PUBLIC_WS
                 ?type==Type.BOOK_TICKER||type==Type.DEPTH20
-                :type==Type.AGG_TRADE||type==Type.KLINE_1M;}
+                :type==Type.AGG_TRADE||type==Type.KLINE_1M||type==Type.LIQUIDATION_SNAPSHOT;}
 
     public Event parse(String payload){if(payload==null||payload.trim().isEmpty())return null;
         try{JSONObject root=new JSONObject(payload);String stream=root.optString("stream","").trim();
@@ -48,6 +48,12 @@ public final class BinanceCombinedStreamRouter {
             else if(normalized.endsWith("@aggtrade"))type=Type.AGG_TRADE;
             else if(normalized.endsWith("@kline_1m"))type=Type.KLINE_1M;
             else if(normalized.endsWith("@depth20@100ms"))type=Type.DEPTH20;
+            else if(normalized.endsWith("@forceorder")){
+                JSONObject order=data.optJSONObject("o");
+                if(order==null||!"forceOrder".equalsIgnoreCase(data.optString("e",""))
+                        ||!symbol.equalsIgnoreCase(order.optString("s","")))return null;
+                type=Type.LIQUIDATION_SNAPSHOT;
+            }
             else return null;return new Event(type,stream,symbol,data);
         }catch(Exception ignored){return null;}
     }

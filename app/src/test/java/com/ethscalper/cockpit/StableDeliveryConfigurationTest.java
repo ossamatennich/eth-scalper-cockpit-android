@@ -21,10 +21,10 @@ public class StableDeliveryConfigurationTest {
 
     @Test public void stableBuildHasDurableIndependentIdentity() throws Exception {
         String gradle = read("app/build.gradle");
-        assertTrue(gradle.contains("versionCode 23452"));
-        assertTrue(gradle.contains("versionName '2.34.5.2'"));
+        assertTrue(gradle.contains("versionCode 23453"));
+        assertTrue(gradle.contains("versionName '2.34.5.3'"));
         assertTrue(gradle.contains("applicationIdSuffix '.stable'"));
-        assertTrue(gradle.contains("manifestPlaceholders = [appLabel: 'NMC Stable 5.2']"));
+        assertTrue(gradle.contains("manifestPlaceholders = [appLabel: 'NMC Stable 5.3']"));
         assertTrue(gradle.contains("NMC_SIGNING_STORE_FILE"));
         assertFalse(gradle.contains("storePassword '"));
         assertFalse(gradle.contains("keyPassword '"));
@@ -34,7 +34,7 @@ public class StableDeliveryConfigurationTest {
         String workflow = read(".github/workflows/nmc-ci.yml");
         assertTrue(workflow.contains("Prepare durable NMC signing key"));
         assertTrue(workflow.contains("gradle assembleStable"));
-        assertTrue(workflow.contains("NMC-v2.34.5.2-stable-apk"));
+        assertTrue(workflow.contains("NMC-v2.34.5.3-stable-apk"));
         assertTrue(workflow.contains("app-stable.apk"));
         assertTrue(workflow.contains("apksigner\" verify --print-certs"));
         assertFalse(workflow.contains("NMC-v2.34.3.4-debug-apk"));

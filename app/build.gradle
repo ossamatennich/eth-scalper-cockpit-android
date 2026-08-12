@@ -15,8 +15,8 @@ android {
         applicationId 'com.ethscalper.cockpit'
         minSdk 26
         targetSdk 35
-        versionCode 23452
-        versionName '2.34.5.2'
+        versionCode 23453
+        versionName '2.34.5.3'
         manifestPlaceholders = [appLabel: 'NMC']
     }
 
@@ -42,7 +42,7 @@ android {
         stable {
             initWith debug
             applicationIdSuffix '.stable'
-            manifestPlaceholders = [appLabel: 'NMC Stable 5.2']
+            manifestPlaceholders = [appLabel: 'NMC Stable 5.3']
             signingConfig stableSigningAvailable ? signingConfigs.nmcStable : signingConfigs.debug
             matchingFallbacks = ['debug']
         }

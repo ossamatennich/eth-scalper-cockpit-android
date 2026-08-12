@@ -30,7 +30,8 @@ import java.util.zip.InflaterInputStream;
 public final class CausalCaptureStore {
     public static final int MAGIC=0x4E4D4331; // NMC1
     public static final int LEGACY_BLOCK_VERSION=1;
-    public static final int BLOCK_VERSION=2;
+    public static final int V2_BLOCK_VERSION=2;
+    public static final int BLOCK_VERSION=3;
     public static final int HEADER_BYTES=40;
     public static final int MAX_RECORDS_PER_BLOCK=4_096;
     public static final int MAX_RAW_BLOCK_BYTES=4*1024*1024;
@@ -74,13 +75,14 @@ public final class CausalCaptureStore {
         if(records==null||records.isEmpty()||records.size()>MAX_RECORDS_PER_BLOCK)
             throw new IllegalArgumentException("records");
         int blockVersion=records.get(0) instanceof MicrostructureMarketRecord
-                ?BLOCK_VERSION:LEGACY_BLOCK_VERSION;
+                ?((MicrostructureMarketRecord)records.get(0)).recordFormatVersion:LEGACY_BLOCK_VERSION;
         long previous=0;for(CausalMarketRecord record:records){if(record==null)
             throw new IllegalArgumentException("record");if(record.kind==CausalMarketRecord.Kind.SESSION){
                 if(record.sequence!=1)throw new IllegalArgumentException("session sequence");
                 previous=0;}if(previous>0&&record.sequence<=previous)
-            throw new IllegalArgumentException("sequence");if((record instanceof MicrostructureMarketRecord)
-                    !=(blockVersion==BLOCK_VERSION))throw new IllegalArgumentException("mixed format");
+            throw new IllegalArgumentException("sequence");if(record instanceof MicrostructureMarketRecord
+                    ?((MicrostructureMarketRecord)record).recordFormatVersion!=blockVersion
+                    :blockVersion!=LEGACY_BLOCK_VERSION)throw new IllegalArgumentException("mixed format");
             previous=record.sequence;}
         byte[] raw=encode(records,blockVersion);if(raw.length>MAX_RAW_BLOCK_BYTES)
             throw new IllegalArgumentException("raw block");byte[] compressed=compress(raw);
@@ -140,7 +142,8 @@ public final class CausalCaptureStore {
                 int magic=input.readInt(),version=input.readInt(),count=input.readInt();
                 int rawLength=input.readInt(),compressedLength=input.readInt(),expectedCrc=input.readInt();
                 long firstSequence=input.readLong(),lastSequence=input.readLong();
-                if(magic!=MAGIC||(version!=LEGACY_BLOCK_VERSION&&version!=BLOCK_VERSION)
+                if(magic!=MAGIC||(version!=LEGACY_BLOCK_VERSION&&version!=V2_BLOCK_VERSION
+                        &&version!=BLOCK_VERSION)
                         ||count<1||count>MAX_RECORDS_PER_BLOCK
                         ||rawLength<1||rawLength>MAX_RAW_BLOCK_BYTES||compressedLength<1
                         ||compressedLength>MAX_RAW_BLOCK_BYTES||firstSequence<=0
@@ -209,11 +212,11 @@ public final class CausalCaptureStore {
                         out.writeDouble(value.buyerNotional);out.writeDouble(value.sellerNotional);break;
                     case GAP:out.writeLong(value.gapFromAt);out.writeLong(value.gapToAt);
                         string(out,value.reasonCode);break;
-                    case TOP_OF_BOOK_SAMPLE:requireV2(value,version);out.writeLong(value.exchangeEventAt);
+                    case TOP_OF_BOOK_SAMPLE:requireMicro(value,version);out.writeLong(value.exchangeEventAt);
                         out.writeLong(value.transactionAt);out.writeLong(value.updateId);
                         out.writeDouble(value.bid);out.writeDouble(value.bidQuantity);
                         out.writeDouble(value.ask);out.writeDouble(value.askQuantity);break;
-                    case FLOW_100MS:{MicrostructureMarketRecord v=requireV2(value,version);
+                    case FLOW_100MS:{MicrostructureMarketRecord v=requireMicro(value,version);
                         out.writeLong(value.bucketStartAt);out.writeLong(v.firstReceivedAt);
                         out.writeLong(v.lastReceivedAt);out.writeLong(value.firstTradeId);
                         out.writeLong(value.lastTradeId);out.writeLong(value.firstTradeAt);
@@ -222,16 +225,24 @@ public final class CausalCaptureStore {
                         out.writeDouble(value.high);out.writeDouble(value.low);out.writeDouble(value.close);
                         out.writeDouble(value.buyerBase);out.writeDouble(value.sellerBase);
                         out.writeDouble(value.buyerNotional);out.writeDouble(value.sellerNotional);break;}
-                    case DEPTH20_SAMPLE:{MicrostructureMarketRecord v=requireV2(value,version);
+                    case DEPTH20_SAMPLE:{MicrostructureMarketRecord v=requireMicro(value,version);
                         out.writeLong(value.exchangeEventAt);out.writeLong(value.transactionAt);
                         out.writeLong(v.firstUpdateId);out.writeLong(v.finalUpdateId);
                         out.writeLong(v.previousFinalUpdateId);levels(out,v.bids);levels(out,v.asks);break;}
-                    case DROP_SUMMARY:{MicrostructureMarketRecord v=requireV2(value,version);
+                    case DROP_SUMMARY:{MicrostructureMarketRecord v=requireMicro(value,version);
                         out.writeLong(value.gapFromAt);out.writeLong(value.gapToAt);
                         string(out,value.reasonCode);out.writeShort(v.droppedByKind.size());
                         for(java.util.Map.Entry<String,Long> entry:v.droppedByKind.entrySet()){
                             string(out,entry.getKey());out.writeLong(entry.getValue());}break;}
-                    case HEALTH:requireV2(value,version);string(out,value.reasonCode);break;}}
+                    case HEALTH:requireMicro(value,version);string(out,value.reasonCode);break;
+                    case LIQUIDATION_SNAPSHOT:{MicrostructureMarketRecord v=requireMicro(value,version);
+                        if(version!=BLOCK_VERSION)throw new IllegalArgumentException("V3 liquidation");
+                        out.writeLong(value.exchangeEventAt);out.writeLong(v.tradeAt);
+                        string(out,v.orderSide);string(out,v.orderType);string(out,v.timeInForce);
+                        out.writeDouble(v.originalQuantity);out.writeDouble(v.price);
+                        out.writeDouble(v.averagePrice);string(out,v.orderStatus);
+                        out.writeDouble(v.lastFilledQuantity);
+                        out.writeDouble(v.accumulatedFilledQuantity);break;}}}
         }return bytes.toByteArray();}
     private static List<CausalMarketRecord> decode(byte[] raw,int count,int version)throws Exception {
         ArrayList<CausalMarketRecord> out=new ArrayList<>(count);
@@ -241,9 +252,9 @@ public final class CausalCaptureStore {
                     CausalMarketRecord.Kind.values()[ordinal];String session=string(in);
             long sequence=in.readLong(),receivedAt=in.readLong(),monotonicAt=in.readLong();
             String symbol=string(in),source=string(in);CausalMarketRecord value;
-            switch(kind){case SESSION:String sessionReason=string(in);value=version==BLOCK_VERSION
-                        ?MicrostructureMarketRecord.session(session,sequence,receivedAt,monotonicAt,
-                                source,sessionReason)
+            switch(kind){case SESSION:String sessionReason=string(in);value=version>=V2_BLOCK_VERSION
+                        ?MicrostructureMarketRecord.sessionForVersion(version,session,sequence,receivedAt,
+                                monotonicAt,source,sessionReason)
                         :CausalMarketRecord.session(session,sequence,receivedAt,monotonicAt,source,
                                 sessionReason);break;
                 case QUOTE:value=CausalMarketRecord.quote(session,sequence,receivedAt,monotonicAt,
@@ -255,29 +266,35 @@ public final class CausalCaptureStore {
                         in.readDouble(),in.readDouble(),in.readDouble(),in.readDouble(),
                         in.readDouble(),in.readDouble(),in.readDouble(),in.readDouble());break;
                 case GAP:{long from=in.readLong(),to=in.readLong();String reason=string(in);
-                    value=version==BLOCK_VERSION?MicrostructureMarketRecord.gap(session,sequence,
-                            receivedAt,monotonicAt,symbol,source,from,to,reason)
+                    value=version>=V2_BLOCK_VERSION?MicrostructureMarketRecord.gapForVersion(version,
+                            session,sequence,receivedAt,monotonicAt,symbol,source,from,to,reason)
                             :CausalMarketRecord.gap(session,sequence,receivedAt,monotonicAt,symbol,
                                     source,from,to,reason);break;}
-                case TOP_OF_BOOK_SAMPLE:requireVersion2(version);value=MicrostructureMarketRecord.topBook(
-                        session,sequence,receivedAt,monotonicAt,symbol,source,in.readLong(),in.readLong(),
+                case TOP_OF_BOOK_SAMPLE:requireMicroVersion(version);value=MicrostructureMarketRecord.topBookForVersion(
+                        version,session,sequence,receivedAt,monotonicAt,symbol,source,in.readLong(),in.readLong(),
                         in.readLong(),in.readDouble(),in.readDouble(),in.readDouble(),in.readDouble());break;
-                case FLOW_100MS:requireVersion2(version);value=MicrostructureMarketRecord.flow100(
-                        session,sequence,receivedAt,monotonicAt,symbol,source,in.readLong(),
+                case FLOW_100MS:requireMicroVersion(version);value=MicrostructureMarketRecord.flow100ForVersion(
+                        version,session,sequence,receivedAt,monotonicAt,symbol,source,in.readLong(),
                         in.readLong(),in.readLong(),in.readLong(),in.readLong(),in.readLong(),
                         in.readLong(),in.readLong(),in.readLong(),in.readDouble(),in.readDouble(),
                         in.readDouble(),in.readDouble(),in.readDouble(),in.readDouble(),in.readDouble(),
                         in.readDouble());break;
-                case DEPTH20_SAMPLE:requireVersion2(version);value=MicrostructureMarketRecord.depth20(
-                        session,sequence,receivedAt,monotonicAt,symbol,source,in.readLong(),in.readLong(),
+                case DEPTH20_SAMPLE:requireMicroVersion(version);value=MicrostructureMarketRecord.depth20ForVersion(
+                        version,session,sequence,receivedAt,monotonicAt,symbol,source,in.readLong(),in.readLong(),
                         in.readLong(),in.readLong(),in.readLong(),levels(in),levels(in));break;
-                case DROP_SUMMARY:{requireVersion2(version);long from=in.readLong(),to=in.readLong();
+                case DROP_SUMMARY:{requireMicroVersion(version);long from=in.readLong(),to=in.readLong();
                     String reason=string(in);int size=in.readUnsignedShort();java.util.LinkedHashMap<String,Long>
                             drops=new java.util.LinkedHashMap<>();for(int j=0;j<size;j++)drops.put(string(in),
-                            in.readLong());value=MicrostructureMarketRecord.dropSummary(session,sequence,
-                            receivedAt,monotonicAt,source,from,to,drops);break;}
-                case HEALTH:requireVersion2(version);value=MicrostructureMarketRecord.health(session,
-                        sequence,receivedAt,monotonicAt,source,string(in));break;
+                            in.readLong());value=MicrostructureMarketRecord.dropSummaryForVersion(version,
+                            session,sequence,receivedAt,monotonicAt,source,from,to,drops);break;}
+                case HEALTH:requireMicroVersion(version);value=MicrostructureMarketRecord.healthForVersion(
+                        version,session,sequence,receivedAt,monotonicAt,source,string(in));break;
+                case LIQUIDATION_SNAPSHOT:if(version!=BLOCK_VERSION)
+                        throw new IllegalStateException("unsupported liquidation version");
+                    value=MicrostructureMarketRecord.liquidation(session,sequence,receivedAt,
+                            monotonicAt,symbol,source,in.readLong(),in.readLong(),string(in),string(in),
+                            string(in),in.readDouble(),in.readDouble(),in.readDouble(),string(in),
+                            in.readDouble(),in.readDouble());break;
                 default:throw new IllegalStateException("record kind");}out.add(value);}
             if(in.available()!=0)throw new IllegalStateException("capture trailing payload");}
         return out;}
@@ -298,10 +315,12 @@ public final class CausalCaptureStore {
     private static String string(DataInputStream in)throws Exception {int length=in.readUnsignedShort();
         if(length>512)throw new IllegalStateException("string");byte[] bytes=new byte[length];
         in.readFully(bytes);return new String(bytes,StandardCharsets.UTF_8);}
-    private static MicrostructureMarketRecord requireV2(CausalMarketRecord value,int version){
-        if(version!=BLOCK_VERSION||!(value instanceof MicrostructureMarketRecord))
-            throw new IllegalArgumentException("v2 record");return (MicrostructureMarketRecord)value;}
-    private static void requireVersion2(int version){if(version!=BLOCK_VERSION)
+    private static MicrostructureMarketRecord requireMicro(CausalMarketRecord value,int version){
+        if(!(value instanceof MicrostructureMarketRecord)
+                ||((MicrostructureMarketRecord)value).recordFormatVersion!=version)
+            throw new IllegalArgumentException("microstructure record");return (MicrostructureMarketRecord)value;}
+    private static void requireMicroVersion(int version){if(version!=V2_BLOCK_VERSION
+            &&version!=BLOCK_VERSION)
         throw new IllegalStateException("unsupported V1 record kind");}
     private static void levels(DataOutputStream out,double[][] levels)throws Exception{
         out.writeByte(levels.length);for(double[] level:levels){out.writeDouble(level[0]);

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.5.3 — Forced Liquidation Capture V3
+
+- ajoute `ethusdt@forceOrder`, `solusdt@forceOrder` et `btcusdt@forceOrder` exclusivement à `MARKET_WS` ;
+- introduit `NMC_CAUSAL_MARKET_CAPTURE_V3` et le kind `LIQUIDATION_SNAPSHOT`, avec validation stricte, stockage borné, CRC et replay V1/V2/V3 ;
+- expose les compteurs par symbole et dans le manifeste FULL sans faire du silence naturel de ce stream une condition de santé ;
+- met à jour l’outil offline pour charger V1/V2/V3 et compter les snapshots sans créer de règle de stratégie ;
+- conserve intégralement `NMC_SCALP_CV_CORE_V1` et `realTradingAllowed=false`.
+
 ## 2.34.5.2 — Market/Public WebSocket Namespace Fix
 
 - sépare les flux Binance USD-M Futures entre `PUBLIC_WS` (`bookTicker`, `depth20@100ms`) via `/public/stream` et `MARKET_WS` (`aggTrade`, `kline_1m`) via `/market/stream` pour ETH/SOL/BTC ;

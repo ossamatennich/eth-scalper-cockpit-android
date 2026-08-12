@@ -17,7 +17,8 @@ public class CausalMarketRecord {
 
     public enum Kind {
         SESSION, QUOTE, FLOW_1S, GAP,
-        TOP_OF_BOOK_SAMPLE, FLOW_100MS, DEPTH20_SAMPLE, DROP_SUMMARY, HEALTH
+        TOP_OF_BOOK_SAMPLE, FLOW_100MS, DEPTH20_SAMPLE, DROP_SUMMARY, HEALTH,
+        LIQUIDATION_SNAPSHOT
     }
 
     public final Kind kind;

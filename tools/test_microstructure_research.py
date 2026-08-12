@@ -71,6 +71,36 @@ class MicrostructureResearchTest(unittest.TestCase):
         self.assertNotIn("Infinity", serialized)
         self.assertGreaterEqual(summary["usableMs"], 0)
 
+    def test_v3_liquidation_is_loaded_and_absence_is_optional(self):
+        v3_session = session()
+        v3_session.update(schema="NMC_CAUSAL_MARKET_CAPTURE_V3", formatVersion=3)
+        liquidation = {"schema": "NMC_CAUSAL_MARKET_CAPTURE_V3", "formatVersion": 3,
+                       "kind": "LIQUIDATION_SNAPSHOT", "sessionId": "s", "sequence": 2,
+                       "receivedAt": 100, "symbol": "ETHUSDT", "exchangeEventAt": 99,
+                       "tradeAt": 98, "orderSide": "SELL", "orderType": "LIMIT",
+                       "timeInForce": "IOC", "orderStatus": "FILLED", "originalQuantity": 2.0,
+                       "price": 1900.0, "averagePrice": 1899.5, "lastFilledQuantity": 2.0,
+                       "accumulatedFilledQuantity": 2.0}
+        builder = MicrostructureResearchBuilder()
+        self.assertIsNone(builder.consume(v3_session))
+        self.assertIsNone(builder.consume(liquidation))
+        self.assertEqual(1, builder.summary()["liquidationSnapshots"])
+        self.assertEqual("SELL", builder.liquidation_records[0]["orderSide"])
+        _, empty_summary = build([v3_session])
+        self.assertEqual(0, empty_summary["liquidationSnapshots"])
+
+    def test_v1_v2_v3_are_accepted_but_unknown_pair_is_rejected(self):
+        for schema_name, version in (("NMC_CAUSAL_MARKET_CAPTURE_V1", 1),
+                                     ("NMC_CAUSAL_MARKET_CAPTURE_V2", 2),
+                                     ("NMC_CAUSAL_MARKET_CAPTURE_V3", 3)):
+            value = session()
+            value.update(schema=schema_name, formatVersion=version)
+            MicrostructureResearchBuilder().consume(value)
+        bad = session()
+        bad.update(schema="NMC_CAUSAL_MARKET_CAPTURE_V3", formatVersion=2)
+        with self.assertRaises(ValueError):
+            MicrostructureResearchBuilder().consume(bad)
+
 
 if __name__ == "__main__":
     unittest.main()

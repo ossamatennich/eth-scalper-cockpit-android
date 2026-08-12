@@ -1,5 +1,7 @@
 package com.ethscalper.cockpit;
 
+import org.json.JSONObject;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -135,12 +137,22 @@ public final class DiagnosticStreamingExporter {
                 .append(",\"runtimeHealthUsable\":").append(runtimeUsable)
                 .append(",\"usableForMicrostructureResearch\":").append(usable)
                 .append(",\"recordCountByKind\":").append(json(value.capture.byKind))
+                .append(",\"liquidationCountBySymbol\":").append(json(value.capture.liquidationBySymbol))
+                .append(",\"totalLiquidationSnapshots\":").append(value.capture.liquidations)
+                .append(",\"liquidationStreamConfigured\":true")
+                .append(",\"liquidationStreamNaturallySparse\":true")
+                .append(",\"writer\":").append(writerJson(statusJson))
                 .append(",\"recordCountBySymbol\":").append(json(value.capture.bySymbol))
                 .append(",\"recordCountBySource\":").append(json(value.capture.bySource))
                 .append(",\"strictCrc\":true,\"sourceFiles\":[");
         for(int i=0;i<value.sourceFiles.size();i++){if(i>0)out.append(',');
             out.append('"').append(escape(value.sourceFiles.get(i))).append('"');}
         return out.append("]}").toString();}
+
+    private static String writerJson(String statusJson){if(statusJson==null)return "{}";try{
+        JSONObject root=new JSONObject(statusJson),capture=root.optJSONObject("causalMarketCapture");
+        if(capture==null)capture=root;JSONObject writer=capture.optJSONObject("writer");
+        return writer==null?"{}":writer.toString();}catch(Exception ignored){return "{}";}}
 
     private static String json(Map<String,?> value){StringBuilder out=new StringBuilder();appendJson(out,value);
         return out.toString();}
@@ -242,18 +254,24 @@ public final class DiagnosticStreamingExporter {
             this.sourceBytes=sourceBytes;this.sourceFiles=Collections.unmodifiableList(new ArrayList<>(sourceFiles));
             this.capture=capture;}}
     private static final class CaptureManifestStats{String schema=MicrostructureMarketRecord.SCHEMA;
-        int formatVersion=MicrostructureMarketRecord.FORMAT_VERSION;long firstAt,lastAt,gaps,dropSummaries,
-                flows,depth;final LinkedHashMap<String,Long> byKind=new LinkedHashMap<>(),
-                bySymbol=new LinkedHashMap<>(),bySource=new LinkedHashMap<>();void accept(CausalMarketRecord record){
-            if(record instanceof MicrostructureMarketRecord){schema=MicrostructureMarketRecord.SCHEMA;
-                formatVersion=2;}else if(firstAt==0){schema=CausalMarketRecord.SCHEMA;formatVersion=1;}
+        int formatVersion=MicrostructureMarketRecord.FORMAT_VERSION;boolean seen;long firstAt,lastAt,
+                gaps,dropSummaries,flows,depth,liquidations;
+        final LinkedHashMap<String,Long> byKind=new LinkedHashMap<>(),bySymbol=new LinkedHashMap<>(),
+                bySource=new LinkedHashMap<>(),liquidationBySymbol=new LinkedHashMap<>();
+        void accept(CausalMarketRecord record){int version=record instanceof MicrostructureMarketRecord
+                    ?((MicrostructureMarketRecord)record).recordFormatVersion:CausalMarketRecord.FORMAT_VERSION;
+            String nextSchema=record instanceof MicrostructureMarketRecord
+                    ?((MicrostructureMarketRecord)record).recordSchema:CausalMarketRecord.SCHEMA;
+            if(!seen||version>formatVersion){schema=nextSchema;formatVersion=version;}seen=true;
             if(firstAt==0||record.receivedAt<firstAt)firstAt=record.receivedAt;
             lastAt=Math.max(lastAt,record.receivedAt);increment(byKind,record.kind.name());
             increment(bySymbol,record.symbol);increment(bySource,record.source);
             if(record.kind==CausalMarketRecord.Kind.GAP)gaps++;
             if(record.kind==CausalMarketRecord.Kind.DROP_SUMMARY)dropSummaries++;
             if(record.kind==CausalMarketRecord.Kind.FLOW_100MS)flows++;
-            if(record.kind==CausalMarketRecord.Kind.DEPTH20_SAMPLE)depth++;}
+            if(record.kind==CausalMarketRecord.Kind.DEPTH20_SAMPLE)depth++;
+            if(record.kind==CausalMarketRecord.Kind.LIQUIDATION_SNAPSHOT){liquidations++;
+                increment(liquidationBySymbol,record.symbol);}}
         private static void increment(Map<String,Long> values,String key){values.put(key,
                 values.getOrDefault(key,0L)+1L);}}
     public static final class EntryDigest{public final long bytes;public final String sha256;

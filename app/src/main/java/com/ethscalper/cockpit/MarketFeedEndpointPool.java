@@ -61,7 +61,7 @@ public final class MarketFeedEndpointPool {
         appendPublicStreams(value,"btcusdt");return value.toString();
     }
 
-    /** Market namespace: aggressive trades and one-minute klines only. */
+    /** Market namespace: aggressive trades, one-minute klines and sparse liquidation snapshots. */
     public static String marketCombinedStreamUrl(int index,MarketRegistry registry){
         Endpoint endpoint=webSocket(index);StringBuilder value=new StringBuilder(endpoint.baseUrl)
                 .append("/market/stream?streams=");
@@ -77,7 +77,8 @@ public final class MarketFeedEndpointPool {
 
     private static void appendMarketStreams(StringBuilder value,String symbol){
         if(value.charAt(value.length()-1)!='=')value.append('/');
-        value.append(symbol).append("@aggTrade/").append(symbol).append("@kline_1m");
+        value.append(symbol).append("@aggTrade/").append(symbol).append("@kline_1m/")
+                .append(symbol).append("@forceOrder");
     }
 
     public static List<RestEndpoint> klineEndpoints(

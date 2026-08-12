@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline causal feature builder for NMC capture V2.
+"""Offline causal feature builder for NMC capture V1/V2/V3.
 
 Features are descriptive research inputs only. They are not live signals and make no claim of
 predictive value. State is cleared at every explicit GAP/DROP_SUMMARY and no future record is read.
@@ -13,7 +13,11 @@ import math
 from pathlib import Path
 from typing import Any, Deque, Dict, Iterable, List, Optional, Tuple
 
-SCHEMA = "NMC_CAUSAL_MARKET_CAPTURE_V2"
+SCHEMA_V1 = "NMC_CAUSAL_MARKET_CAPTURE_V1"
+SCHEMA_V2 = "NMC_CAUSAL_MARKET_CAPTURE_V2"
+SCHEMA_V3 = "NMC_CAUSAL_MARKET_CAPTURE_V3"
+SCHEMA = SCHEMA_V3
+SUPPORTED_CAPTURE_FORMATS = {(SCHEMA_V1, 1), (SCHEMA_V2, 2), (SCHEMA_V3, 3)}
 SYMBOLS = ("ETHUSDT", "SOLUSDT", "BTCUSDT")
 WINDOWS_MS = (1_000, 5_000, 15_000, 60_000)
 
@@ -100,10 +104,14 @@ class MicrostructureResearchBuilder:
         self.gaps = 0
         self.rejected = 0
         self.coverage = collections.Counter()
+        self.capture_schemas = set()
+        self.liquidation_records: List[Dict[str, Any]] = []
 
     def consume(self, record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        if not isinstance(record, dict) or record.get("schema") != SCHEMA or record.get("formatVersion") != 2:
+        identity = (record.get("schema"), record.get("formatVersion")) if isinstance(record, dict) else None
+        if identity not in SUPPORTED_CAPTURE_FORMATS:
             raise ValueError("unsupported capture schema/version")
+        self.capture_schemas.add(f"{identity[0]}:{identity[1]}")
         kind = str(record.get("kind", ""))
         at = record.get("receivedAt")
         sequence = record.get("sequence")
@@ -146,6 +154,27 @@ class MicrostructureResearchBuilder:
                 self.depth[symbol] = depth_features(record, self.depth.get(symbol))
             except ValueError:
                 self.rejected += 1
+            return None
+        if kind == "LIQUIDATION_SNAPSHOT":
+            required_numbers = ("originalQuantity", "price", "averagePrice",
+                                "lastFilledQuantity", "accumulatedFilledQuantity")
+            values = {key: _finite(record.get(key)) for key in required_numbers}
+            if (any(value is None or value < 0 for value in values.values())
+                    or not str(record.get("orderSide", "")).strip()):
+                self.rejected += 1
+                return None
+            self.liquidation_records.append({
+                "schema": "NMC_LIQUIDATION_RESEARCH_RECORD_V1",
+                "receivedAt": at,
+                "symbol": symbol,
+                "exchangeEventAt": record.get("exchangeEventAt"),
+                "tradeAt": record.get("tradeAt"),
+                "orderSide": record.get("orderSide"),
+                "orderType": record.get("orderType"),
+                "timeInForce": record.get("timeInForce"),
+                "orderStatus": record.get("orderStatus"),
+                **values,
+            })
             return None
         if kind != "FLOW_100MS":
             return None
@@ -218,12 +247,16 @@ class MicrostructureResearchBuilder:
         return {
             "schema": "NMC_MICROSTRUCTURE_RESEARCH_SUMMARY_V1",
             "captureSchema": SCHEMA,
+            "captureSchemasObserved": sorted(self.capture_schemas),
             "recordCounts": dict(self.counts),
             "explicitGaps": self.gaps,
             "rejectedRecords": self.rejected,
             "usableMs": self.usable_ms,
             "usableHours": self.usable_ms / 3_600_000.0,
             "featureRows": features,
+            "liquidationSnapshots": len(self.liquidation_records),
+            "liquidationCountsBySymbol": dict(collections.Counter(
+                row["symbol"] for row in self.liquidation_records)),
             "depthCoverage": _safe_ratio(self.coverage["depth"], features),
             "priceCoverage": _safe_ratio(self.coverage["price"], features),
             "crossAssetCoverage": _safe_ratio(self.coverage["crossAsset"], features),
@@ -262,7 +295,7 @@ def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build causal microstructure features from NMC V2 JSONL")
+    parser = argparse.ArgumentParser(description="Build causal microstructure features from NMC V1/V2/V3 JSONL")
     parser.add_argument("input", type=Path)
     parser.add_argument("--features", type=Path)
     parser.add_argument("--summary", type=Path)

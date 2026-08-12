@@ -44,6 +44,10 @@ public final class MicrostructureCaptureHealth {
         source(symbol,source);observed.depth++;if(accepted){observed.lastDepthAt=Math.max(
                 observed.lastDepthAt,at);MutableSymbol value=symbols.get(symbol);
             value.lastDepthPublicWsAt=Math.max(value.lastDepthPublicWsAt,at);}}
+    /** Naturally sparse research-only stream; deliberately never participates in health gates. */
+    public synchronized void wsForceOrder(String symbol,String source,long at){Source observed=
+        source(symbol,source);observed.forceOrder++;observed.lastForceOrderAt=Math.max(
+                observed.lastForceOrderAt,at);}
     public synchronized void restRowsSeen(String symbol,long count){if(count>0)
         source(symbol,"REST").restSeen+=count;}
     public synchronized void restRowsAccepted(String symbol,long count,long at){if(count>0){
@@ -79,8 +83,11 @@ public final class MicrostructureCaptureHealth {
 
     public synchronized Map<String,Object> snapshot(long now,MicrostructureCaptureV2.Stats capture,
             CausalCaptureWriter.Stats writer){LinkedHashMap<String,Object> root=new LinkedHashMap<>();
-        root.put("schema",MicrostructureMarketRecord.SCHEMA);root.put("formatVersion",2);
+        root.put("schema",MicrostructureMarketRecord.SCHEMA);
+        root.put("formatVersion",MicrostructureMarketRecord.FORMAT_VERSION);
         root.put("observedAt",now);root.put("warmupMs",WARMUP_MS);
+        root.put("liquidationStreamConfigured",true);
+        root.put("liquidationStreamNaturallySparse",true);
         root.put("malformedMessages",malformedMessages);appendSocketCounters(root);
         root.put("publicWs",publicSocket.toMap());root.put("marketWs",marketSocket.toMap());
         root.put("socketDisconnectEvents",new ArrayList<>(disconnectEvents));
@@ -158,16 +165,19 @@ public final class MicrostructureCaptureHealth {
         Map<String,Object> sourcesMap(){LinkedHashMap<String,Object> out=new LinkedHashMap<>();
             for(Map.Entry<String,Source> entry:sources.entrySet())out.put(entry.getKey(),entry.getValue().map());
             return out;}}
-    private static final class Source {long book,agg,kline,depth,restSeen,restAccepted,wsAggAccepted,
-        lastBookAt,lastAggAt,lastAggAcceptedAt,lastKlineAt,lastDepthAt,lastRestAggAt;
+    private static final class Source {long book,agg,kline,depth,forceOrder,restSeen,restAccepted,
+        wsAggAccepted,lastBookAt,lastAggAt,lastAggAcceptedAt,lastKlineAt,lastDepthAt,
+        lastForceOrderAt,lastRestAggAt;
         Map<String,Object> map(){LinkedHashMap<String,Object> out=new LinkedHashMap<>();
             out.put("wsBookTickerMessages",book);out.put("wsAggTradeMessages",agg);
             out.put("wsKlineMessages",kline);out.put("wsDepth20Messages",depth);
+            out.put("forceOrderWsMessages",forceOrder);
             out.put("causalAggTradesAcceptedFromWs",wsAggAccepted);
             out.put("restAggTradeRowsSeen",restSeen);out.put("restAggTradeRowsAcceptedForResearch",restAccepted);
             out.put("lastSuccessfulBookTickerAt",lastBookAt);out.put("lastSuccessfulAggTradeAt",lastAggAt);
             out.put("lastAcceptedWsAggTradeAt",lastAggAcceptedAt);out.put("lastSuccessfulKlineAt",lastKlineAt);
             out.put("lastSuccessfulDepth20At",lastDepthAt);
+            out.put("lastLiquidationReceivedAt",lastForceOrderAt<=0?null:lastForceOrderAt);
             out.put("lastSuccessfulRestAggTradeAt",lastRestAggAt);return out;}}
     private static final class SocketState {final String type;boolean connected;String endpoint="";
         long connects,reconnects,failures,lastConnectAt,lastMessageAt,lastFailureAt,lastClosedAt,

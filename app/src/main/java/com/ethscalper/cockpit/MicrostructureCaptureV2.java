@@ -8,8 +8,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Non-blocking V2 capture core. Quotes and depth are coalesced before the bounded sink and
- * aggregate trades are deduplicated across WS/REST before 100 ms receive-time aggregation.
+ * Non-blocking V3 capture core. Quotes and depth are coalesced before the bounded sink,
+ * aggregate trades are deduplicated across WS/REST, and sparse liquidation snapshots remain
+ * event records. The class name is retained to avoid needless runtime churn.
  */
 public final class MicrostructureCaptureV2 {
     public static final long FLOW_BUCKET_MS=100L;
@@ -97,6 +98,40 @@ public final class MicrostructureCaptureV2 {
                 previousFinalUpdateId,bids,asks);symbols.get(symbol).depthMessagesAccepted++;
         return true;
     }
+
+    /** Writes one validated Binance forceOrder snapshot without coalescing or heuristic dedup. */
+    public synchronized boolean observeLiquidation(String symbol,String source,long receivedAt,
+            long monotonicAt,long exchangeEventAt,long tradeAt,String orderSide,String orderType,
+            String timeInForce,double originalQuantity,double price,double averagePrice,
+            String orderStatus,double lastFilledQuantity,double accumulatedFilledQuantity){
+        MutableSymbolStats stats=CausalMarketRecord.supported(symbol)?symbols.get(symbol):null;
+        if(!validBase(symbol,source,receivedAt,monotonicAt)||exchangeEventAt<0||tradeAt<0
+                ||tradeAt>exchangeEventAt||blank(orderSide)||!nonNegative(originalQuantity)
+                ||!nonNegative(price)||!nonNegative(averagePrice)||!nonNegative(lastFilledQuantity)
+                ||!nonNegative(accumulatedFilledQuantity)){
+            invalidInputs++;if(stats!=null)stats.liquidationSnapshotsRejected++;return false;}
+        advanceCompleted(receivedAt);advanceClock(receivedAt,monotonicAt);
+        boolean accepted=emit(MicrostructureMarketRecord.liquidation(sessionId,nextSequence(),
+                receivedAt,monotonicAt,symbol,source,exchangeEventAt,tradeAt,orderSide,orderType,
+                timeInForce,originalQuantity,price,averagePrice,orderStatus,lastFilledQuantity,
+                accumulatedFilledQuantity));
+        if(accepted){stats.liquidationSnapshotsAccepted++;
+            if("BUY".equalsIgnoreCase(orderSide))stats.liquidationBuyOrderSide++;
+            else if("SELL".equalsIgnoreCase(orderSide))stats.liquidationSellOrderSide++;
+            stats.liquidationOriginalQuantity+=originalQuantity;
+            stats.liquidationAccumulatedFilledQuantity+=accumulatedFilledQuantity;
+            double notional=averagePrice*accumulatedFilledQuantity;
+            if(Double.isFinite(notional))stats.liquidationEstimatedNotional+=notional;
+            stats.lastLiquidationReceivedAt=Math.max(stats.lastLiquidationReceivedAt,receivedAt);
+            stats.lastLiquidationExchangeEventAt=Math.max(stats.lastLiquidationExchangeEventAt,
+                    exchangeEventAt);
+        }else stats.liquidationSnapshotsRejected++;
+        return accepted;
+    }
+
+    /** Counts a malformed socket payload without ever passing it to the bounded writer. */
+    public synchronized void rejectLiquidation(String symbol){invalidInputs++;
+        if(CausalMarketRecord.supported(symbol))symbols.get(symbol).liquidationSnapshotsRejected++;}
 
     /** Emits only buckets that are complete at this local time; no missing sample is fabricated. */
     public synchronized void flushThrough(long receivedAt,long monotonicAt){
@@ -255,21 +290,42 @@ public final class MicrostructureCaptureV2 {
     private static final class MutableSymbolStats {long topMessagesAccepted,topSamples,
         depthMessagesAccepted,depthInvalid,depthSamples,aggTradesAccepted,aggTradesDuplicate,
         aggTradesLate,aggregateIdGaps,flowBuckets,causalGaps,sourceTransitions,lastTopAt,
-        lastDepthAt,lastAggTradeAt;void clear(){topMessagesAccepted=topSamples=depthMessagesAccepted=
+        lastDepthAt,lastAggTradeAt,liquidationSnapshotsAccepted,liquidationSnapshotsRejected,
+        liquidationBuyOrderSide,liquidationSellOrderSide,lastLiquidationReceivedAt,
+        lastLiquidationExchangeEventAt;double liquidationOriginalQuantity,
+        liquidationAccumulatedFilledQuantity,liquidationEstimatedNotional;
+        void clear(){topMessagesAccepted=topSamples=depthMessagesAccepted=
             depthInvalid=depthSamples=aggTradesAccepted=aggTradesDuplicate=aggTradesLate=
             aggregateIdGaps=flowBuckets=causalGaps=sourceTransitions=lastTopAt=lastDepthAt=
-            lastAggTradeAt=0;}SymbolStats snapshot(){return new SymbolStats(this);}}
+            lastAggTradeAt=liquidationSnapshotsAccepted=liquidationSnapshotsRejected=
+            liquidationBuyOrderSide=liquidationSellOrderSide=lastLiquidationReceivedAt=
+            lastLiquidationExchangeEventAt=0;liquidationOriginalQuantity=
+            liquidationAccumulatedFilledQuantity=liquidationEstimatedNotional=0;}
+        SymbolStats snapshot(){return new SymbolStats(this);}}
 
     public static final class SymbolStats {public final long topMessagesAccepted,topSamples,
         depthMessagesAccepted,depthInvalid,depthSamples,aggTradesAccepted,aggTradesDuplicate,
         aggTradesLate,aggregateIdGaps,flowBuckets,causalGaps,sourceTransitions,lastTopAt,
-        lastDepthAt,lastAggTradeAt;SymbolStats(MutableSymbolStats v){topMessagesAccepted=v.topMessagesAccepted;
+        lastDepthAt,lastAggTradeAt,liquidationSnapshotsAccepted,liquidationSnapshotsRejected,
+        liquidationBuyOrderSide,liquidationSellOrderSide,lastLiquidationReceivedAt,
+        lastLiquidationExchangeEventAt;public final double liquidationOriginalQuantity,
+        liquidationAccumulatedFilledQuantity,liquidationEstimatedNotional;
+        SymbolStats(MutableSymbolStats v){topMessagesAccepted=v.topMessagesAccepted;
             topSamples=v.topSamples;depthMessagesAccepted=v.depthMessagesAccepted;depthInvalid=v.depthInvalid;
             depthSamples=v.depthSamples;aggTradesAccepted=v.aggTradesAccepted;
             aggTradesDuplicate=v.aggTradesDuplicate;aggTradesLate=v.aggTradesLate;
             aggregateIdGaps=v.aggregateIdGaps;flowBuckets=v.flowBuckets;causalGaps=v.causalGaps;
             sourceTransitions=v.sourceTransitions;lastTopAt=v.lastTopAt;lastDepthAt=v.lastDepthAt;
-            lastAggTradeAt=v.lastAggTradeAt;}public Map<String,Object> toMap(){LinkedHashMap<String,Object> out=
+            lastAggTradeAt=v.lastAggTradeAt;liquidationSnapshotsAccepted=v.liquidationSnapshotsAccepted;
+            liquidationSnapshotsRejected=v.liquidationSnapshotsRejected;
+            liquidationBuyOrderSide=v.liquidationBuyOrderSide;
+            liquidationSellOrderSide=v.liquidationSellOrderSide;
+            lastLiquidationReceivedAt=v.lastLiquidationReceivedAt;
+            lastLiquidationExchangeEventAt=v.lastLiquidationExchangeEventAt;
+            liquidationOriginalQuantity=v.liquidationOriginalQuantity;
+            liquidationAccumulatedFilledQuantity=v.liquidationAccumulatedFilledQuantity;
+            liquidationEstimatedNotional=v.liquidationEstimatedNotional;}
+        public Map<String,Object> toMap(){LinkedHashMap<String,Object> out=
                 new LinkedHashMap<>();out.put("topBookMessagesAccepted",topMessagesAccepted);
             out.put("causalTopBookSamples",topSamples);out.put("depth20MessagesAccepted",depthMessagesAccepted);
             out.put("causalDepthInvalid",depthInvalid);out.put("causalDepthSamples",depthSamples);
@@ -278,6 +334,16 @@ public final class MicrostructureCaptureV2 {
             out.put("causalFlow100msBuckets",flowBuckets);out.put("causalGaps",causalGaps);
             out.put("sourceTransitions",sourceTransitions);out.put("lastTopBookAt",lastTopAt);
             out.put("lastDepth20At",lastDepthAt);out.put("lastAggTradeAt",lastAggTradeAt);
+            out.put("acceptedLiquidationSnapshots",liquidationSnapshotsAccepted);
+            out.put("rejectedLiquidationSnapshots",liquidationSnapshotsRejected);
+            out.put("liquidationBuyOrderSideCount",liquidationBuyOrderSide);
+            out.put("liquidationSellOrderSideCount",liquidationSellOrderSide);
+            out.put("liquidationOriginalQuantity",liquidationOriginalQuantity);
+            out.put("liquidationAccumulatedFilledQuantity",liquidationAccumulatedFilledQuantity);
+            out.put("liquidationEstimatedNotional",liquidationEstimatedNotional);
+            out.put("lastLiquidationReceivedAt",lastLiquidationReceivedAt<=0?null:lastLiquidationReceivedAt);
+            out.put("lastLiquidationExchangeEventAt",lastLiquidationExchangeEventAt<=0?null:
+                    lastLiquidationExchangeEventAt);
             return Collections.unmodifiableMap(out);}}
 
     public static final class Stats {public final String sessionId,source;public final long sequence,
@@ -288,11 +354,17 @@ public final class MicrostructureCaptureV2 {
             this.clockRegressions=clockRegressions;this.sinkErrors=sinkErrors;
             this.pendingDroppedRecords=pendingDroppedRecords;this.symbols=Collections.unmodifiableMap(symbols);}
         public Map<String,Object> toMap(){LinkedHashMap<String,Object> out=new LinkedHashMap<>();
-            out.put("schema",MicrostructureMarketRecord.SCHEMA);out.put("formatVersion",2);
+            out.put("schema",MicrostructureMarketRecord.SCHEMA);
+            out.put("formatVersion",MicrostructureMarketRecord.FORMAT_VERSION);
             out.put("sessionId",sessionId);out.put("source",source);out.put("sequence",sequence);
             out.put("invalidInputs",invalidInputs);out.put("clockRegressions",clockRegressions);
             out.put("sinkErrors",sinkErrors);out.put("pendingDroppedRecords",pendingDroppedRecords);
             LinkedHashMap<String,Object> perSymbol=new LinkedHashMap<>();for(Map.Entry<String,SymbolStats> e:
                     symbols.entrySet())perSymbol.put(e.getKey(),e.getValue().toMap());out.put("symbols",perSymbol);
+            long total=0;int observed=0;for(SymbolStats value:symbols.values()){
+                total+=value.liquidationSnapshotsAccepted;if(value.liquidationSnapshotsAccepted>0)observed++;}
+            out.put("totalLiquidationSnapshots",total);out.put("liquidationSymbolsObserved",observed);
+            out.put("liquidationStreamConfigured",true);
+            out.put("liquidationStreamNaturallySparse",true);
             return Collections.unmodifiableMap(out);}}
 }
