@@ -217,3 +217,10 @@
 - plans actifs persistants, immuables et terminés uniquement au TP ou au SL ;
 - interface native NMC et diagnostics multi-marchés bornés ;
 - alerte sonore centrale unique pour chaque nouveau plan final.
+## 2.34.5.4 — Incremental Depth Capture V4
+
+- ajoute un troisième WebSocket Futures public isolé avec `ethusdt@depth@100ms`, `solusdt@depth@100ms` et `btcusdt@depth@100ms` ;
+- ajoute les records causaux bruts `DEPTH_DIFF` et les ancres REST publiques `DEPTH_BOOTSTRAP` (`limit=1000`) dans `NMC_CAUSAL_MARKET_CAPTURE_V4` ;
+- vérifie la continuité officielle `U/u/pu`, invalide explicitement les intervalles perdus et ré-ancre sans bloquer les flux 5.3 ;
+- préserve le replay V1/V2/V3, ajoute V4 au manifest et à l’outil offline, avec une santé incremental-depth distincte ;
+- release collector-only : moteur `NMC_SCALP_CV_CORE_V1`, règles, risques, publication et notifications inchangés ; `realTradingAllowed=false`.

@@ -70,6 +70,13 @@ public final class MarketFeedEndpointPool {
         appendMarketStreams(value,"btcusdt");return value.toString();
     }
 
+    /** Dedicated public namespace connection for raw incremental diff-depth updates only. */
+    public static String incrementalDepthCombinedStreamUrl(int index,MarketRegistry registry){
+        Endpoint endpoint=webSocket(index);StringBuilder value=new StringBuilder(endpoint.baseUrl)
+                .append("/public/stream?streams=");for(MarketProfile profile:registry.tradedMarkets())
+            appendIncrementalDepthStream(value,profile.symbol.toLowerCase(Locale.ROOT));
+        appendIncrementalDepthStream(value,"btcusdt");return value.toString();}
+
     private static void appendPublicStreams(StringBuilder value,String symbol){
         if(value.charAt(value.length()-1)!='=')value.append('/');
         value.append(symbol).append("@bookTicker/").append(symbol).append("@depth20@100ms");
@@ -80,6 +87,16 @@ public final class MarketFeedEndpointPool {
         value.append(symbol).append("@aggTrade/").append(symbol).append("@kline_1m/")
                 .append(symbol).append("@forceOrder");
     }
+
+    private static void appendIncrementalDepthStream(StringBuilder value,String symbol){
+        if(value.charAt(value.length()-1)!='=')value.append('/');
+        value.append(symbol).append("@depth@100ms");}
+
+    /** Unsigned USD-M Futures order-book snapshot used only to anchor diff-depth replay. */
+    public static List<RestEndpoint> depthSnapshotEndpoints(String symbol,int limit){
+        if(!CausalMarketRecord.supported(symbol)||limit!=1000)throw new IllegalArgumentException("depth");
+        return Collections.singletonList(new RestEndpoint(FUTURES_PRIMARY,FUTURES_REST+
+                "/depth?symbol="+symbol+"&limit="+limit,false));}
 
     public static List<RestEndpoint> klineEndpoints(
             String symbol,

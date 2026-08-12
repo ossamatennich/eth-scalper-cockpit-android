@@ -2,7 +2,8 @@ import json
 import math
 import unittest
 
-from tools.microstructure_research import MicrostructureResearchBuilder, build, depth_features
+from tools.microstructure_research import (MicrostructureResearchBuilder, build, depth_features,
+                                           chronological_incremental_depth)
 
 
 def session(at=0, sequence=1):
@@ -89,10 +90,11 @@ class MicrostructureResearchTest(unittest.TestCase):
         _, empty_summary = build([v3_session])
         self.assertEqual(0, empty_summary["liquidationSnapshots"])
 
-    def test_v1_v2_v3_are_accepted_but_unknown_pair_is_rejected(self):
+    def test_v1_v2_v3_v4_are_accepted_but_unknown_pair_is_rejected(self):
         for schema_name, version in (("NMC_CAUSAL_MARKET_CAPTURE_V1", 1),
                                      ("NMC_CAUSAL_MARKET_CAPTURE_V2", 2),
-                                     ("NMC_CAUSAL_MARKET_CAPTURE_V3", 3)):
+                                     ("NMC_CAUSAL_MARKET_CAPTURE_V3", 3),
+                                     ("NMC_CAUSAL_MARKET_CAPTURE_V4", 4)):
             value = session()
             value.update(schema=schema_name, formatVersion=version)
             MicrostructureResearchBuilder().consume(value)
@@ -100,6 +102,36 @@ class MicrostructureResearchTest(unittest.TestCase):
         bad.update(schema="NMC_CAUSAL_MARKET_CAPTURE_V3", formatVersion=2)
         with self.assertRaises(ValueError):
             MicrostructureResearchBuilder().consume(bad)
+
+    def test_v4_bootstrap_diff_continuity_and_raw_zero_removal(self):
+        v4_session = session()
+        v4_session.update(schema="NMC_CAUSAL_MARKET_CAPTURE_V4", formatVersion=4)
+        bootstrap = {"schema": "NMC_CAUSAL_MARKET_CAPTURE_V4", "formatVersion": 4,
+                     "kind": "DEPTH_BOOTSTRAP", "sessionId": "s", "sequence": 2,
+                     "receivedAt": 100, "symbol": "ETHUSDT", "lastUpdateId": 10,
+                     "bids": [[100, 2]], "asks": [[101, 2]]}
+        diff = {"schema": "NMC_CAUSAL_MARKET_CAPTURE_V4", "formatVersion": 4,
+                "kind": "DEPTH_DIFF", "sessionId": "s", "sequence": 3,
+                "receivedAt": 110, "symbol": "ETHUSDT", "firstUpdateId": 10,
+                "finalUpdateId": 11, "previousFinalUpdateId": 9,
+                "bids": [[100, 0]], "asks": [[101, 3]]}
+        builder = MicrostructureResearchBuilder()
+        for record in (v4_session, bootstrap, diff):
+            builder.consume(record)
+        summary = builder.summary()
+        self.assertEqual(1, summary["depthDiffCountBySymbol"]["ETHUSDT"])
+        self.assertEqual(1, summary["depthBootstrapCountBySymbol"]["ETHUSDT"])
+        self.assertTrue(summary["incrementalDepthContinuity"]["ETHUSDT"]["reconstructible"])
+        self.assertEqual(0, builder.depth_diff_records[0]["bids"][0][1])
+
+    def test_v4_continuity_break_and_chronological_tie_break(self):
+        records = [
+            {"kind": "DEPTH_DIFF", "receivedAt": 200, "sequence": 5},
+            {"kind": "DEPTH_BOOTSTRAP", "receivedAt": 100, "sequence": 2},
+            {"kind": "DEPTH_DIFF", "receivedAt": 200, "sequence": 4},
+        ]
+        ordered = chronological_incremental_depth(records)
+        self.assertEqual([2, 4, 5], [record["sequence"] for record in ordered])
 
 
 if __name__ == "__main__":

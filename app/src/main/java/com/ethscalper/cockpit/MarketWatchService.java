@@ -129,6 +129,8 @@ public class MarketWatchService extends Service {
     private final MicrostructureCaptureV2 causalCapture=new MicrostructureCaptureV2(causalCaptureQueue);
     private final MicrostructureCaptureHealth microCaptureHealth=new MicrostructureCaptureHealth();
     private final BinanceCombinedStreamRouter streamRouter=new BinanceCombinedStreamRouter();
+    private final IncrementalDepthContinuity incrementalDepth=new IncrementalDepthContinuity();
+    private final Map<String,Long> incrementalBootstrapInFlight=new LinkedHashMap<>();
     private CausalCaptureStore causalCaptureStore;
     private CausalCaptureWriter causalCaptureWriter;
     private static volatile CausalCaptureStore.Snapshot causalExportSnapshot;
@@ -173,6 +175,7 @@ public class MarketWatchService extends Service {
     private OkHttpClient client;
     private WebSocket socket;
     private WebSocket marketSocket;
+    private WebSocket incrementalDepthSocket;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
     private PowerManager.WakeLock wakeLock;
@@ -181,12 +184,15 @@ public class MarketWatchService extends Service {
     private boolean healthScheduled;
     private int websocketEndpointIndex;
     private int marketReconnectAttempt;
+    private int incrementalDepthReconnectAttempt;
+    private long incrementalDepthGeneration;
     private String activeMarketDataSource = "NONE";
     private boolean executionFeedAuthoritative;
     private String lastFeedError = "";
     private long lastNetworkAvailableAt;
     private long lastMessageAt;
     private long lastMarketMessageAt;
+    private long lastIncrementalDepthMessageAt;
     private long lastBtcResearchRestAggAt;
     private long lastSignalAt;
     private long lastP01ConfirmedAt;
@@ -440,8 +446,11 @@ public class MarketWatchService extends Service {
         releaseCausalCaptureSnapshot();initializeCausalCaptureIfNeeded();
         if(causalCaptureWriter==null)return;
         try{causalCaptureWriter.reset(5_000L);microCaptureHealth.reset(System.currentTimeMillis());
-            microHealthStarted=true;
+            incrementalDepth.reset();incrementalBootstrapInFlight.clear();microHealthStarted=true;
             startCausalCaptureSession(activeMarketDataSource+"_DIAGNOSTIC_RESET");
+            if(incrementalDepthSocket!=null){incrementalDepth.socketConnected(true);
+                for(String symbol:new String[]{"ETHUSDT","SOLUSDT","BTCUSDT"})
+                    requestDepthBootstrap(symbol,0);}
         }catch(RuntimeException ignored){}
     }
 
@@ -455,8 +464,16 @@ public class MarketWatchService extends Service {
             Map<String,Object> health=microCaptureHealth.snapshot(System.currentTimeMillis(),
                     causalCapture.stats(),writer);status.put("writer",new JSONObject(writer.toMap()));
             status.put("health",new JSONObject(health));status.put("usableForMicrostructureResearch",
-                    Boolean.TRUE.equals(health.get("usableForMicrostructureResearch")));}
-        else status.put("usableForMicrostructureResearch",false);
+                    Boolean.TRUE.equals(health.get("usableForMicrostructureResearch")));
+            boolean writerHealthy=writer.running&&writer.failed==0;
+            boolean saturated=writer.queueSize*4>=writer.queueCapacity*3
+                    ||writer.accepted>0&&writer.rejected*1_000L>writer.accepted;
+            Map<String,Object> incremental=incrementalDepth.snapshot(System.currentTimeMillis(),
+                    writerHealthy,saturated);status.put("incrementalDepth",new JSONObject(incremental));
+            status.put("usableForIncrementalDepthResearch",Boolean.TRUE.equals(
+                    incremental.get("usableForIncrementalDepthResearch")));}
+        else {status.put("usableForMicrostructureResearch",false);
+            status.put("usableForIncrementalDepthResearch",false);}
         if(causalCaptureStore!=null){status.put("retentionMaxSegments",
                     causalCaptureStore.maximumSegments());
             status.put("retentionSegmentBytes",causalCaptureStore.maximumSegmentBytes());
@@ -657,6 +674,7 @@ public class MarketWatchService extends Service {
             running = false;
             stopSocket();
             stopMarketSocket();
+            stopIncrementalDepthSocket();
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
@@ -670,9 +688,10 @@ public class MarketWatchService extends Service {
         initializeCausalCaptureIfNeeded();
         if(!microHealthStarted){microCaptureHealth.reset(System.currentTimeMillis());
             microHealthStarted=true;}
-        ensureCausalCaptureSession("BINANCE_FUTURES_MICROSTRUCTURE_V2");
+        ensureCausalCaptureSession("BINANCE_FUTURES_MICROSTRUCTURE_V4");
         connectIfNeeded();
         connectMarketIfNeeded();
+        connectIncrementalDepthIfNeeded();
         prefillHistoricalCandlesIfNeeded();
         // Do not wait for the first 3-second health tick. A fresh install can briefly delay the
         // WebSocket while Android is displaying permission UI, so request public REST quotes now.
@@ -946,6 +965,7 @@ public class MarketWatchService extends Service {
         handler.removeCallbacksAndMessages(null);
         stopSocket();
         stopMarketSocket();
+        stopIncrementalDepthSocket();
         flushCausalCapture();
         if(causalCaptureWriter!=null)try{causalCaptureWriter.shutdown(2_000L);}
         catch(RuntimeException ignored){}
@@ -1040,6 +1060,7 @@ public class MarketWatchService extends Service {
                         reconnectAttempt = 0;
                         if (socket == null) connectIfNeeded();
                         if (marketSocket == null) connectMarketIfNeeded();
+                        if (incrementalDepthSocket == null) connectIncrementalDepthIfNeeded();
                         if (ethLast <= 0 || btcLast <= 0) historyPrefillRequested = false;
                         prefillHistoricalCandlesIfNeeded();
                         lastRestBookRefreshAt = 0;
@@ -1064,8 +1085,16 @@ public class MarketWatchService extends Service {
                                 MarketFeedEndpointPool.marketCombinedStreamUrl(websocketEndpointIndex,
                                         marketRegistry),now,-1,"NetworkUnavailable","Android network lost",
                                 marketReconnectAttempt,elapsedSince(now,lastMarketMessageAt));
+                        if(incrementalDepthSocket!=null)microCaptureHealth.socketFailure(
+                                MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,
+                                MarketFeedEndpointPool.incrementalDepthCombinedStreamUrl(
+                                        websocketEndpointIndex,marketRegistry),now,-1,
+                                "NetworkUnavailable","Android network lost",
+                                incrementalDepthReconnectAttempt,elapsedSince(now,
+                                        lastIncrementalDepthMessageAt));
                         stopSocket();
                         stopMarketSocket();
+                        stopIncrementalDepthSocket();
                         activeMarketDataSource = "NONE";
                         executionFeedAuthoritative = false;
                         lastFeedError = "NETWORK_UNAVAILABLE";
@@ -1238,6 +1267,112 @@ public class MarketWatchService extends Service {
         long delay=Math.min(30_000L,1_000L<<Math.max(0,marketReconnectAttempt-1));
         handler.postDelayed(this::connectMarketIfNeeded,delay);}
 
+    private void connectIncrementalDepthIfNeeded(){
+        if(!running||incrementalDepthSocket!=null||client==null)return;
+        final String endpointUrl=MarketFeedEndpointPool.incrementalDepthCombinedStreamUrl(
+                websocketEndpointIndex,marketRegistry);Request request=new Request.Builder().url(endpointUrl)
+                .header("User-Agent","NMC-IncrementalDepth/"+BuildConfig.VERSION_NAME).build();
+        incrementalDepthSocket=client.newWebSocket(request,new WebSocketListener(){
+            @Override public void onOpen(WebSocket webSocket,Response response){
+                if(incrementalDepthSocket!=webSocket)return;long now=System.currentTimeMillis();
+                incrementalDepthReconnectAttempt=0;lastIncrementalDepthMessageAt=now;
+                incrementalDepthGeneration++;incrementalBootstrapInFlight.clear();
+                incrementalDepth.socketConnected(true);incrementalDepth.requireRebootstrapAll();
+                microCaptureHealth.socketConnected(MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,
+                        endpointUrl,now,response==null?-1:response.code());
+                ensureCausalCaptureSession("BINANCE_FUTURES_INCREMENTAL_DEPTH_WS");
+                for(String symbol:new String[]{"ETHUSDT","SOLUSDT","BTCUSDT"})
+                    requestDepthBootstrap(symbol,0);}
+            @Override public void onMessage(WebSocket webSocket,String text){
+                if(incrementalDepthSocket!=webSocket)return;long now=System.currentTimeMillis();
+                if(!handleIncrementalDepthMessage(text,now))return;lastIncrementalDepthMessageAt=now;
+                microCaptureHealth.socketMessage(MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,now);}
+            @Override public void onFailure(WebSocket webSocket,Throwable error,Response response){
+                if(incrementalDepthSocket!=webSocket)return;long now=System.currentTimeMillis();
+                incrementalDepth.socketConnected(false);incrementalDepth.requireRebootstrapAll();
+                microCaptureHealth.socketFailure(MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,
+                        endpointUrl,now,response==null?-1:response.code(),error==null?"":
+                        error.getClass().getName(),error==null?"":error.getMessage(),
+                        incrementalDepthReconnectAttempt,elapsedSince(now,lastIncrementalDepthMessageAt));
+                incrementalDepthSocket=null;scheduleIncrementalDepthReconnect();}
+            @Override public void onClosed(WebSocket webSocket,int code,String reason){
+                if(incrementalDepthSocket!=webSocket)return;long now=System.currentTimeMillis();
+                incrementalDepth.socketConnected(false);incrementalDepth.requireRebootstrapAll();
+                microCaptureHealth.socketClosed(MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,
+                        endpointUrl,now,code,reason,incrementalDepthReconnectAttempt,
+                        elapsedSince(now,lastIncrementalDepthMessageAt));incrementalDepthSocket=null;
+                if(running)scheduleIncrementalDepthReconnect();}
+        });
+    }
+
+    private void stopIncrementalDepthSocket(){WebSocket current=incrementalDepthSocket;
+        incrementalDepthSocket=null;incrementalDepth.socketConnected(false);
+        try{if(current!=null)current.close(1000,"incremental depth stop");}catch(Exception ignored){}}
+
+    private void scheduleIncrementalDepthReconnect(){if(!running)return;incrementalDepthReconnectAttempt=
+            Math.min(incrementalDepthReconnectAttempt+1,6);microCaptureHealth.socketReconnect(
+                    MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,System.currentTimeMillis(),
+                    incrementalDepthReconnectAttempt);long delay=Math.min(30_000L,
+                    1_000L<<Math.max(0,incrementalDepthReconnectAttempt-1));
+        handler.postDelayed(this::connectIncrementalDepthIfNeeded,delay);}
+
+    private synchronized boolean handleIncrementalDepthMessage(String text,long receivedAt){try{
+        BinanceCombinedStreamRouter.Event event=streamRouter.parse(text);if(event==null
+                ||!BinanceCombinedStreamRouter.accepts(
+                BinanceCombinedStreamRouter.SocketType.INCREMENTAL_DEPTH_WS,event.type)){
+            causalCapture.rejectDepthDiff();microCaptureHealth.malformed();return false;}
+        BinanceDepthDiff.ParseResult parsed=BinanceDepthDiff.parse(event.symbol,event.data);
+        if(!parsed.accepted()){causalCapture.rejectDepthDiff();incrementalDepth.rejected(event.symbol);
+            microCaptureHealth.malformed();return false;}BinanceDepthDiff diff=parsed.value;
+        long monotonicAt=SystemClock.elapsedRealtime();boolean stored=causalCapture.observeDepthDiff(diff,
+                "BINANCE_FUTURES_INCREMENTAL_DEPTH_WS",receivedAt,monotonicAt);
+        if(!stored){incrementalDepth.dropped(diff.symbol,receivedAt);recordIncrementalDepthGap(
+                diff.symbol,receivedAt,"DEPTH_DIFF_QUEUE_DROP");requestDepthBootstrap(diff.symbol,0);
+            return true;}incrementalDepth.accepted(diff.symbol,diff.exchangeEventAt);
+        IncrementalDepthContinuity.Result continuity=incrementalDepth.observe(diff.symbol,
+                diff.firstUpdateId,diff.finalUpdateId,diff.previousFinalUpdateId,receivedAt);
+        if(continuity.needsBootstrap){recordIncrementalDepthGap(diff.symbol,receivedAt,
+                continuity.reasonCode);requestDepthBootstrap(diff.symbol,0);}return true;
+    }catch(RuntimeException error){causalCapture.rejectDepthDiff();microCaptureHealth.malformed();return false;}}
+
+    private void recordIncrementalDepthGap(String symbol,long now,String reason){try{
+        causalCapture.incrementalDepthGap(symbol,Math.max(0,now-1),now,now,
+                SystemClock.elapsedRealtime(),"BINANCE_FUTURES_INCREMENTAL_DEPTH_WS",reason);
+    }catch(RuntimeException ignored){}}
+
+    private synchronized void requestDepthBootstrap(String symbol,int attempt){
+        if(!running||client==null||attempt>3||incrementalBootstrapInFlight.containsKey(symbol))return;
+        final long generation=incrementalDepthGeneration;
+        incrementalBootstrapInFlight.put(symbol,generation);long requestAt=System.currentTimeMillis();
+        incrementalDepth.bootstrapAttempt(symbol);String endpoint=MarketFeedEndpointPool
+                .depthSnapshotEndpoints(symbol,1000).get(0).url;Request request=new Request.Builder().url(endpoint)
+                .header("User-Agent","NMC-DepthBootstrap/"+BuildConfig.VERSION_NAME).build();
+        client.newCall(request).enqueue(new Callback(){
+            @Override public void onFailure(Call call,IOException error){postMarketState(()->
+                    finishDepthBootstrapFailure(symbol,attempt,generation));}
+            @Override public void onResponse(Call call,Response response){try(Response close=response){
+                if(!response.isSuccessful()||response.body()==null)throw new IOException("HTTP "+response.code());
+                JSONObject json=new JSONObject(response.body().string());long updateId=json.optLong(
+                        "lastUpdateId",-1);double[][] bids=BinanceDepthDiff.levels(json.optJSONArray("bids"));
+                double[][] asks=BinanceDepthDiff.levels(json.optJSONArray("asks"));
+                long responseAt=System.currentTimeMillis();postMarketState(()->{
+                    if(incrementalDepthGeneration!=generation||!Long.valueOf(generation).equals(
+                            incrementalBootstrapInFlight.get(symbol)))return;
+                    incrementalBootstrapInFlight.remove(symbol);boolean accepted=false;try{
+                        accepted=causalCapture.observeDepthBootstrap(symbol,"BINANCE_FUTURES_PUBLIC_REST",
+                                requestAt,responseAt,SystemClock.elapsedRealtime(),updateId,1000,bids,asks);
+                    }catch(RuntimeException ignored){}if(accepted)incrementalDepth.bootstrapSuccess(symbol,
+                            updateId,responseAt);else finishDepthBootstrapFailure(symbol,attempt,generation);});
+            }catch(Exception error){postMarketState(()->finishDepthBootstrapFailure(symbol,attempt,generation));}}
+        });}
+
+    private synchronized void finishDepthBootstrapFailure(String symbol,int attempt,long generation){
+        if(incrementalDepthGeneration!=generation||!Long.valueOf(generation).equals(
+                incrementalBootstrapInFlight.get(symbol)))return;
+        incrementalBootstrapInFlight.remove(symbol);incrementalDepth.bootstrapFailure(symbol);
+        if(running&&attempt<3)handler.postDelayed(()->requestDepthBootstrap(symbol,attempt+1),
+                Math.min(30_000L,1_000L<<(attempt+1)));}
+
     private void stopSocket() {
         WebSocket current = socket;
         socket = null;
@@ -1273,6 +1408,17 @@ public class MarketWatchService extends Service {
                     stopMarketSocket();marketReconnectAttempt=Math.min(marketReconnectAttempt+1,6);
                     microCaptureHealth.socketReconnect(MicrostructureCaptureHealth.MARKET_WS,now,
                             marketReconnectAttempt);connectMarketIfNeeded();}
+                if(incrementalDepthSocket==null)connectIncrementalDepthIfNeeded();
+                else if(lastIncrementalDepthMessageAt>0&&now-lastIncrementalDepthMessageAt>30_000L){
+                    String endpoint=MarketFeedEndpointPool.incrementalDepthCombinedStreamUrl(
+                            websocketEndpointIndex,marketRegistry);microCaptureHealth.socketFailure(
+                            MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,endpoint,now,-1,
+                            "StaleTimeout","No valid incremental depth message for 30000 ms",
+                            incrementalDepthReconnectAttempt,elapsedSince(now,lastIncrementalDepthMessageAt));
+                    stopIncrementalDepthSocket();incrementalDepthReconnectAttempt=Math.min(
+                            incrementalDepthReconnectAttempt+1,6);microCaptureHealth.socketReconnect(
+                            MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,now,
+                            incrementalDepthReconnectAttempt);connectIncrementalDepthIfNeeded();}
                 long age = lastMessageAt == 0 ? Long.MAX_VALUE : now - lastMessageAt;
                 if (age > 65_000L) {
                     String endpoint=MarketFeedEndpointPool.publicCombinedStreamUrl(

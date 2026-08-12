@@ -6,10 +6,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Immutable V3 research record. V1/V2 records remain readable with their original identity. */
+/** Immutable V4 research record. V1/V2/V3 records remain readable with their original identity. */
 public final class MicrostructureMarketRecord extends CausalMarketRecord {
-    public static final String SCHEMA="NMC_CAUSAL_MARKET_CAPTURE_V3";
-    public static final int FORMAT_VERSION=3;
+    public static final String SCHEMA="NMC_CAUSAL_MARKET_CAPTURE_V4";
+    public static final int FORMAT_VERSION=4;
+    public static final String V3_SCHEMA="NMC_CAUSAL_MARKET_CAPTURE_V3";
+    public static final int V3_FORMAT_VERSION=3;
     public static final String V2_SCHEMA="NMC_CAUSAL_MARKET_CAPTURE_V2";
     public static final int V2_FORMAT_VERSION=2;
 
@@ -41,11 +43,14 @@ public final class MicrostructureMarketRecord extends CausalMarketRecord {
                 firstTradeId,lastTradeId,firstTradeAt,lastTradeAt,aggregateCount,aggregateIdGaps,
                 hasTrades,open,high,low,close,buyerBase,sellerBase,buyerNotional,sellerNotional,
                 gapFromAt,gapToAt,reasonCode);
-        if(version!=V2_FORMAT_VERSION&&version!=FORMAT_VERSION)
+        if(version!=V2_FORMAT_VERSION&&version!=V3_FORMAT_VERSION&&version!=FORMAT_VERSION)
             throw new IllegalArgumentException("formatVersion");
         if(version==V2_FORMAT_VERSION&&kind==Kind.LIQUIDATION_SNAPSHOT)
             throw new IllegalArgumentException("V2 liquidation");
-        recordFormatVersion=version;recordSchema=version==FORMAT_VERSION?SCHEMA:V2_SCHEMA;
+        if(version<FORMAT_VERSION&&(kind==Kind.DEPTH_DIFF||kind==Kind.DEPTH_BOOTSTRAP))
+            throw new IllegalArgumentException("V4 depth");
+        recordFormatVersion=version;recordSchema=version==FORMAT_VERSION?SCHEMA
+                :version==V3_FORMAT_VERSION?V3_SCHEMA:V2_SCHEMA;
         this.firstReceivedAt=firstReceivedAt;this.lastReceivedAt=lastReceivedAt;
         this.firstUpdateId=firstUpdateId;this.finalUpdateId=finalUpdateId;
         this.previousFinalUpdateId=previousFinalUpdateId;this.bids=copyLevels(bids);
@@ -118,12 +123,37 @@ public final class MicrostructureMarketRecord extends CausalMarketRecord {
             long receivedAt,long monotonicAt,String symbol,String source,long exchangeEventAt,
             long tradeAt,String orderSide,String orderType,String timeInForce,double originalQuantity,
             double price,double averagePrice,String orderStatus,double lastFilledQuantity,
-            double accumulatedFilledQuantity){return new MicrostructureMarketRecord(FORMAT_VERSION,
+            double accumulatedFilledQuantity){return liquidationForVersion(FORMAT_VERSION,sessionId,
+                    sequence,receivedAt,monotonicAt,symbol,source,exchangeEventAt,tradeAt,orderSide,
+                    orderType,timeInForce,originalQuantity,price,averagePrice,orderStatus,
+                    lastFilledQuantity,accumulatedFilledQuantity);}
+    static MicrostructureMarketRecord liquidationForVersion(int version,String sessionId,long sequence,
+            long receivedAt,long monotonicAt,String symbol,String source,long exchangeEventAt,
+            long tradeAt,String orderSide,String orderType,String timeInForce,double originalQuantity,
+            double price,double averagePrice,String orderStatus,double lastFilledQuantity,
+            double accumulatedFilledQuantity){return new MicrostructureMarketRecord(version,
                     Kind.LIQUIDATION_SNAPSHOT,sessionId,sequence,receivedAt,monotonicAt,symbol,source,
                     exchangeEventAt,0,-1,0,0,0,0,0,0,-1,-1,0,0,0,0,false,0,0,0,0,0,0,0,0,0,0,
                     "",receivedAt,receivedAt,0,0,0,null,null,null,tradeAt,orderSide,orderType,
                     timeInForce,orderStatus,originalQuantity,price,averagePrice,lastFilledQuantity,
                     accumulatedFilledQuantity);}
+
+    public static MicrostructureMarketRecord depthDiff(String sessionId,long sequence,
+            long receivedAt,long monotonicAt,String symbol,String source,long exchangeEventAt,
+            long transactionAt,long firstUpdateId,long finalUpdateId,long previousFinalUpdateId,
+            double[][] bids,double[][] asks){return create(FORMAT_VERSION,Kind.DEPTH_DIFF,
+                    sessionId,sequence,receivedAt,monotonicAt,symbol,source,exchangeEventAt,
+                    transactionAt,finalUpdateId,0,0,0,0,0,0,-1,-1,0,0,0,0,false,0,0,0,0,0,0,
+                    0,0,0,0,"",receivedAt,receivedAt,firstUpdateId,finalUpdateId,
+                    previousFinalUpdateId,bids,asks,null);}
+
+    public static MicrostructureMarketRecord depthBootstrap(String sessionId,long sequence,
+            long requestStartedAt,long responseReceivedAt,long monotonicAt,String symbol,String source,
+            long lastUpdateId,int snapshotLimit,double[][] bids,double[][] asks){return create(
+                    FORMAT_VERSION,Kind.DEPTH_BOOTSTRAP,sessionId,sequence,responseReceivedAt,
+                    monotonicAt,symbol,source,requestStartedAt,0,lastUpdateId,0,0,0,0,0,0,-1,-1,0,0,
+                    0,0,false,0,0,0,0,0,0,0,0,0,0,"",responseReceivedAt,responseReceivedAt,
+                    snapshotLimit,lastUpdateId,0,bids,asks,null);}
 
     public static MicrostructureMarketRecord gap(String sessionId,long sequence,long receivedAt,
             long monotonicAt,String symbol,String source,long fromAt,long toAt,String reasonCode){
@@ -201,6 +231,15 @@ public final class MicrostructureMarketRecord extends CausalMarketRecord {
             finite(out,"price",price);finite(out,"averagePrice",averagePrice);
             out.put("orderStatus",orderStatus);finite(out,"lastFilledQuantity",lastFilledQuantity);
             finite(out,"accumulatedFilledQuantity",accumulatedFilledQuantity);}
+        else if(kind==Kind.DEPTH_DIFF){out.put("exchangeEventAt",exchangeEventAt);
+            out.put("transactionAt",nullable(transactionAt));out.put("firstUpdateId",firstUpdateId);
+            out.put("finalUpdateId",finalUpdateId);out.put("previousFinalUpdateId",
+                    previousFinalUpdateId<0?null:previousFinalUpdateId);out.put("bids",levelList(bids));
+            out.put("asks",levelList(asks));}
+        else if(kind==Kind.DEPTH_BOOTSTRAP){out.put("requestStartedAt",exchangeEventAt);
+            out.put("responseReceivedAt",receivedAt);out.put("lastUpdateId",finalUpdateId);
+            out.put("snapshotLimit",firstUpdateId);out.put("bids",levelList(bids));
+            out.put("asks",levelList(asks));}
         else if(kind==Kind.GAP){out.put("gapFromAt",gapFromAt);out.put("gapToAt",gapToAt);
             out.put("reasonCode",reasonCode);}
         else if(kind==Kind.DROP_SUMMARY){out.put("gapFromAt",gapFromAt);out.put("gapToAt",gapToAt);
@@ -226,6 +265,15 @@ public final class MicrostructureMarketRecord extends CausalMarketRecord {
                 ||tradeAt>exchangeEventAt||orderSide.isEmpty()||!nonNegative(originalQuantity)
                 ||!nonNegative(price)||!nonNegative(averagePrice)||!nonNegative(lastFilledQuantity)
                 ||!nonNegative(accumulatedFilledQuantity)))throw new IllegalArgumentException("liquidation");
+        if(kind==Kind.DEPTH_DIFF&&(!supported(symbol)||exchangeEventAt<0||firstUpdateId<0
+                ||finalUpdateId<firstUpdateId||previousFinalUpdateId< -1||bids.length+asks.length<1
+                ||bids.length>10_000||asks.length>10_000||!validDeltaLevels(bids)
+                ||!validDeltaLevels(asks)))throw new IllegalArgumentException("depth diff");
+        if(kind==Kind.DEPTH_BOOTSTRAP&&(!supported(symbol)||exchangeEventAt<0
+                ||receivedAt<exchangeEventAt||finalUpdateId<0||firstUpdateId<1
+                ||firstUpdateId>5_000||bids.length<1||asks.length<1||bids.length>5_000
+                ||asks.length>5_000||!validLevels(bids,true)||!validLevels(asks,false)))
+            throw new IllegalArgumentException("depth bootstrap");
         if((kind==Kind.GAP||kind==Kind.DROP_SUMMARY)&&(gapFromAt<0||gapToAt<=gapFromAt))
             throw new IllegalArgumentException("gap");
         if(kind==Kind.DROP_SUMMARY&&droppedByKind.isEmpty())throw new IllegalArgumentException("drops");
@@ -234,6 +282,9 @@ public final class MicrostructureMarketRecord extends CausalMarketRecord {
             bidLevels?Double.POSITIVE_INFINITY:0d;for(double[] level:levels){if(level==null
                     ||level.length!=2||!positive(level[0])||!nonNegative(level[1]))return false;
             if(bidLevels&&level[0]>prior||!bidLevels&&level[0]<prior)return false;prior=level[0];}
+        return true;}
+    private static boolean validDeltaLevels(double[][] levels){for(double[] level:levels)
+        if(level==null||level.length!=2||!nonNegative(level[0])||!nonNegative(level[1]))return false;
         return true;}
     private static double[][] copyLevels(double[][] value){if(value==null)return new double[0][0];
         double[][] out=new double[value.length][2];for(int i=0;i<value.length;i++){

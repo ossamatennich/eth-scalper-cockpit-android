@@ -28,24 +28,31 @@ public class CausalCaptureExportTest {
                         1_190,1_195,1,2,0,levels(100,false),levels(101,true)),
                 MicrostructureMarketRecord.liquidation("s",4,1_250,4,"ETHUSDT",
                         "BINANCE_FUTURES_MARKET_WS",1_249,1_248,"SELL","LIMIT","IOC",2,
-                        100,100,"FILLED",2,2)));
+                        100,100,"FILLED",2,2),MicrostructureMarketRecord.depthBootstrap("s",5,
+                        1_290,1_300,5,"ETHUSDT","BINANCE_FUTURES_PUBLIC_REST",200,1000,
+                        new double[][]{{100,1}},new double[][]{{101,1}}),
+                MicrostructureMarketRecord.depthDiff("s",6,1_400,6,"ETHUSDT",
+                        "BINANCE_FUTURES_INCREMENTAL_DEPTH_WS",1_399,1_398,200,201,199,
+                        new double[][]{{100,0}},new double[][]{{101,2}})));
         try(CausalCaptureStore.Snapshot snapshot=store.checkpoint()){ByteArrayOutputStream bytes=
                 new ByteArrayOutputStream();DiagnosticStreamingExporter.export(bytes,empty(directory,
-                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(true),"2.34.5.3",2_000,
+                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(true),"2.34.5.4",2_000,
                 new DiagnosticStreamingExporter.ExportSnapshotMetadata(1_500,"v2",true,"FULL","sha"),
                 snapshot.files,null,()->false);Map<String,String> zip=entries(bytes.toByteArray());
             JSONObject manifest=new JSONObject(zip.get("causal_market_manifest.json"));
             assertEquals(MicrostructureMarketRecord.SCHEMA,manifest.getString("schema"));
-            assertEquals(3,manifest.getInt("formatVersion"));assertTrue(manifest.getBoolean(
+            assertEquals(4,manifest.getInt("formatVersion"));assertTrue(manifest.getBoolean(
                     "usableForMicrostructureResearch"));assertEquals(1,manifest.getJSONObject(
-                    "recordCountByKind").getInt("FLOW_100MS"));assertEquals(3,manifest.getJSONObject(
+                    "recordCountByKind").getInt("FLOW_100MS"));assertEquals(5,manifest.getJSONObject(
                     "recordCountBySymbol").getInt("ETHUSDT"));assertEquals(3,manifest.getJSONObject(
                     "recordCountBySource").getInt("BINANCE_FUTURES_MARKET_WS"));
             assertEquals(1,manifest.getJSONObject("recordCountBySource").getInt(
                     "BINANCE_FUTURES_PUBLIC_WS"));assertEquals(1,manifest.getInt(
                     "totalLiquidationSnapshots"));assertEquals(1,manifest.getJSONObject(
                     "liquidationCountBySymbol").getInt("ETHUSDT"));assertTrue(manifest.getBoolean(
-                    "liquidationStreamNaturallySparse"));String stream=
+                    "liquidationStreamNaturallySparse"));assertEquals(1,manifest.getJSONObject(
+                    "depthDiffCountBySymbol").getInt("ETHUSDT"));assertEquals(1,manifest.getJSONObject(
+                    "depthBootstrapCountBySymbol").getInt("ETHUSDT"));String stream=
                     zip.get("causal_market_stream.jsonl");assertTrue(stream.contains("\"bids\":[["));
             assertFalse(stream.contains("NaN"));assertFalse(stream.contains("Infinity"));}}
     @Test public void snapshotStreamsEveryRecordAndPublishesBoundedManifest()throws Exception{
@@ -116,7 +123,7 @@ public class CausalCaptureExportTest {
                         1_190,1_195,1,2,0,levels(100,false),levels(101,true))));
         try(CausalCaptureStore.Snapshot snapshot=store.checkpoint()){ByteArrayOutputStream bytes=
                 new ByteArrayOutputStream();DiagnosticStreamingExporter.export(bytes,empty(directory,
-                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(false),"2.34.5.3",2_000,
+                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(false),"2.34.5.4",2_000,
                 new DiagnosticStreamingExporter.ExportSnapshotMetadata(1_500,"v2",true,"FULL","sha"),
                 snapshot.files,null,()->false);JSONObject manifest=new JSONObject(entries(
                 bytes.toByteArray()).get("causal_market_manifest.json"));assertFalse(manifest.getBoolean(

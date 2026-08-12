@@ -12,13 +12,15 @@ public final class MicrostructureCaptureHealth {
     public static final String HEALTHY="MICRO_CAPTURE_HEALTHY";
     public static final String DEGRADED="MICRO_CAPTURE_DEGRADED";
     public static final String STALE="MICRO_CAPTURE_STALE";
-    public static final String PUBLIC_WS="PUBLIC_WS",MARKET_WS="MARKET_WS";
+    public static final String PUBLIC_WS="PUBLIC_WS",MARKET_WS="MARKET_WS",
+            INCREMENTAL_DEPTH_WS="INCREMENTAL_DEPTH_WS";
     public static final long WARMUP_MS=10_000L,TOP_STALE_MS=5_000L,DEPTH_STALE_MS=5_000L,
             AGG_STALE_MS=15_000L;
     public static final int MAX_DISCONNECT_EVENTS=64;
     private static final String[] SYMBOLS={"ETHUSDT","SOLUSDT","BTCUSDT"};
     private final LinkedHashMap<String,MutableSymbol> symbols=new LinkedHashMap<>();
-    private final SocketState publicSocket=new SocketState(PUBLIC_WS),marketSocket=new SocketState(MARKET_WS);
+    private final SocketState publicSocket=new SocketState(PUBLIC_WS),marketSocket=new SocketState(MARKET_WS),
+            incrementalDepthSocket=new SocketState(INCREMENTAL_DEPTH_WS);
     private final ArrayDeque<Map<String,Object>> disconnectEvents=new ArrayDeque<>();
     private long startedAt,malformedMessages,disconnectEventsEvicted;
 
@@ -26,7 +28,7 @@ public final class MicrostructureCaptureHealth {
 
     public synchronized void reset(long now){startedAt=now;malformedMessages=disconnectEventsEvicted=0;
         disconnectEvents.clear();for(MutableSymbol value:symbols.values())value.clear();
-        publicSocket.resetCounters();marketSocket.resetCounters();}
+        publicSocket.resetCounters();marketSocket.resetCounters();incrementalDepthSocket.resetCounters();}
 
     public synchronized void wsBook(String symbol,String source,long at){Source observed=source(symbol,source);
         observed.book++;observed.lastBookAt=Math.max(observed.lastBookAt,at);
@@ -90,6 +92,7 @@ public final class MicrostructureCaptureHealth {
         root.put("liquidationStreamNaturallySparse",true);
         root.put("malformedMessages",malformedMessages);appendSocketCounters(root);
         root.put("publicWs",publicSocket.toMap());root.put("marketWs",marketSocket.toMap());
+        root.put("incrementalDepthWs",incrementalDepthSocket.toMap());
         root.put("socketDisconnectEvents",new ArrayList<>(disconnectEvents));
         root.put("socketDisconnectEventsEvicted",disconnectEventsEvicted);
         LinkedHashMap<String,Object> perSymbol=new LinkedHashMap<>();boolean topStale=false;
@@ -138,7 +141,12 @@ public final class MicrostructureCaptureHealth {
         root.put("lastPublicWsFailureAt",publicSocket.lastFailureAt);root.put("lastPublicWsClosedAt",
                 publicSocket.lastClosedAt);root.put("lastMarketWsConnectAt",marketSocket.lastConnectAt);
         root.put("lastMarketWsMessageAt",marketSocket.lastMessageAt);root.put("lastMarketWsFailureAt",
-                marketSocket.lastFailureAt);root.put("lastMarketWsClosedAt",marketSocket.lastClosedAt);}
+                marketSocket.lastFailureAt);root.put("lastMarketWsClosedAt",marketSocket.lastClosedAt);
+        root.put("incrementalDepthWsConnects",incrementalDepthSocket.connects);
+        root.put("incrementalDepthWsReconnects",incrementalDepthSocket.reconnects);
+        root.put("incrementalDepthWsFailures",incrementalDepthSocket.failures);
+        root.put("lastIncrementalDepthWsConnectAt",incrementalDepthSocket.lastConnectAt);
+        root.put("lastIncrementalDepthWsMessageAt",incrementalDepthSocket.lastMessageAt);}
     private void rememberDisconnect(SocketState socket,long at,int closeCode,String closeReason,
             int httpStatus,String exceptionClass,String exceptionMessage,int attempt,long sinceLastMessageMs){
         LinkedHashMap<String,Object> event=new LinkedHashMap<>();event.put("socketType",socket.type);
@@ -151,7 +159,8 @@ public final class MicrostructureCaptureHealth {
         while(disconnectEvents.size()>MAX_DISCONNECT_EVENTS){disconnectEvents.removeFirst();
             disconnectEventsEvicted++;}}
     private SocketState socket(String type){if(PUBLIC_WS.equals(type))return publicSocket;
-        if(MARKET_WS.equals(type))return marketSocket;throw new IllegalArgumentException("socketType");}
+        if(MARKET_WS.equals(type))return marketSocket;if(INCREMENTAL_DEPTH_WS.equals(type))
+            return incrementalDepthSocket;throw new IllegalArgumentException("socketType");}
     private Source source(String symbol,String source){MutableSymbol value=symbols.get(symbol);
         if(value==null)throw new IllegalArgumentException("symbol");String key=source==null?"UNKNOWN":source;
         return value.sources.computeIfAbsent(key,ignored->new Source());}

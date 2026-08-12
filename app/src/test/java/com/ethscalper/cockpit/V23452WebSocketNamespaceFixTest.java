@@ -44,8 +44,8 @@ public final class V23452WebSocketNamespaceFixTest {
                     BinanceCombinedStreamRouter.Type.DEPTH20));}
 
     @Test public void releaseIdentityAndPublicEngineRemainFrozen()throws Exception{String gradle=read(
-            "app/build.gradle");assertTrue(gradle.contains("versionCode 23453"));assertTrue(gradle.contains(
-                    "versionName '2.34.5.3'"));assertTrue(gradle.contains("NMC Stable 5.3"));assertEquals(
+            "app/build.gradle");assertTrue(gradle.contains("versionCode 23454"));assertTrue(gradle.contains(
+                    "versionName '2.34.5.4'"));assertTrue(gradle.contains("NMC Stable 5.4"));assertEquals(
                     "NMC_SCALP_CV_CORE_V1",CvCorePolicy.ENGINE_ID);assertEquals(1,
                     CvCorePolicy.DUAL_EXHAUSTION_SHORT.priority);assertRoute(
                     CvCorePolicy.DUAL_EXHAUSTION_SHORT,4,1.75,14.55);assertRoute(

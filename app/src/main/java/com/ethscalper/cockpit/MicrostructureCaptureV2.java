@@ -133,6 +133,34 @@ public final class MicrostructureCaptureV2 {
     public synchronized void rejectLiquidation(String symbol){invalidInputs++;
         if(CausalMarketRecord.supported(symbol))symbols.get(symbol).liquidationSnapshotsRejected++;}
 
+    /** Persists every valid incremental depth update without coalescing. */
+    public synchronized boolean observeDepthDiff(BinanceDepthDiff diff,String source,long receivedAt,
+            long monotonicAt){if(diff==null||!validBase(diff.symbol,source,receivedAt,monotonicAt)){
+        invalidInputs++;return false;}advanceCompleted(receivedAt);advanceClock(receivedAt,monotonicAt);
+        return emit(MicrostructureMarketRecord.depthDiff(sessionId,nextSequence(),receivedAt,
+                monotonicAt,diff.symbol,source,diff.exchangeEventAt,diff.transactionAt,
+                diff.firstUpdateId,diff.finalUpdateId,diff.previousFinalUpdateId,diff.bids,diff.asks));}
+
+    /** Persists a public REST order-book anchor without blocking the ingestion caller. */
+    public synchronized boolean observeDepthBootstrap(String symbol,String source,long requestStartedAt,
+            long responseReceivedAt,long monotonicAt,long lastUpdateId,int snapshotLimit,
+            double[][] bids,double[][] asks){if(!validBase(symbol,source,responseReceivedAt,monotonicAt)
+        ||requestStartedAt<0||requestStartedAt>responseReceivedAt){invalidInputs++;return false;}
+        advanceCompleted(responseReceivedAt);advanceClock(responseReceivedAt,monotonicAt);
+        try{return emit(MicrostructureMarketRecord.depthBootstrap(sessionId,nextSequence(),
+                requestStartedAt,responseReceivedAt,monotonicAt,symbol,source,lastUpdateId,
+                snapshotLimit,bids,asks));}catch(IllegalArgumentException error){invalidInputs++;return false;}}
+
+    public synchronized void rejectDepthDiff(){invalidInputs++;}
+
+    /** Symbol-scoped reconstruction gap; it does not clear unrelated pending 5.3 samples. */
+    public synchronized boolean incrementalDepthGap(String symbol,long fromAt,long toAt,long receivedAt,
+            long monotonicAt,String source,String reasonCode){if(!validBase(symbol,source,receivedAt,
+                    monotonicAt)||fromAt<0||toAt<=fromAt||toAt>receivedAt){invalidInputs++;return false;}
+        advanceCompleted(receivedAt);advanceClock(receivedAt,monotonicAt);symbols.get(symbol).causalGaps++;
+        return emit(MicrostructureMarketRecord.gap(sessionId,nextSequence(),receivedAt,monotonicAt,
+                symbol,source,fromAt,toAt,bounded(reasonCode,160)));}
+
     /** Emits only buckets that are complete at this local time; no missing sample is fabricated. */
     public synchronized void flushThrough(long receivedAt,long monotonicAt){
         if(!active()||receivedAt<lastObservedAt||monotonicAt<lastMonotonicAt){

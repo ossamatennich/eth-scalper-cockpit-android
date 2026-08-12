@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * counted, but it can never block or throw into the market loop.</p>
  */
 public final class CausalCaptureWriter implements AutoCloseable {
-    public static final int MAX_BATCH=4_096;
+    public static final int MAX_BATCH=512;
     public static final long MAX_BATCH_LATENCY_MS=75L;
     private final CausalCaptureQueue queue;
     private final CausalCaptureStore store;
@@ -86,12 +86,20 @@ public final class CausalCaptureWriter implements AutoCloseable {
                     if(remaining<=0)break;try{progress.wait(Math.max(1L,remaining/1_000_000L));}
                     catch(InterruptedException error){if(!running.get())Thread.currentThread().interrupt();break;}}}}
             List<CausalMarketRecord> batch=queue.drain(MAX_BATCH);if(batch.isEmpty())continue;
-            try{store.appendBatch(batch);written.addAndGet(batch.size());}
-            catch(Exception error){failed.addAndGet(batch.size());}
+            writeBatch(batch);
             if(written.get()+failed.get()>=queue.accepted())flushRequested.set(false);
             synchronized(progress){progress.notifyAll();}}
         synchronized(progress){progress.notifyAll();}
     }
+
+    /** Large raw depth deltas are split deterministically before they can exceed a segment block. */
+    private void writeBatch(List<CausalMarketRecord> batch){try{store.appendBatch(batch);
+        written.addAndGet(batch.size());}catch(IllegalArgumentException tooLarge){boolean sizeFailure=
+                "raw block".equals(tooLarge.getMessage())||"compressed block".equals(tooLarge.getMessage());
+            if(sizeFailure&&batch.size()>1){
+            int middle=batch.size()/2;writeBatch(batch.subList(0,middle));
+            writeBatch(batch.subList(middle,batch.size()));}else failed.addAndGet(batch.size());}
+        catch(Exception error){failed.addAndGet(batch.size());}}
 
     public static final class Stats {
         public final int queueCapacity,queueSize;public final long accepted,rejected,queueHighWaterMark,written,failed;

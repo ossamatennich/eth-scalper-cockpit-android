@@ -121,7 +121,9 @@ public final class DiagnosticStreamingExporter {
     private static String causalManifestJson(CausalExportStats value,String statusJson){boolean runtimeUsable=
             statusJson!=null&&MICRO_USABLE.matcher(statusJson).find();boolean usable=runtimeUsable
             &&value.capture.flows>0&&value.capture.depth>0&&value.corruptBlocks==0
-            &&value.truncatedTails==0;StringBuilder out=new StringBuilder();
+            &&value.truncatedTails==0;boolean incrementalUsable=incrementalUsable(statusJson)
+            &&value.capture.depthDiffs>0&&value.capture.depthBootstraps>0
+            &&value.corruptBlocks==0&&value.truncatedTails==0;StringBuilder out=new StringBuilder();
         out.append("{\"schema\":\"").append(escape(value.capture.schema))
                 .append("\",\"formatVersion\":").append(value.capture.formatVersion)
                 .append(",\"streamEntry\":\"causal_market_stream.jsonl\"")
@@ -136,7 +138,12 @@ public final class DiagnosticStreamingExporter {
                 .append(",\"dropSummaryRecords\":").append(value.capture.dropSummaries)
                 .append(",\"runtimeHealthUsable\":").append(runtimeUsable)
                 .append(",\"usableForMicrostructureResearch\":").append(usable)
+                .append(",\"usableForIncrementalDepthResearch\":").append(incrementalUsable)
                 .append(",\"recordCountByKind\":").append(json(value.capture.byKind))
+                .append(",\"depthDiffCountBySymbol\":").append(json(value.capture.depthDiffBySymbol))
+                .append(",\"depthBootstrapCountBySymbol\":").append(json(value.capture.bootstrapBySymbol))
+                .append(",\"totalDepthDiffRecords\":").append(value.capture.depthDiffs)
+                .append(",\"totalDepthBootstrapRecords\":").append(value.capture.depthBootstraps)
                 .append(",\"liquidationCountBySymbol\":").append(json(value.capture.liquidationBySymbol))
                 .append(",\"totalLiquidationSnapshots\":").append(value.capture.liquidations)
                 .append(",\"liquidationStreamConfigured\":true")
@@ -153,6 +160,10 @@ public final class DiagnosticStreamingExporter {
         JSONObject root=new JSONObject(statusJson),capture=root.optJSONObject("causalMarketCapture");
         if(capture==null)capture=root;JSONObject writer=capture.optJSONObject("writer");
         return writer==null?"{}":writer.toString();}catch(Exception ignored){return "{}";}}
+    private static boolean incrementalUsable(String statusJson){if(statusJson==null)return false;try{
+        JSONObject root=new JSONObject(statusJson),capture=root.optJSONObject("causalMarketCapture");
+        if(capture==null)capture=root;return capture.optBoolean("usableForIncrementalDepthResearch",false);
+    }catch(Exception ignored){return false;}}
 
     private static String json(Map<String,?> value){StringBuilder out=new StringBuilder();appendJson(out,value);
         return out.toString();}
@@ -255,9 +266,10 @@ public final class DiagnosticStreamingExporter {
             this.capture=capture;}}
     private static final class CaptureManifestStats{String schema=MicrostructureMarketRecord.SCHEMA;
         int formatVersion=MicrostructureMarketRecord.FORMAT_VERSION;boolean seen;long firstAt,lastAt,
-                gaps,dropSummaries,flows,depth,liquidations;
+                gaps,dropSummaries,flows,depth,liquidations,depthDiffs,depthBootstraps;
         final LinkedHashMap<String,Long> byKind=new LinkedHashMap<>(),bySymbol=new LinkedHashMap<>(),
-                bySource=new LinkedHashMap<>(),liquidationBySymbol=new LinkedHashMap<>();
+                bySource=new LinkedHashMap<>(),liquidationBySymbol=new LinkedHashMap<>(),
+                depthDiffBySymbol=new LinkedHashMap<>(),bootstrapBySymbol=new LinkedHashMap<>();
         void accept(CausalMarketRecord record){int version=record instanceof MicrostructureMarketRecord
                     ?((MicrostructureMarketRecord)record).recordFormatVersion:CausalMarketRecord.FORMAT_VERSION;
             String nextSchema=record instanceof MicrostructureMarketRecord
@@ -271,7 +283,11 @@ public final class DiagnosticStreamingExporter {
             if(record.kind==CausalMarketRecord.Kind.FLOW_100MS)flows++;
             if(record.kind==CausalMarketRecord.Kind.DEPTH20_SAMPLE)depth++;
             if(record.kind==CausalMarketRecord.Kind.LIQUIDATION_SNAPSHOT){liquidations++;
-                increment(liquidationBySymbol,record.symbol);}}
+                increment(liquidationBySymbol,record.symbol);}
+            if(record.kind==CausalMarketRecord.Kind.DEPTH_DIFF){depthDiffs++;
+                increment(depthDiffBySymbol,record.symbol);}
+            if(record.kind==CausalMarketRecord.Kind.DEPTH_BOOTSTRAP){depthBootstraps++;
+                increment(bootstrapBySymbol,record.symbol);}}
         private static void increment(Map<String,Long> values,String key){values.put(key,
                 values.getOrDefault(key,0L)+1L);}}
     public static final class EntryDigest{public final long bytes;public final String sha256;

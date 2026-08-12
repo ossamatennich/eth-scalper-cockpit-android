@@ -60,12 +60,12 @@ public final class V23453ForcedLiquidationCaptureTest {
                 "orderSide","orderType","timeInForce","originalQuantity","price","averagePrice",
                 "orderStatus","lastFilledQuantity","accumulatedFilledQuantity"})assertTrue(key,
                 map.containsKey(key));assertTrue(CausalCaptureReplay.validate(List.of(
-                        MicrostructureMarketRecord.session("s",1,1_000,1,"WS","START"),value)).complete);}
+                MicrostructureMarketRecord.sessionForVersion(3,"s",1,1_000,1,"WS","START"),value)).complete);}
 
     @Test public void v3StoreCrcReplayRoundTripsLiquidation()throws Exception{File directory=
             Files.createTempDirectory("liquidation-v3").toFile();CausalCaptureStore store=
             new CausalCaptureStore(directory,"v3",4,64_000);store.appendBatch(List.of(
-            MicrostructureMarketRecord.session("s",1,1_000,1,"WS","START"),liquidation("s",2,1_100)));
+            MicrostructureMarketRecord.sessionForVersion(3,"s",1,1_000,1,"WS","START"),liquidation("s",2,1_100)));
         try(CausalCaptureStore.Snapshot snapshot=store.checkpoint()){CausalCaptureReplay.Validation replay=
                 CausalCaptureReplay.replay(snapshot.files,null);assertTrue(replay.complete);assertEquals(1,
                 replay.liquidationSnapshots);MicrostructureMarketRecord restored=(MicrostructureMarketRecord)
@@ -77,7 +77,7 @@ public final class V23453ForcedLiquidationCaptureTest {
             new CausalCaptureStore(directory,"mixed",8,64_000);store.append(CausalMarketRecord.session(
                     "v1",1,1,1,"V1","START"));store.append(MicrostructureMarketRecord.sessionForVersion(
                     2,"v2",1,2,2,"V2","START"));store.appendBatch(List.of(
-                    MicrostructureMarketRecord.session("v3",1,3,3,"V3","START"),
+                    MicrostructureMarketRecord.sessionForVersion(3,"v3",1,3,3,"V3","START"),
                     liquidation("v3",2,4)));try(CausalCaptureStore.Snapshot snapshot=store.checkpoint()){
                 List<CausalMarketRecord> read=CausalCaptureStore.read(snapshot.files,true).records;
                 assertEquals(4,read.size());assertEquals(1,read.get(0).toMap().get("formatVersion"));
@@ -130,7 +130,7 @@ public final class V23453ForcedLiquidationCaptureTest {
             +quantity+"\",\"p\":\"1900.0\",\"ap\":\"1900.25\",\"X\":\"FILLED\",\"l\":\""
             +accumulated+"\",\"z\":\""+accumulated+"\",\"T\":1999}}}";}
     private static MicrostructureMarketRecord liquidation(String session,long sequence,long at){return
-            MicrostructureMarketRecord.liquidation(session,sequence,at,sequence,"ETHUSDT",
+            MicrostructureMarketRecord.liquidationForVersion(3,session,sequence,at,sequence,"ETHUSDT",
                     "BINANCE_FUTURES_MARKET_WS",at-1,at-2,"SELL","LIMIT","IOC",2,1900,
                     1900.25,"FILLED",2,2);}
     private static int count(String value,String token){int count=0,from=0;while((from=value.indexOf(token,

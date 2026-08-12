@@ -6,8 +6,8 @@ import java.util.Locale;
 
 /** Pure, fail-closed parser/dispatcher for Binance Futures combined public streams. */
 public final class BinanceCombinedStreamRouter {
-    public enum Type { BOOK_TICKER, AGG_TRADE, KLINE_1M, DEPTH20, LIQUIDATION_SNAPSHOT }
-    public enum SocketType { PUBLIC_WS, MARKET_WS }
+    public enum Type { BOOK_TICKER, AGG_TRADE, KLINE_1M, DEPTH20, LIQUIDATION_SNAPSHOT, DEPTH_DIFF }
+    public enum SocketType { PUBLIC_WS, MARKET_WS, INCREMENTAL_DEPTH_WS }
 
     public interface Listener {
         void onEvent(Event event);
@@ -35,9 +35,9 @@ public final class BinanceCombinedStreamRouter {
             return false;}}
 
     public static boolean accepts(SocketType socketType,Type type){if(socketType==null||type==null)
-        return false;return socketType==SocketType.PUBLIC_WS
-                ?type==Type.BOOK_TICKER||type==Type.DEPTH20
-                :type==Type.AGG_TRADE||type==Type.KLINE_1M||type==Type.LIQUIDATION_SNAPSHOT;}
+        return false;if(socketType==SocketType.PUBLIC_WS)return type==Type.BOOK_TICKER||type==Type.DEPTH20;
+        if(socketType==SocketType.MARKET_WS)return type==Type.AGG_TRADE||type==Type.KLINE_1M
+                ||type==Type.LIQUIDATION_SNAPSHOT;return type==Type.DEPTH_DIFF;}
 
     public Event parse(String payload){if(payload==null||payload.trim().isEmpty())return null;
         try{JSONObject root=new JSONObject(payload);String stream=root.optString("stream","").trim();
@@ -53,6 +53,11 @@ public final class BinanceCombinedStreamRouter {
                 if(order==null||!"forceOrder".equalsIgnoreCase(data.optString("e",""))
                         ||!symbol.equalsIgnoreCase(order.optString("s","")))return null;
                 type=Type.LIQUIDATION_SNAPSHOT;
+            }
+            else if(normalized.endsWith("@depth@100ms")){
+                if(!"depthUpdate".equalsIgnoreCase(data.optString("e",""))
+                        ||!symbol.equalsIgnoreCase(data.optString("s","")))return null;
+                type=Type.DEPTH_DIFF;
             }
             else return null;return new Event(type,stream,symbol,data);
         }catch(Exception ignored){return null;}

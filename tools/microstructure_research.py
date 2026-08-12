@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline causal feature builder for NMC capture V1/V2/V3.
+"""Offline causal feature builder for NMC capture V1/V2/V3/V4.
 
 Features are descriptive research inputs only. They are not live signals and make no claim of
 predictive value. State is cleared at every explicit GAP/DROP_SUMMARY and no future record is read.
@@ -16,8 +16,10 @@ from typing import Any, Deque, Dict, Iterable, List, Optional, Tuple
 SCHEMA_V1 = "NMC_CAUSAL_MARKET_CAPTURE_V1"
 SCHEMA_V2 = "NMC_CAUSAL_MARKET_CAPTURE_V2"
 SCHEMA_V3 = "NMC_CAUSAL_MARKET_CAPTURE_V3"
-SCHEMA = SCHEMA_V3
-SUPPORTED_CAPTURE_FORMATS = {(SCHEMA_V1, 1), (SCHEMA_V2, 2), (SCHEMA_V3, 3)}
+SCHEMA_V4 = "NMC_CAUSAL_MARKET_CAPTURE_V4"
+SCHEMA = SCHEMA_V4
+SUPPORTED_CAPTURE_FORMATS = {(SCHEMA_V1, 1), (SCHEMA_V2, 2), (SCHEMA_V3, 3),
+                             (SCHEMA_V4, 4)}
 SYMBOLS = ("ETHUSDT", "SOLUSDT", "BTCUSDT")
 WINDOWS_MS = (1_000, 5_000, 15_000, 60_000)
 
@@ -106,6 +108,12 @@ class MicrostructureResearchBuilder:
         self.coverage = collections.Counter()
         self.capture_schemas = set()
         self.liquidation_records: List[Dict[str, Any]] = []
+        self.depth_diff_records: List[Dict[str, Any]] = []
+        self.depth_bootstrap_records: List[Dict[str, Any]] = []
+        self.depth_reconstruction: Dict[str, Dict[str, Any]] = {
+            symbol: {"anchor": None, "last": None, "valid": False, "breaks": 0,
+                     "intervalStart": None, "intervals": []} for symbol in SYMBOLS
+        }
 
     def consume(self, record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         identity = (record.get("schema"), record.get("formatVersion")) if isinstance(record, dict) else None
@@ -136,6 +144,9 @@ class MicrostructureResearchBuilder:
         self.counts[kind] += 1
         if kind in ("GAP", "DROP_SUMMARY"):
             self.gaps += 1
+            for state in self.depth_reconstruction.values():
+                self._close_depth_interval(state, at)
+                state.update(anchor=None, last=None, valid=False)
             self._reset_causal_state(keep_session=True)
             self.previous_safe_at = None
             return None
@@ -175,6 +186,51 @@ class MicrostructureResearchBuilder:
                 "orderStatus": record.get("orderStatus"),
                 **values,
             })
+            return None
+        if kind == "DEPTH_BOOTSTRAP":
+            update_id = record.get("lastUpdateId")
+            bids, asks = record.get("bids"), record.get("asks")
+            if not isinstance(update_id, int) or update_id < 0 or not self._valid_raw_levels(bids, False) \
+                    or not self._valid_raw_levels(asks, False):
+                self.rejected += 1
+                return None
+            state = self.depth_reconstruction[symbol]
+            self._close_depth_interval(state, at)
+            state.update(anchor=update_id, last=None, valid=False, intervalStart=None)
+            self.depth_bootstrap_records.append(dict(record))
+            return None
+        if kind == "DEPTH_DIFF":
+            first, final, previous = (record.get("firstUpdateId"), record.get("finalUpdateId"),
+                                      record.get("previousFinalUpdateId"))
+            if (not isinstance(first, int) or not isinstance(final, int) or first < 0 or final < first
+                    or previous is not None and (not isinstance(previous, int) or previous < 0)
+                    or not self._valid_raw_levels(record.get("bids"), True)
+                    or not self._valid_raw_levels(record.get("asks"), True)):
+                self.rejected += 1
+                return None
+            self.depth_diff_records.append(dict(record))
+            state = self.depth_reconstruction[symbol]
+            if state["anchor"] is None:
+                return None
+            if not state["valid"]:
+                if final < state["anchor"]:
+                    return None
+                if first <= state["anchor"] <= final:
+                    state.update(valid=True, last=final, intervalStart=at)
+                else:
+                    state["breaks"] += 1
+                    state.update(anchor=None, last=None, valid=False)
+                return None
+            if final <= state["last"]:
+                return None
+            continuous = previous == state["last"] if previous is not None else \
+                first <= state["last"] + 1 <= final
+            if continuous:
+                state["last"] = final
+            else:
+                state["breaks"] += 1
+                self._close_depth_interval(state, at)
+                state.update(anchor=None, last=None, valid=False)
             return None
         if kind != "FLOW_100MS":
             return None
@@ -257,6 +313,14 @@ class MicrostructureResearchBuilder:
             "liquidationSnapshots": len(self.liquidation_records),
             "liquidationCountsBySymbol": dict(collections.Counter(
                 row["symbol"] for row in self.liquidation_records)),
+            "depthDiffCountBySymbol": dict(collections.Counter(
+                row["symbol"] for row in self.depth_diff_records)),
+            "depthBootstrapCountBySymbol": dict(collections.Counter(
+                row["symbol"] for row in self.depth_bootstrap_records)),
+            "incrementalDepthContinuity": {symbol: {
+                "continuityBreaks": state["breaks"], "reconstructible": state["valid"],
+                "validIntervals": list(state["intervals"])
+            } for symbol, state in self.depth_reconstruction.items()},
             "depthCoverage": _safe_ratio(self.coverage["depth"], features),
             "priceCoverage": _safe_ratio(self.coverage["price"], features),
             "crossAssetCoverage": _safe_ratio(self.coverage["crossAsset"], features),
@@ -270,6 +334,33 @@ class MicrostructureResearchBuilder:
         self.last_flow_features.clear()
         if not keep_session:
             self.session = ""
+
+    @staticmethod
+    def _valid_raw_levels(rows: Any, allow_empty: bool) -> bool:
+        if not isinstance(rows, list) or (not rows and not allow_empty):
+            return False
+        for row in rows:
+            if not isinstance(row, list) or len(row) < 2:
+                return False
+            price, quantity = _finite(row[0]), _finite(row[1])
+            if price is None or quantity is None or price < 0 or quantity < 0:
+                return False
+        return True
+
+    @staticmethod
+    def _close_depth_interval(state: Dict[str, Any], at: int) -> None:
+        start = state.get("intervalStart")
+        if state.get("valid") and isinstance(start, int) and at >= start:
+            state["intervals"].append({"from": start, "to": at})
+        state["intervalStart"] = None
+
+
+def chronological_incremental_depth(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Deterministic causal view; receive time wins and sequence breaks ties."""
+    values = [dict(record) for record in records if record.get("kind") in
+              ("DEPTH_DIFF", "DEPTH_BOOTSTRAP")]
+    return sorted(values, key=lambda record: (record.get("receivedAt", -1),
+                                               record.get("sequence", -1)))
 
 
 def build(records: Iterable[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
