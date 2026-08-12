@@ -17,9 +17,9 @@ public final class V23454IncrementalDepthCaptureTest {
             MarketFeedEndpointPool.incrementalDepthCombinedStreamUrl(0,MarketRegistry.production());
         assertTrue(url.startsWith("wss://fstream.binance.com/public/stream?streams="));
         for(String symbol:new String[]{"ethusdt","solusdt","btcusdt"})assertEquals(1,
-                count(url,symbol+"@depth@100ms"));for(String forbidden:new String[]{"@aggTrade",
+                count(url,symbol+"@depth"));for(String forbidden:new String[]{"@aggTrade",
                 "@kline_1m","@forceOrder","@bookTicker","@depth20"})assertFalse(url, url.contains(forbidden));
-        assertEquals(3,count(url,"@depth@100ms"));}
+        assertEquals(3,count(url,"@depth"));assertFalse(url.contains("@depth@100ms"));}
 
     @Test public void existingSocketsAreUnchangedAndContainNoDiffDepth(){String publicUrl=
             MarketFeedEndpointPool.publicCombinedStreamUrl(0,MarketRegistry.production());String marketUrl=
@@ -132,8 +132,8 @@ public final class V23454IncrementalDepthCaptureTest {
             assertEquals(300,CausalCaptureReplay.replay(snapshot.files,null).depthDiffs);}}
 
     @Test public void restBootstrapIsPublicUnsignedAndSafetyFrozen(){MarketFeedEndpointPool.RestEndpoint endpoint=
-            MarketFeedEndpointPool.depthSnapshotEndpoints("ETHUSDT",1000).get(0);assertEquals(
-            "https://fapi.binance.com/fapi/v1/depth?symbol=ETHUSDT&limit=1000",endpoint.url);
+            MarketFeedEndpointPool.depthSnapshotEndpoints("ETHUSDT",500).get(0);assertEquals(
+            "https://fapi.binance.com/fapi/v1/depth?symbol=ETHUSDT&limit=500",endpoint.url);
         assertFalse(endpoint.spotFallback);assertEquals("NMC_SCALP_CV_CORE_V1",CvCorePolicy.ENGINE_ID);
         assertEquals(4,CvCorePolicy.DUAL_EXHAUSTION_SHORT.targetMultiple,0);assertEquals(14.55,
                 CvCorePolicy.DUAL_EXHAUSTION_SHORT.riskBudgetUsdt,0);assertEquals(7.275,
@@ -143,7 +143,7 @@ public final class V23454IncrementalDepthCaptureTest {
     private static BinanceDepthDiff.ParseResult parse(String fixture,String symbol)throws Exception{return
             BinanceDepthDiff.parse(symbol,new JSONObject(fixture).getJSONObject("data"));}
     private static String fixture(String symbol,long first,long last,long previous,String price,String qty){return
-            "{\"stream\":\""+symbol.toLowerCase()+"@depth@100ms\",\"data\":{\"e\":\"depthUpdate\","
+            "{\"stream\":\""+symbol.toLowerCase()+"@depth\",\"data\":{\"e\":\"depthUpdate\","
             +"\"E\":1000,\"T\":999,\"s\":\""+symbol+"\",\"U\":"+first+",\"u\":"+last+
             ",\"pu\":"+previous+",\"b\":[[\""+price+"\",\""+qty+"\"]],\"a\":[[\"1901\",\"2\"]]}}";}
     private static MicrostructureMarketRecord bootstrap(String session,long sequence,long at,long update,

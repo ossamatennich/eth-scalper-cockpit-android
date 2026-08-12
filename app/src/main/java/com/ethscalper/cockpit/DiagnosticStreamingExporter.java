@@ -123,13 +123,27 @@ public final class DiagnosticStreamingExporter {
             &&value.capture.flows>0&&value.capture.depth>0&&value.corruptBlocks==0
             &&value.truncatedTails==0;boolean incrementalUsable=incrementalUsable(statusJson)
             &&value.capture.depthDiffs>0&&value.capture.depthBootstraps>0
-            &&value.corruptBlocks==0&&value.truncatedTails==0;StringBuilder out=new StringBuilder();
+            &&value.corruptBlocks==0&&value.truncatedTails==0;long durationMs=value.capture.firstAt>0
+                    &&value.capture.lastAt>=value.capture.firstAt?value.capture.lastAt-value.capture.firstAt:0;
+        double observedHours=durationMs/3_600_000d;double bytesPerHour=rate(value.sourceBytes,observedHours);
+        long retentionMaxBytes=retentionMaxBytes(statusJson);double retentionHours=bytesPerHour>0
+                &&retentionMaxBytes>0?retentionMaxBytes/bytesPerHour:Double.NaN;StringBuilder out=new StringBuilder();
         out.append("{\"schema\":\"").append(escape(value.capture.schema))
                 .append("\",\"formatVersion\":").append(value.capture.formatVersion)
                 .append(",\"streamEntry\":\"causal_market_stream.jsonl\"")
                 .append(",\"recordCount\":").append(value.records)
                 .append(",\"sourceFileCount\":").append(value.sourceFiles.size())
                 .append(",\"sourceBytes\":").append(value.sourceBytes)
+                .append(",\"observedCaptureHours\":").append(finiteOrNull(observedHours))
+                .append(",\"sourceBytesPerObservedHour\":").append(finiteOrNull(bytesPerHour))
+                .append(",\"depthDiffRecordsPerObservedHour\":").append(finiteOrNull(
+                        rate(value.capture.depthDiffs,observedHours)))
+                .append(",\"depthBootstrapRecordsPerObservedHour\":").append(finiteOrNull(
+                        rate(value.capture.depthBootstraps,observedHours)))
+                .append(",\"gapRecordsPerObservedHour\":").append(finiteOrNull(
+                        rate(value.capture.gaps,observedHours)))
+                .append(",\"retentionMaxBytes\":").append(retentionMaxBytes>0?retentionMaxBytes:"null")
+                .append(",\"estimatedRetentionHoursAtObservedRate\":").append(finiteOrNull(retentionHours))
                 .append(",\"corruptBlocks\":").append(value.corruptBlocks)
                 .append(",\"truncatedTails\":").append(value.truncatedTails)
                 .append(",\"firstReceivedAt\":").append(value.capture.firstAt>0?value.capture.firstAt:"null")
@@ -164,6 +178,13 @@ public final class DiagnosticStreamingExporter {
         JSONObject root=new JSONObject(statusJson),capture=root.optJSONObject("causalMarketCapture");
         if(capture==null)capture=root;return capture.optBoolean("usableForIncrementalDepthResearch",false);
     }catch(Exception ignored){return false;}}
+    private static long retentionMaxBytes(String statusJson){if(statusJson==null)return -1;try{
+        JSONObject root=new JSONObject(statusJson),capture=root.optJSONObject("causalMarketCapture");
+        if(capture==null)capture=root;return capture.optLong("retentionMaxBytes",-1);
+    }catch(Exception ignored){return -1;}}
+    private static double rate(long count,double hours){return hours>0?count/hours:Double.NaN;}
+    private static String finiteOrNull(double value){return Double.isFinite(value)
+            ?Double.toString(value):"null";}
 
     private static String json(Map<String,?> value){StringBuilder out=new StringBuilder();appendJson(out,value);
         return out.toString();}

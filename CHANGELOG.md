@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.34.5.5 — Incremental Depth Stability + Storage Fix
+
+- remplace `@depth@100ms` par le flux USD-M officiel `@depth` à cadence par défaut 250 ms, sans toucher aux flux 5.3 ni aux diffs bruts ;
+- applique une machine d’état bornée par symbole : buffer avant snapshot, couverture `U/u`, chaînage `pu`, requête unique en vol et retry/backoff contrôlé ;
+- supprime le storm REST et le GAP `DEPTH_DIFF_UNANCHORED` par message ; une rupture réelle produit une seule invalidation puis une resynchronisation ;
+- utilise le snapshot public officiel de 500 niveaux et expose cadence observée, volume/h et estimation de rétention dans le manifeste ;
+- ajoute la télémétrie parser/raw/pu mismatch/drop/resync et des fixtures longues sans réseau ;
+- conserve intégralement `NMC_SCALP_CV_CORE_V1` et `realTradingAllowed=false`.
+
 ## 2.34.5.3 — Forced Liquidation Capture V3
 
 - ajoute `ethusdt@forceOrder`, `solusdt@forceOrder` et `btcusdt@forceOrder` exclusivement à `MARKET_WS` ;

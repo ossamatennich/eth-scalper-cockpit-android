@@ -54,7 +54,7 @@ public final class BinanceCombinedStreamRouter {
                         ||!symbol.equalsIgnoreCase(order.optString("s","")))return null;
                 type=Type.LIQUIDATION_SNAPSHOT;
             }
-            else if(normalized.endsWith("@depth@100ms")){
+        else if(normalized.endsWith("@depth")||normalized.endsWith("@depth@100ms")){
                 if(!"depthUpdate".equalsIgnoreCase(data.optString("e",""))
                         ||!symbol.equalsIgnoreCase(data.optString("s","")))return null;
                 type=Type.DEPTH_DIFF;

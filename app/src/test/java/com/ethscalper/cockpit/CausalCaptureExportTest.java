@@ -36,7 +36,7 @@ public class CausalCaptureExportTest {
                         new double[][]{{100,0}},new double[][]{{101,2}})));
         try(CausalCaptureStore.Snapshot snapshot=store.checkpoint()){ByteArrayOutputStream bytes=
                 new ByteArrayOutputStream();DiagnosticStreamingExporter.export(bytes,empty(directory,
-                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(true),"2.34.5.4",2_000,
+                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(true),"2.34.5.5",2_000,
                 new DiagnosticStreamingExporter.ExportSnapshotMetadata(1_500,"v2",true,"FULL","sha"),
                 snapshot.files,null,()->false);Map<String,String> zip=entries(bytes.toByteArray());
             JSONObject manifest=new JSONObject(zip.get("causal_market_manifest.json"));
@@ -54,7 +54,10 @@ public class CausalCaptureExportTest {
                     "depthDiffCountBySymbol").getInt("ETHUSDT"));assertEquals(1,manifest.getJSONObject(
                     "depthBootstrapCountBySymbol").getInt("ETHUSDT"));String stream=
                     zip.get("causal_market_stream.jsonl");assertTrue(stream.contains("\"bids\":[["));
-            assertFalse(stream.contains("NaN"));assertFalse(stream.contains("Infinity"));}}
+            assertTrue(manifest.has("sourceBytesPerObservedHour"));assertTrue(manifest.has(
+                    "depthDiffRecordsPerObservedHour"));assertTrue(manifest.has(
+                    "estimatedRetentionHoursAtObservedRate"));assertFalse(stream.contains("NaN"));
+            assertFalse(stream.contains("Infinity"));}}
     @Test public void snapshotStreamsEveryRecordAndPublishesBoundedManifest()throws Exception{
         Path directory=Files.createTempDirectory("causal-export-store");
         CausalCaptureStore store=new CausalCaptureStore(directory.toFile(),"export",4,64*1024);
@@ -123,7 +126,7 @@ public class CausalCaptureExportTest {
                         1_190,1_195,1,2,0,levels(100,false),levels(101,true))));
         try(CausalCaptureStore.Snapshot snapshot=store.checkpoint()){ByteArrayOutputStream bytes=
                 new ByteArrayOutputStream();DiagnosticStreamingExporter.export(bytes,empty(directory,
-                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(false),"2.34.5.4",2_000,
+                "events.jsonl"),empty(directory,"frames.jsonl"),smallEntries(false),"2.34.5.5",2_000,
                 new DiagnosticStreamingExporter.ExportSnapshotMetadata(1_500,"v2",true,"FULL","sha"),
                 snapshot.files,null,()->false);JSONObject manifest=new JSONObject(entries(
                 bytes.toByteArray()).get("causal_market_manifest.json"));assertFalse(manifest.getBoolean(

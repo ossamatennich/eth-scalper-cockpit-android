@@ -1289,6 +1289,7 @@ public class MarketWatchService extends Service {
                 microCaptureHealth.socketMessage(MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,now);}
             @Override public void onFailure(WebSocket webSocket,Throwable error,Response response){
                 if(incrementalDepthSocket!=webSocket)return;long now=System.currentTimeMillis();
+                incrementalDepthGeneration++;incrementalBootstrapInFlight.clear();
                 incrementalDepth.socketConnected(false);incrementalDepth.requireRebootstrapAll();
                 microCaptureHealth.socketFailure(MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,
                         endpointUrl,now,response==null?-1:response.code(),error==null?"":
@@ -1297,6 +1298,7 @@ public class MarketWatchService extends Service {
                 incrementalDepthSocket=null;scheduleIncrementalDepthReconnect();}
             @Override public void onClosed(WebSocket webSocket,int code,String reason){
                 if(incrementalDepthSocket!=webSocket)return;long now=System.currentTimeMillis();
+                incrementalDepthGeneration++;incrementalBootstrapInFlight.clear();
                 incrementalDepth.socketConnected(false);incrementalDepth.requireRebootstrapAll();
                 microCaptureHealth.socketClosed(MicrostructureCaptureHealth.INCREMENTAL_DEPTH_WS,
                         endpointUrl,now,code,reason,incrementalDepthReconnectAttempt,
@@ -1317,22 +1319,29 @@ public class MarketWatchService extends Service {
         handler.postDelayed(this::connectIncrementalDepthIfNeeded,delay);}
 
     private synchronized boolean handleIncrementalDepthMessage(String text,long receivedAt){try{
+        incrementalDepth.rawSocketMessage();
         BinanceCombinedStreamRouter.Event event=streamRouter.parse(text);if(event==null
                 ||!BinanceCombinedStreamRouter.accepts(
                 BinanceCombinedStreamRouter.SocketType.INCREMENTAL_DEPTH_WS,event.type)){
-            causalCapture.rejectDepthDiff();microCaptureHealth.malformed();return false;}
+            causalCapture.rejectDepthDiff();incrementalDepth.unknownParserRejected();
+            microCaptureHealth.malformed();return false;}
         BinanceDepthDiff.ParseResult parsed=BinanceDepthDiff.parse(event.symbol,event.data);
         if(!parsed.accepted()){causalCapture.rejectDepthDiff();incrementalDepth.rejected(event.symbol);
             microCaptureHealth.malformed();return false;}BinanceDepthDiff diff=parsed.value;
+        incrementalDepth.parsed(diff.symbol);
         long monotonicAt=SystemClock.elapsedRealtime();boolean stored=causalCapture.observeDepthDiff(diff,
                 "BINANCE_FUTURES_INCREMENTAL_DEPTH_WS",receivedAt,monotonicAt);
-        if(!stored){incrementalDepth.dropped(diff.symbol,receivedAt);recordIncrementalDepthGap(
-                diff.symbol,receivedAt,"DEPTH_DIFF_QUEUE_DROP");requestDepthBootstrap(diff.symbol,0);
+        if(!stored){IncrementalDepthContinuity.Result dropped=incrementalDepth.dropped(diff.symbol,receivedAt);
+            if(dropped.gapTransition)recordIncrementalDepthGap(diff.symbol,receivedAt,dropped.reasonCode);
+            if(dropped.needsBootstrap)triggerDepthBootstrap(diff.symbol);
             return true;}incrementalDepth.accepted(diff.symbol,diff.exchangeEventAt);
         IncrementalDepthContinuity.Result continuity=incrementalDepth.observe(diff.symbol,
                 diff.firstUpdateId,diff.finalUpdateId,diff.previousFinalUpdateId,receivedAt);
-        if(continuity.needsBootstrap){recordIncrementalDepthGap(diff.symbol,receivedAt,
-                continuity.reasonCode);requestDepthBootstrap(diff.symbol,0);}return true;
+        if(continuity.gapTransition)recordIncrementalDepthGap(diff.symbol,receivedAt,
+                continuity.reasonCode+"_PREV_"+continuity.previousFinalUpdateId+"_U_"+
+                        diff.firstUpdateId+"_u_"+diff.finalUpdateId+"_pu_"+
+                        diff.previousFinalUpdateId);
+        if(continuity.needsBootstrap)triggerDepthBootstrap(diff.symbol);return true;
     }catch(RuntimeException error){causalCapture.rejectDepthDiff();microCaptureHealth.malformed();return false;}}
 
     private void recordIncrementalDepthGap(String symbol,long now,String reason){try{
@@ -1341,11 +1350,12 @@ public class MarketWatchService extends Service {
     }catch(RuntimeException ignored){}}
 
     private synchronized void requestDepthBootstrap(String symbol,int attempt){
-        if(!running||client==null||attempt>3||incrementalBootstrapInFlight.containsKey(symbol))return;
+        long requestAt=System.currentTimeMillis();if(!running||client==null
+                ||incrementalBootstrapInFlight.containsKey(symbol)
+                ||!incrementalDepth.tryBeginBootstrap(symbol,requestAt))return;
         final long generation=incrementalDepthGeneration;
-        incrementalBootstrapInFlight.put(symbol,generation);long requestAt=System.currentTimeMillis();
-        incrementalDepth.bootstrapAttempt(symbol);String endpoint=MarketFeedEndpointPool
-                .depthSnapshotEndpoints(symbol,1000).get(0).url;Request request=new Request.Builder().url(endpoint)
+        incrementalBootstrapInFlight.put(symbol,generation);String endpoint=MarketFeedEndpointPool
+                .depthSnapshotEndpoints(symbol,500).get(0).url;Request request=new Request.Builder().url(endpoint)
                 .header("User-Agent","NMC-DepthBootstrap/"+BuildConfig.VERSION_NAME).build();
         client.newCall(request).enqueue(new Callback(){
             @Override public void onFailure(Call call,IOException error){postMarketState(()->
@@ -1360,18 +1370,28 @@ public class MarketWatchService extends Service {
                             incrementalBootstrapInFlight.get(symbol)))return;
                     incrementalBootstrapInFlight.remove(symbol);boolean accepted=false;try{
                         accepted=causalCapture.observeDepthBootstrap(symbol,"BINANCE_FUTURES_PUBLIC_REST",
-                                requestAt,responseAt,SystemClock.elapsedRealtime(),updateId,1000,bids,asks);
-                    }catch(RuntimeException ignored){}if(accepted)incrementalDepth.bootstrapSuccess(symbol,
-                            updateId,responseAt);else finishDepthBootstrapFailure(symbol,attempt,generation);});
+                                requestAt,responseAt,SystemClock.elapsedRealtime(),updateId,500,bids,asks);
+                    }catch(RuntimeException ignored){}if(accepted){IncrementalDepthContinuity.Result result=
+                            incrementalDepth.bootstrapSuccess(symbol,updateId,responseAt);
+                        if(result.gapTransition)recordIncrementalDepthGap(symbol,responseAt,result.reasonCode);
+                        if(result.needsBootstrap)scheduleDepthBootstrapRetry(symbol);}
+                    else finishDepthBootstrapFailure(symbol,attempt,generation);});
             }catch(Exception error){postMarketState(()->finishDepthBootstrapFailure(symbol,attempt,generation));}}
         });}
 
     private synchronized void finishDepthBootstrapFailure(String symbol,int attempt,long generation){
         if(incrementalDepthGeneration!=generation||!Long.valueOf(generation).equals(
                 incrementalBootstrapInFlight.get(symbol)))return;
-        incrementalBootstrapInFlight.remove(symbol);incrementalDepth.bootstrapFailure(symbol);
-        if(running&&attempt<3)handler.postDelayed(()->requestDepthBootstrap(symbol,attempt+1),
-                Math.min(30_000L,1_000L<<(attempt+1)));}
+        incrementalBootstrapInFlight.remove(symbol);incrementalDepth.bootstrapFailure(symbol,
+                System.currentTimeMillis());scheduleDepthBootstrapRetry(symbol);}
+
+    private void scheduleDepthBootstrapRetry(String symbol){if(!running)return;long now=System.currentTimeMillis();
+        long delay=Math.max(1_000L,incrementalDepth.retryDelayMs(symbol,now));
+        handler.postDelayed(()->requestDepthBootstrap(symbol,0),Math.min(60_000L,delay));}
+
+    private void triggerDepthBootstrap(String symbol){long delay=incrementalDepth.retryDelayMs(symbol,
+            System.currentTimeMillis());if(delay>0)scheduleDepthBootstrapRetry(symbol);
+        else requestDepthBootstrap(symbol,0);}
 
     private void stopSocket() {
         WebSocket current = socket;

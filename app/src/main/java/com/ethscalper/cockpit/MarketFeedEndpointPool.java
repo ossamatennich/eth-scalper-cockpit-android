@@ -90,11 +90,13 @@ public final class MarketFeedEndpointPool {
 
     private static void appendIncrementalDepthStream(StringBuilder value,String symbol){
         if(value.charAt(value.length()-1)!='=')value.append('/');
-        value.append(symbol).append("@depth@100ms");}
+        // Binance USD-M default diff-depth cadence is 250 ms. It is sufficient for the
+        // 500 ms+ research horizons and materially reduces transport/storage pressure.
+        value.append(symbol).append("@depth");}
 
     /** Unsigned USD-M Futures order-book snapshot used only to anchor diff-depth replay. */
     public static List<RestEndpoint> depthSnapshotEndpoints(String symbol,int limit){
-        if(!CausalMarketRecord.supported(symbol)||limit!=1000)throw new IllegalArgumentException("depth");
+        if(!CausalMarketRecord.supported(symbol)||limit!=500)throw new IllegalArgumentException("depth");
         return Collections.singletonList(new RestEndpoint(FUTURES_PRIMARY,FUTURES_REST+
                 "/depth?symbol="+symbol+"&limit="+limit,false));}
 
