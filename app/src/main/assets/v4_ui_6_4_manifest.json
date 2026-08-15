@@ -1,0 +1,19 @@
+{
+  "schema": "NMC_V4_UI_POLISH_FREEZE_V1",
+  "versionName": "2.34.6.4",
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "parentUiManifestCanonicalSha256": "800364980b55c86748f1af6c60c4aec72a6ffdb4f500635354fd6c4c533341fa",
+  "parentFrozenManifestCanonicalSha256": "47b62ac8b29ec7a72b7a3e698e14573528dd4c8dbbdd25aa130170992252e7f3",
+  "modelSha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+  "realTradingAllowed": false,
+  "scope": "UI_UX_DISPLAY_AND_SCROLL_ONLY",
+  "files": [
+    {"path": "app/build.gradle", "sha256": "67c0c1872d3a8e865fac945188b53fe4d8d2c015bdac2b233d22f2dcb212b575"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4MainActivity.java", "sha256": "09ec8ffe78f6ed0ddfcf3293cd73cb4315dc024a18d379622a5cc8144c37b44f"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4PriceDisplay.java", "sha256": "eab71f453f075749f4d8afe04e5dfd62c67c430963838c76ca82bfa4da2c3041"},
+    {"path": "app/src/main/res/drawable/ic_v4_home.xml", "sha256": "3a5239e4e567945e7c0168ad31b40ab7f1deeff244fc504a440b0955bac26a40"},
+    {"path": "app/src/main/res/drawable/ic_v4_plans.xml", "sha256": "9f6899d5be6deb68740012a9f8cc42c75f5052b973a36ae6f0560c2271696a41"},
+    {"path": "app/src/main/res/drawable/ic_v4_history.xml", "sha256": "14714060e4e024f33faab0db1f1a1190a919e9631c9ceaded17604b4e2b22db5"},
+    {"path": "app/src/main/res/drawable/ic_v4_copy.xml", "sha256": "907139df87fd736505b60f27cd7c9b833df125eb2d127a4eb1827ec287f92960"}
+  ]
+}
