@@ -8,8 +8,8 @@ public class BootReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context, Intent intent) {
         String action = intent == null ? null : intent.getAction();
         if (Intent.ACTION_BOOT_COMPLETED.equals(action) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
-            Intent svc = new Intent(context, MarketWatchService.class);
-            svc.setAction(MarketWatchService.ACTION_START);
+            Intent svc = new Intent(context, V4ForegroundService.class);
+            svc.setAction(V4ForegroundService.ACTION_START);
             context.startForegroundService(svc);
         }
     }

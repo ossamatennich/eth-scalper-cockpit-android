@@ -11,10 +11,10 @@ import static org.junit.Assert.*;
 public class V4LoudAlertContractTest {
     @Test public void v4UsesEstablishedNmcLoudChannelOnly()throws Exception{
         String coordinator=source("src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java");
-        assertTrue(coordinator.contains("MarketWatchService.ensureChannels(context)"));
-        assertTrue(coordinator.contains("MarketWatchService.FINAL_SIGNAL_LOUD_CHANNEL_ID"));
+        assertTrue(coordinator.contains("V4NotificationChannels.ensure(context)"));
+        assertTrue(coordinator.contains("V4NotificationChannels.LOUD_CHANNEL_ID"));
         assertTrue(coordinator.contains("R.raw.eth_alert_loud"));
-        assertTrue(coordinator.contains("MarketWatchService.ALERT_VIBRATION"));
+        assertTrue(coordinator.contains("V4NotificationChannels.ALERT_VIBRATION"));
         assertTrue(coordinator.contains("NotificationCompat.PRIORITY_MAX"));
         assertTrue(coordinator.contains("NotificationCompat.CATEGORY_ALARM"));
         assertFalse(coordinator.contains("nmc_v4_plans"));
@@ -23,13 +23,13 @@ public class V4LoudAlertContractTest {
         assertTrue(coordinator.contains("notifyUndeliveredTerminalState"));
     }
     @Test public void establishedChannelIsHighCustomSoundAndLongVibration()throws Exception{
-        String service=source("src/main/java/com/ethscalper/cockpit/MarketWatchService.java");
-        assertEquals("nmc_final_signal_loud_v2",MarketWatchService.FINAL_SIGNAL_LOUD_CHANNEL_ID);
-        assertTrue(service.contains("NotificationManager.IMPORTANCE_HIGH"));
-        assertTrue(service.contains("R.raw.eth_alert_loud"));
-        assertTrue(service.contains("signals.enableVibration(true)"));
-        assertTrue(service.contains("signals.setVibrationPattern(ALERT_VIBRATION)"));
-        assertArrayEquals(new long[]{0,750,180,750,180,1200},MarketWatchService.ALERT_VIBRATION);
+        String channels=source("src/main/java/com/ethscalper/cockpit/V4NotificationChannels.java");
+        assertEquals("nmc_final_signal_loud_v2",V4NotificationChannels.LOUD_CHANNEL_ID);
+        assertTrue(channels.contains("NotificationManager.IMPORTANCE_HIGH"));
+        assertTrue(channels.contains("R.raw.eth_alert_loud"));
+        assertTrue(channels.contains("loud.enableVibration(true)"));
+        assertTrue(channels.contains("loud.setVibrationPattern(ALERT_VIBRATION)"));
+        assertArrayEquals(new long[]{0,750,180,750,180,1200},V4NotificationChannels.ALERT_VIBRATION);
     }
     @Test public void android13PermissionIsDeclaredAndRequestedOnce()throws Exception{
         String manifest=source("src/main/AndroidManifest.xml"),activity=source("src/main/java/com/ethscalper/cockpit/V4MainActivity.java");

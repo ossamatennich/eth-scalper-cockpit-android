@@ -1,0 +1,22 @@
+{
+  "schema": "NMC_V4_RUNTIME_CLEANUP_FREEZE_V1",
+  "versionName": "2.34.6.6",
+  "versionCode": 23466,
+  "label": "NMC Stable 6.6",
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "scope": "FOREGROUND_HOST_MANIFEST_AND_NOTIFICATION_RUNTIME_ONLY",
+  "modelSha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+  "parentFrozenManifestCanonicalSha256": "47b62ac8b29ec7a72b7a3e698e14573528dd4c8dbbdd25aa130170992252e7f3",
+  "realTradingAllowed": false,
+  "files": [
+    {"path":"app/build.gradle","sha256":"b26f643d3a1b5812fc961b899c01bd63dfcfd00e5ee92de40546c354186a0464"},
+    {"path":"app/src/main/AndroidManifest.xml","sha256":"7f158b9077ab3e38a225ebc9dfeb4bd661265f70ad35f00ee5df3fa177d2483c"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/V4ForegroundService.java","sha256":"82556fda5bef676dd2372432d7960951132be711832c4af40609f6621b0d266b"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/V4NotificationChannels.java","sha256":"f0a4a0ead3924dfa261f72a5f45cdbee44bbd6f5e1595e25001bf2d18f579bcf"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/V4MainActivity.java","sha256":"1f5604afa6ccfc9edeca894a895c6d1f81775c715cb3e4c756219dec314c84d7"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/BootReceiver.java","sha256":"f857da68b5dd3302d1be22565ce391decb63b6a56f2747502b302a5ac1d60a91"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java","sha256":"9e99e28986559bf3048eba65eee0cd3d562d5dccdaa29bb76602350ec4822b35"},
+    {"path":".github/scripts/android-launch-smoke.sh","sha256":"dc2f6edae42700c1fe918c928e866fe51976f22f88f474772924339c2036bc5e"},
+    {"path":".github/workflows/nmc-ci.yml","sha256":"30f8de87453b9b6c20ada00dfd1fbe1a63152bbfd2e8bbba727f380ceb79d459"}
+  ]
+}

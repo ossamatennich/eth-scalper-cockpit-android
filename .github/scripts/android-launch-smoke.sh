@@ -32,9 +32,23 @@ test -n "$PID"
 adb shell dumpsys activity activities | grep -q "$ACTIVITY"
 adb shell dumpsys window windows | grep -q "$PACKAGE/$ACTIVITY"
 printf 'ANDROID_LAUNCH_PROCESS=PASS pid=%s\n' "$PID"
+SERVICE_DUMP="$(adb shell dumpsys activity services "$PACKAGE")"
+printf '%s\n' "$SERVICE_DUMP" | grep -q 'V4ForegroundService'
+if printf '%s\n' "$SERVICE_DUMP" | grep -q 'MarketWatchService'; then
+  printf 'LEGACY_MARKET_WATCH_SERVICE=RUNNING\n'
+  exit 1
+fi
+printf 'ANDROID_V4_FOREGROUND_SERVICE=PASS legacy=absent\n'
 CHANNEL_DUMP="$(adb shell dumpsys notification --noredact)"
 printf '%s\n' "$CHANNEL_DUMP" | grep -q 'nmc_final_signal_loud_v2'
+printf '%s\n' "$CHANNEL_DUMP" | grep -q 'nmc_v4_monitor_v1'
+printf '%s\n' "$CHANNEL_DUMP" | grep -q 'NMC.*Surveillance V4'
+if printf '%s\n' "$CHANNEL_DUMP" | grep -q 'eth_scalper_watch_v22801'; then
+  printf 'LEGACY_FOREGROUND_CHANNEL=PRESENT\n'
+  exit 1
+fi
 printf 'ANDROID_LOUD_NOTIFICATION_CHANNEL=PASS id=nmc_final_signal_loud_v2 permission=granted\n'
+printf 'ANDROID_V4_MONITOR_NOTIFICATION=PASS id=nmc_v4_monitor_v1 legacy=retired\n'
 adb exec-out screencap -p > "$SCREEN_FILE"
 test -s "$SCREEN_FILE"
 printf 'ANDROID_SCREENSHOT=PASS bytes=%s\n' "$(wc -c < "$SCREEN_FILE")"
@@ -105,6 +119,47 @@ else
   printf 'ANDROID_BOTTOM_NAV=VISIBLE_CLICKABLE_VISUAL_TRANSITIONS\n'
   printf 'ANDROID_UI_HIERARCHY=UNAVAILABLE_NAVIGATION_VERIFIED_BY_RENDERED_TRANSITIONS\n'
 fi
+
+# The foreground notification itself must keep V4 alive and reopen only the
+# current V4 Activity after the application is backgrounded.
+adb shell input keyevent KEYCODE_HOME
+sleep 3
+BACKGROUND_SERVICE_DUMP="$(adb shell dumpsys activity services "$PACKAGE")"
+printf '%s\n' "$BACKGROUND_SERVICE_DUMP" | grep -q 'V4ForegroundService'
+if printf '%s\n' "$BACKGROUND_SERVICE_DUMP" | grep -q 'MarketWatchService'; then exit 1; fi
+printf 'ANDROID_V4_BACKGROUND_HOST=PASS\n'
+adb shell cmd statusbar expand-notifications
+sleep 2
+adb shell uiautomator dump --compressed /sdcard/nmc-notifications.xml || true
+adb pull /sdcard/nmc-notifications.xml "${RUNNER_TEMP:-/tmp}/nmc-notifications.xml" >/dev/null 2>&1 || true
+NOTIFICATION_CENTER=""
+if test -f "${RUNNER_TEMP:-/tmp}/nmc-notifications.xml"; then
+  NOTIFICATION_CENTER="$(python3 - "${RUNNER_TEMP:-/tmp}/nmc-notifications.xml" <<'PY' || true
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+node = next((n for n in root.iter('node') if 'Surveillance V4' in n.attrib.get('text', '')), None)
+if node is None:
+    raise SystemExit(1)
+m = re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib['bounds'])
+if not m:
+    raise SystemExit(1)
+x1, y1, x2, y2 = map(int, m.groups())
+print((x1 + x2) // 2, (y1 + y2) // 2)
+PY
+)"
+fi
+if test -n "$NOTIFICATION_CENTER"; then
+  set -- $NOTIFICATION_CENTER
+  adb shell input tap "$1" "$2"
+else
+  SCREEN_SIZE="$(adb shell wm size | sed -n 's/.*: \([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p' | tail -n 1)"
+  set -- $SCREEN_SIZE
+  test "$#" -eq 2
+  adb shell input tap "$(( $1 / 2 ))" "$(( $2 * 35 / 100 ))"
+fi
+sleep 3
+adb shell dumpsys activity activities | grep 'mResumedActivity' | grep -q "$ACTIVITY"
+printf 'ANDROID_V4_MONITOR_CLICK_TARGET=PASS activity=%s\n' "$ACTIVITY"
 
 ANDROID_RUNTIME_ERRORS="$(adb logcat -d -v threadtime AndroidRuntime:E '*:S')"
 if printf '%s\n' "$ANDROID_RUNTIME_ERRORS" | grep -q "$PACKAGE"; then

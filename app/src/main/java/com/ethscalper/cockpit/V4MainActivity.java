@@ -75,7 +75,7 @@ public final class V4MainActivity extends Activity {
         buildShell();
         if(getIntent()!=null&&getIntent().getBooleanExtra("v4_open_plans",false))tab=1;
         requestNotificationPermissionOnce();
-        ContextCompat.startForegroundService(this,new Intent(this,MarketWatchService.class).setAction(MarketWatchService.ACTION_START));
+        ContextCompat.startForegroundService(this,new Intent(this,V4ForegroundService.class).setAction(V4ForegroundService.ACTION_START));
         V4RuntimeCoordinator.start(this);
         render();
     }
