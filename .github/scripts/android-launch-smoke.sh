@@ -128,37 +128,26 @@ BACKGROUND_SERVICE_DUMP="$(adb shell dumpsys activity services "$PACKAGE")"
 printf '%s\n' "$BACKGROUND_SERVICE_DUMP" | grep -q 'V4ForegroundService'
 if printf '%s\n' "$BACKGROUND_SERVICE_DUMP" | grep -q 'MarketWatchService'; then exit 1; fi
 printf 'ANDROID_V4_BACKGROUND_HOST=PASS\n'
-adb shell cmd statusbar expand-notifications
-sleep 2
-adb shell uiautomator dump --compressed /sdcard/nmc-notifications.xml || true
-adb pull /sdcard/nmc-notifications.xml "${RUNNER_TEMP:-/tmp}/nmc-notifications.xml" >/dev/null 2>&1 || true
-NOTIFICATION_CENTER=""
-if test -f "${RUNNER_TEMP:-/tmp}/nmc-notifications.xml"; then
-  NOTIFICATION_CENTER="$(python3 - "${RUNNER_TEMP:-/tmp}/nmc-notifications.xml" <<'PY' || true
-import re, sys, xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
-node = next((n for n in root.iter('node') if 'Surveillance V4' in n.attrib.get('text', '')), None)
-if node is None:
-    raise SystemExit(1)
-m = re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib['bounds'])
-if not m:
-    raise SystemExit(1)
-x1, y1, x2, y2 = map(int, m.groups())
-print((x1 + x2) // 2, (y1 + y2) // 2)
-PY
-)"
-fi
-if test -n "$NOTIFICATION_CENTER"; then
-  set -- $NOTIFICATION_CENTER
-  adb shell input tap "$1" "$2"
-else
-  SCREEN_SIZE="$(adb shell wm size | sed -n 's/.*: \([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p' | tail -n 1)"
-  set -- $SCREEN_SIZE
-  test "$#" -eq 2
-  adb shell input tap "$(( $1 / 2 ))" "$(( $2 * 35 / 100 ))"
-fi
-sleep 3
-adb shell dumpsys activity activities | grep 'mResumedActivity' | grep -q "$ACTIVITY"
+SCREEN_SIZE="$(adb shell wm size | sed -n 's/.*: \([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p' | tail -n 1)"
+set -- $SCREEN_SIZE
+test "$#" -eq 2
+SCREEN_WIDTH="$1"
+SCREEN_HEIGHT="$2"
+NOTIFICATION_CLICKED=false
+# The foreground notification is the only application notification on this
+# fresh install. Avoid uiautomator here: the real 15-second status refresh can
+# keep the system shade from reaching accessibility-idle on headless API 35.
+for Y_PERCENT in 15 22 30; do
+  adb shell cmd statusbar expand-notifications
+  sleep 2
+  adb shell input tap "$(( SCREEN_WIDTH / 2 ))" "$(( SCREEN_HEIGHT * Y_PERCENT / 100 ))"
+  sleep 3
+  if adb shell dumpsys activity activities | grep 'mResumedActivity' | grep -q "$ACTIVITY"; then
+    NOTIFICATION_CLICKED=true
+    break
+  fi
+done
+test "$NOTIFICATION_CLICKED" = true
 printf 'ANDROID_V4_MONITOR_CLICK_TARGET=PASS activity=%s\n' "$ACTIVITY"
 
 ANDROID_RUNTIME_ERRORS="$(adb logcat -d -v threadtime AndroidRuntime:E '*:S')"
