@@ -6,6 +6,7 @@ PACKAGE=com.ethscalper.cockpit.stable
 ACTIVITY=com.ethscalper.cockpit.V4MainActivity
 UI_FILE="${RUNNER_TEMP:-/tmp}/nmc-ui.xml"
 SCREEN_FILE="${RUNNER_TEMP:-/tmp}/nmc-screen.png"
+SHADE_FILE="${RUNNER_TEMP:-/tmp}/nmc-notification-shade.png"
 
 adb install -r "$APK"
 adb shell pm grant "$PACKAGE" android.permission.POST_NOTIFICATIONS
@@ -137,6 +138,9 @@ NOTIFICATION_CLICKED=false
 # The foreground notification is the only application notification on this
 # fresh install. Avoid uiautomator here: the real 15-second status refresh can
 # keep the system shade from reaching accessibility-idle on headless API 35.
+adb shell cmd statusbar expand-notifications
+sleep 2
+adb exec-out screencap -p > "$SHADE_FILE"
 for Y_PERCENT in 38 45 52 59 66 73 80; do
   printf 'ANDROID_V4_MONITOR_TAP_ATTEMPT y_percent=%s\n' "$Y_PERCENT"
   adb shell cmd statusbar expand-notifications

@@ -87,11 +87,14 @@ jobs:
           disable-animations: true
           script: sh .github/scripts/android-launch-smoke.sh
       - name: Upload Android launch screenshot
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: NMC-v2.34.6.6-launch-smoke
-          path: ${{ runner.temp }}/nmc-screen.png
-          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/nmc-screen.png
+            ${{ runner.temp }}/nmc-notification-shade.png
+          if-no-files-found: warn
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
