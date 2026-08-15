@@ -86,7 +86,7 @@ PY
   sleep 1
   adb shell uiautomator dump --compressed /sdcard/nmc-ui-plans.xml
   adb pull /sdcard/nmc-ui-plans.xml "${RUNNER_TEMP:-/tmp}/nmc-ui-plans.xml" >/dev/null
-  grep -q 'text="ORDRES LIMITES POSSIBLES"' "${RUNNER_TEMP:-/tmp}/nmc-ui-plans.xml"
+  grep -q 'text="ORDRES LIMITES POSSIBLES' "${RUNNER_TEMP:-/tmp}/nmc-ui-plans.xml"
   printf 'ANDROID_BOTTOM_NAV=VISIBLE_AND_CLICKABLE\n'
   printf 'ANDROID_UI_HIERARCHY=NMC\n'
 else
