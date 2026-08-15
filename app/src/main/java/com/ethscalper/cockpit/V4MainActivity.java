@@ -1,6 +1,7 @@
 package com.ethscalper.cockpit;
 
 import android.app.AlertDialog;
+import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -20,7 +21,6 @@ import android.widget.ScrollView;
 import android.widget.Space;
 import android.widget.TextView;
 
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
 import java.text.DecimalFormat;
@@ -31,7 +31,7 @@ import java.util.Locale;
 import java.util.TimeZone;
 
 /** Minimal operational UI for manually executed V4 plans. */
-public final class V4MainActivity extends AppCompatActivity {
+public final class V4MainActivity extends Activity {
     private static final int BG=Color.rgb(8,12,19),CARD=Color.rgb(18,25,36),MUTED=Color.rgb(146,158,178),TEXT=Color.rgb(241,245,249),ACCENT=Color.rgb(67,135,255);
     private FrameLayout content;private TextView modeChip,scanner,lastAnalysis;private int tab;private boolean registered;private String historyFilter="TOUS";
     private final BroadcastReceiver receiver=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){render();}};
