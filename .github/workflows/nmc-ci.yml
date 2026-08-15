@@ -86,7 +86,7 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: |
-            set -euo pipefail
+            set -eu
             APK=app/build/outputs/apk/stable/app-stable.apk
             PACKAGE=com.ethscalper.cockpit.stable
             ACTIVITY=com.ethscalper.cockpit.V4MainActivity
@@ -95,7 +95,7 @@ jobs:
             adb logcat -c
             START_OUTPUT="$(adb shell am start -W "$PACKAGE/$ACTIVITY")"
             printf '%s\n' "$START_OUTPUT"
-            grep -q 'Status: ok' <<<"$START_OUTPUT"
+            printf '%s\n' "$START_OUTPUT" | grep -q 'Status: ok'
             sleep 8
             test -n "$(adb shell pidof "$PACKAGE")"
             adb shell dumpsys activity activities | grep -q "$PACKAGE/$ACTIVITY"
@@ -103,7 +103,7 @@ jobs:
             adb pull /sdcard/nmc-ui.xml "$RUNNER_TEMP/nmc-ui.xml"
             grep -q 'text="NMC"' "$RUNNER_TEMP/nmc-ui.xml"
             ANDROID_RUNTIME_ERRORS="$(adb logcat -d -v threadtime AndroidRuntime:E '*:S')"
-            if grep -q "$PACKAGE" <<<"$ANDROID_RUNTIME_ERRORS"; then
+            if printf '%s\n' "$ANDROID_RUNTIME_ERRORS" | grep -q "$PACKAGE"; then
               printf '%s\n' "$ANDROID_RUNTIME_ERRORS"
               exit 1
             fi
