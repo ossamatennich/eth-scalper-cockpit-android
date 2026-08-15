@@ -1,0 +1,13 @@
+{
+  "schema": "NMC_V4_ANDROID_LAUNCH_HOTFIX_V1",
+  "versionName": "2.34.6.2",
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "parentOperationalManifestCanonicalSha256": "231150e1428e9c1ca380998e12565419334ee9da8e0150a7202784a03e1af01d",
+  "modelSha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+  "realTradingAllowed": false,
+  "files": [
+    {"path": "app/build.gradle", "sha256": "e41325d6da2f8c167763f446d181754e239c665024441553c7e85c4d1c7aa67c"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4MainActivity.java", "sha256": "cf9a0af6061958aa5fa6922bf595c6c201cdd6434ad1b31130e2d32bb407753e"},
+    {"path": "app/src/main/res/values/styles.xml", "sha256": "b250963ac919b8a27d48cf1c81bfc4d7dfd23c80ca1257fb86eb060aa94fe4b1"}
+  ]
+}

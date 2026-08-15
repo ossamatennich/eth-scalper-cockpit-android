@@ -11,10 +11,10 @@ import static org.junit.Assert.*;
 public final class V23451CaptureDeliveryConfigurationTest {
     @Test public void releaseIdentityAndCaptureSchemaAreExact()throws Exception{String gradle=read(
             "app/build.gradle"),workflow=read(".github/workflows/nmc-ci.yml");
-        assertTrue(gradle.contains("versionCode 23461"));assertTrue(gradle.contains(
-                "versionName '2.34.6.1'"));assertTrue(gradle.contains("NMC Stable 6.1"));
-        assertTrue(workflow.contains("NMC v2.34.6.1 Stable CI"));assertTrue(workflow.contains(
-                "NMC-v2.34.6.1-stable-apk"));assertEquals("NMC_CAUSAL_MARKET_CAPTURE_V4",
+        assertTrue(gradle.contains("versionCode 23462"));assertTrue(gradle.contains(
+                "versionName '2.34.6.2'"));assertTrue(gradle.contains("NMC Stable 6.2"));
+        assertTrue(workflow.contains("NMC v2.34.6.2 Stable CI"));assertTrue(workflow.contains(
+                "NMC-v2.34.6.2-stable-apk"));assertEquals("NMC_CAUSAL_MARKET_CAPTURE_V4",
                 MicrostructureMarketRecord.SCHEMA);assertEquals(4,MicrostructureMarketRecord.FORMAT_VERSION);}
 
     @Test public void publicEnginePolicyAndSafetyRemainFrozen(){assertEquals("NMC_SCALP_CV_CORE_V1",

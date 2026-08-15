@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.34.6.2 — NMC Stable 6.2 / Android launch hotfix
+
+- aligne `V4MainActivity` sur le thème Android natif `Theme.Material.NoActionBar` en utilisant `android.app.Activity` ;
+- ne modifie ni le moteur `NMC_PROP_DAILY_HYBRID_V4`, ni son modèle, ni ses règles, ni son UX.
+
 ## 2.34.6.1 — NMC Stable 6.1 / V4 operational corrections
 
 - rend l'historique de confiance FALLBACK idempotent et persistant par date UTC ;

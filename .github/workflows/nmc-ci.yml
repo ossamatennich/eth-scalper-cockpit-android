@@ -1,4 +1,4 @@
-name: NMC v2.34.6.1 Stable CI
+name: NMC v2.34.6.2 Stable CI
 
 on:
   push:
@@ -70,9 +70,46 @@ jobs:
         run: |
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/stable/app-stable.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/stable/app-stable.apk | head -n 3
+      - name: Enable KVM for Android launch smoke test
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android Stable launch smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            APK=app/build/outputs/apk/stable/app-stable.apk
+            PACKAGE=com.ethscalper.cockpit.stable
+            ACTIVITY=com.ethscalper.cockpit.V4MainActivity
+            adb install -r "$APK"
+            adb shell am force-stop "$PACKAGE"
+            adb logcat -c
+            START_OUTPUT="$(adb shell am start -W "$PACKAGE/$ACTIVITY")"
+            printf '%s\n' "$START_OUTPUT"
+            grep -q 'Status: ok' <<<"$START_OUTPUT"
+            sleep 8
+            test -n "$(adb shell pidof "$PACKAGE")"
+            adb shell dumpsys activity activities | grep -q "$PACKAGE/$ACTIVITY"
+            adb shell uiautomator dump --compressed /sdcard/nmc-ui.xml
+            adb pull /sdcard/nmc-ui.xml "$RUNNER_TEMP/nmc-ui.xml"
+            grep -q 'text="NMC"' "$RUNNER_TEMP/nmc-ui.xml"
+            ANDROID_RUNTIME_ERRORS="$(adb logcat -d -v threadtime AndroidRuntime:E '*:S')"
+            if grep -q "$PACKAGE" <<<"$ANDROID_RUNTIME_ERRORS"; then
+              printf '%s\n' "$ANDROID_RUNTIME_ERRORS"
+              exit 1
+            fi
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NMC-v2.34.6.1-stable-apk
+          name: NMC-v2.34.6.2-stable-apk
           path: app/build/outputs/apk/stable/app-stable.apk
           if-no-files-found: error
