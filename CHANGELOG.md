@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.34.6.1 — NMC Stable 6.1 / V4 operational corrections
+
+- rend l'historique de confiance FALLBACK idempotent et persistant par date UTC ;
+- applique fill puis STOP lorsqu'un ordre posé touche ENTRY et SL dans la même bougie 1m ;
+- protège les quantités engagées, réserve le risque restant et sépare les gardes fresh/continuation ;
+- aligne tout seed cross-sectionnel sur une date UTC commune, sans réutiliser une ligne J-1.
+
 ## 2.34.6.0 — NMC Stable 6.0 / NMC_PROP_DAILY_HYBRID_V4
 
 - remplace la publication publique CV Core par le moteur quotidien V4 reset-safe, sans supprimer les diagnostics historiques ;

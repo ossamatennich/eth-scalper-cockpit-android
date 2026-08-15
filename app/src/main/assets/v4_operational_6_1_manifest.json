@@ -1,0 +1,22 @@
+{
+  "schema": "NMC_V4_OPERATIONAL_FIX_FREEZE_V1",
+  "versionName": "2.34.6.1",
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "parentFrozenManifestCanonicalSha256": "47b62ac8b29ec7a72b7a3e698e14573528dd4c8dbbdd25aa130170992252e7f3",
+  "modelSha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+  "realTradingAllowed": false,
+  "files": [
+    {"path": "app/build.gradle", "sha256": "670539f022b0227f165153f14e5a23d174f9ce17b34e5bdf153598999d2c35c1"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4AccountProfile.java", "sha256": "263eb0ccf4186cec9b918adfd6ca3678fa171b3cabd5ed3f7b8c56177e506cb3"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4CreationPolicy.java", "sha256": "575abc303e3420e89beaf5c574f8f1ec09602cd3c2a20331c077865ddc2cb2a2"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4Engine.java", "sha256": "3101ef8ca213fe87202aee921f018807ecee92abf6472b198d984780001fdbd2"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4FallbackHistory.java", "sha256": "1bc721cac340f9ee568f364ce47f777015869d60a011136a18cec5560d76b50c"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4FeatureEngine.java", "sha256": "0c3c9f1a5246c04939d4194d052a68b12e07aea329fdb8b936851c0cd1efc091"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4Plan.java", "sha256": "af3cdf1675e3103abc0f0f9296895c2e329e5e6ab5f6c3daec615451412fabdb"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4PlanLifecycle.java", "sha256": "e8fd83603fb1581ff99f86d1ce0c66b43f9c9e1d458619e768d09194b797383e"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4RiskSizer.java", "sha256": "fbbb7f226e3577733ddf3032cedc32f1874e0f0a14798500b01aac3826afb3cd"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java", "sha256": "671ce6fadf03c6c9a4fdd5aea299d8d60b6f61abbd9d4c6f3918bb98f568d3e2"},
+    {"path": "tools/v4_reference/binance_smoke.py", "sha256": "49a7da6184117b6ea2d8cb422830c148c7038015d7002475043bc3ba38a3e82f"},
+    {"path": "NMC_STABLE_6_1_BINANCE_SMOKE_REPORT.json", "sha256": "bf40179a0f9bb7398b00c74b626b4c0eb4b44237f4a417001c6275d37337138c"}
+  ]
+}

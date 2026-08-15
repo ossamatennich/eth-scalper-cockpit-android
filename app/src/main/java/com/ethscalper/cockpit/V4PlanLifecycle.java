@@ -15,8 +15,10 @@ public final class V4PlanLifecycle {
             boolean stop=touches(b,p.sl),target=touches(b,p.tp),entry=touches(b,p.entry);
             if(p.status==V4Plan.Status.OPEN){if(stop)return close(p,V4Plan.Status.CLOSED_SL,b.at,p.sl,"Stop atteint");
                 if(target)return close(p,V4Plan.Status.CLOSED_TP,b.at,p.tp,"Take profit atteint");continue;}
-            if(p.status==V4Plan.Status.ORDER_PLACED){if(stop){p.status=V4Plan.Status.INVALIDATED;p.closedAt=b.at;p.statusReason="Setup invalidé avant exécution confirmée";return p.status;}
-                if(entry){p.status=V4Plan.Status.OPEN;p.openedAt=b.at;p.statusReason="Ordre limite exécuté";if(target)return close(p,V4Plan.Status.CLOSED_TP,b.at,p.tp,"Take profit atteint");continue;}
+            if(p.status==V4Plan.Status.ORDER_PLACED){if(entry){p.status=V4Plan.Status.OPEN;p.openedAt=b.at;p.statusReason="Ordre limite exécuté";
+                    if(stop)return close(p,V4Plan.Status.CLOSED_SL,b.at,p.sl,"Stop atteint après exécution dans la même bougie");
+                    if(target)return close(p,V4Plan.Status.CLOSED_TP,b.at,p.tp,"Take profit atteint");continue;}
+                if(stop){p.status=V4Plan.Status.INVALIDATED;p.closedAt=b.at;p.statusReason="Setup invalidé avant exécution confirmée";return p.status;}
                 if(target){p.status=V4Plan.Status.MISSED_TOO_LATE;p.closedAt=b.at;p.statusReason="Mouvement déjà consommé avant exécution";return p.status;}}
             if(!followed){if(stop){p.status=V4Plan.Status.INVALIDATED;p.statusReason="Setup invalidé avant entrée";p.closedAt=b.at;return p.status;}
                 if(target){p.status=V4Plan.Status.MISSED_TOO_LATE;p.statusReason="Mouvement déjà consommé";p.closedAt=b.at;return p.status;}}

@@ -16,9 +16,20 @@ public final class V4FeatureEngine {
         public final double atr,longScore,shortScore;Candidate(V4Plan.Source s,String a,V4Plan.Side d,double atr,double l,double sh){source=s;asset=a;side=d;this.atr=atr;longScore=l;shortScore=sh;}}
     private V4FeatureEngine(){}
     public static Map<String,Snapshot> compute(Map<String,List<V4DailyBar>> panel){
+        return computeAt(panel,latestCutoff(panel));}
+    public static Map<String,Snapshot> computeAt(Map<String,List<V4DailyBar>> panel,long cutoff){
+        return computeAligned(alignAt(panel,cutoff),cutoff);}
+    public static long latestCutoff(Map<String,List<V4DailyBar>> panel){long latest=Long.MIN_VALUE;for(List<V4DailyBar>b:panel.values())if(b!=null&&!b.isEmpty())latest=Math.max(latest,b.get(b.size()-1).openTime);
+        if(latest==Long.MIN_VALUE)throw new IllegalArgumentException("empty panel");return latest;}
+    public static Map<String,List<V4DailyBar>> alignAt(Map<String,List<V4DailyBar>> panel,long cutoff){LinkedHashMap<String,List<V4DailyBar>> out=new LinkedHashMap<>();
+        for(String asset:V4Universe.ASSETS){List<V4DailyBar>b=panel.get(asset);if(b==null)continue;int index=find(b,cutoff);if(index>=0)out.put(asset,new ArrayList<>(b.subList(0,index+1)));}return out;}
+    public static long sharedCutoff(Map<String,Snapshot> snapshots){long cutoff=Long.MIN_VALUE;for(Snapshot s:snapshots.values()){
+        if(cutoff==Long.MIN_VALUE)cutoff=s.cutoff;else if(cutoff!=s.cutoff)throw new IllegalArgumentException("mixed UTC cutoff");}
+        if(cutoff==Long.MIN_VALUE)throw new IllegalArgumentException("empty snapshots");return cutoff;}
+    private static Map<String,Snapshot> computeAligned(Map<String,List<V4DailyBar>> panel,long cutoff){
         LinkedHashMap<String,double[]> raw=new LinkedHashMap<>();Map<String,Double> ret1=new HashMap<>(),resmom=new HashMap<>(),qv30=new HashMap<>();
-        long cutoff=Long.MIN_VALUE;
         for(String a:V4Universe.ASSETS){List<V4DailyBar>b=panel.get(a);if(b==null||b.size()<90||!contiguous(b,b.size()-1,90))continue;int n=b.size()-1;cutoff=Math.max(cutoff,b.get(n).openTime);
+            if(b.get(n).openTime!=cutoff)continue;
             double r=b.get(n).close/b.get(n-1).close-1;ret1.put(a,r);qv30.put(a,meanQuote(b,n,30));}
         double market=ret1.values().stream().mapToDouble(Double::doubleValue).average().orElse(Double.NaN);
         for(String a:ret1.keySet()){List<V4DailyBar>b=panel.get(a);int n=b.size()-1;double sum=0;

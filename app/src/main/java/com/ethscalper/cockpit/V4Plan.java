@@ -13,7 +13,7 @@ public final class V4Plan {
     public static final String ENGINE_VERSION="4.0.0";
     public final String planId,parentPlanId,symbol,modelManifestHash;
     public final Source source;public final Side side;public final int fixedLeverage;
-    public double quantity,allocatedRiskFraction;public final double entry,tp,sl,atr14,trackedEquityAtCreation;
+    private double quantity;public final double allocatedRiskFraction;public final double entry,tp,sl,atr14,trackedEquityAtCreation;
     public final long createdAt,activatedAt,expiresAt,dataCutoffUtc;
     public Status status;public String statusReason,userFollowState,closeReason;
     public long lastEvaluatedAt,entryOrderMarkedAt,openedAt,closedAt;public double closePrice;
@@ -32,6 +32,8 @@ public final class V4Plan {
     }
     public boolean terminal(){return status==Status.MISSED_TOO_LATE||status==Status.INVALIDATED||status==Status.EXPIRED
             ||status==Status.CLOSED_TP||status==Status.CLOSED_SL||status==Status.CLOSED_MANUAL||status==Status.CLOSED_OTHER;}
+    public double quantity(){return quantity;}
+    public void restoreUncommittedQuantity(double restored){if(status!=Status.DATA_UNAVAILABLE||!(restored>0)||!Double.isFinite(restored))throw new IllegalStateException("quantity frozen");quantity=restored;}
     public JSONObject toJson(){try{JSONObject o=new JSONObject();o.put("plan_id",planId);o.put("parent_plan_id",parentPlanId);
         o.put("engine_id",V4Universe.ENGINE_ID);o.put("engine_version",ENGINE_VERSION);o.put("source",source.name());
         o.put("symbol",symbol);o.put("side",side.name());o.put("fixed_leverage",fixedLeverage);o.put("quantity",quantity);
