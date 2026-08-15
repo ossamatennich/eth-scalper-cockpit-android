@@ -29,14 +29,8 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="false"
-            android:theme="@style/AppTheme"
-            android:screenOrientation="portrait" />
-
         <service
-            android:name=".MarketWatchService"
+            android:name=".V4ForegroundService"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="specialUse">

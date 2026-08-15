@@ -51,7 +51,7 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
             public boolean save(String json){return np.edit().putString("events",json).commit();}});
         if(!np.getBoolean("legacy_statuses_seeded",false)){for(V4Plan p:store.all())seedExistingNotificationState(p);np.edit().putBoolean("legacy_statuses_seeded",true).commit();}
         engine=new V4Engine(m,history);market=new V4MarketDataClient(c,this);}
-    private synchronized void startInternal(){if(started)return;started=true;MarketWatchService.ensureChannels(context);market.start();scheduler.scheduleAtFixedRate(this::tick,2,15,TimeUnit.SECONDS);
+    private synchronized void startInternal(){if(started)return;started=true;V4NotificationChannels.ensure(context);market.start();scheduler.scheduleAtFixedRate(this::tick,2,15,TimeUnit.SECONDS);
         scheduler.scheduleAtFixedRate(market::refreshDailyAsync,6,6,TimeUnit.HOURS);}
     public synchronized void stop(){market.stop();scheduler.shutdownNow();started=false;instance=null;}
     @Override public void onQuote(String asset,V4MarketDataClient.Quote quote){long now=System.currentTimeMillis();if(now-lastQuoteTickScheduled>1000){lastQuoteTickScheduled=now;scheduler.execute(this::tick);}}
@@ -125,7 +125,7 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
         V4NotificationPolicy.Event event=V4NotificationPolicy.event(before,p.status);if(event==V4NotificationPolicy.Event.NONE)return;
         notifyEvent(p,event);}
     private void notifyEvent(V4Plan p,V4NotificationPolicy.Event event){
-        MarketWatchService.ensureChannels(context);NotificationManager manager=context.getSystemService(NotificationManager.class);
+        V4NotificationChannels.ensure(context);NotificationManager manager=context.getSystemService(NotificationManager.class);
         if(manager==null||!manager.areNotificationsEnabled()||(Build.VERSION.SDK_INT>=33&&context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED))return;
         if(!notificationLedger.claim(p.planId,event))return;
         try{
@@ -133,12 +133,12 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
             PendingIntent pi=PendingIntent.getActivity(context,p.planId.hashCode(),i,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
             V4NotificationPolicy.Message message=V4NotificationPolicy.message(p,event);
             Uri sound=Uri.parse("android.resource://"+context.getPackageName()+"/"+R.raw.eth_alert_loud);
-            Notification notification=new NotificationCompat.Builder(context,MarketWatchService.FINAL_SIGNAL_LOUD_CHANNEL_ID)
+            Notification notification=new NotificationCompat.Builder(context,V4NotificationChannels.LOUD_CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_stat_nmc).setContentTitle(message.title).setContentText(message.body)
                     .setStyle(new NotificationCompat.BigTextStyle().bigText(message.body)).setContentIntent(pi)
                     .setPriority(NotificationCompat.PRIORITY_MAX).setCategory(NotificationCompat.CATEGORY_ALARM)
                     .setVisibility(NotificationCompat.VISIBILITY_PUBLIC).setSound(sound,AudioManager.STREAM_ALARM)
-                    .setVibrate(MarketWatchService.ALERT_VIBRATION).setAutoCancel(true).setOnlyAlertOnce(false).build();
+                    .setVibrate(V4NotificationChannels.ALERT_VIBRATION).setAutoCancel(true).setOnlyAlertOnce(false).build();
             manager.notify(("v4:"+p.planId+":"+event.name()).hashCode(),notification);
         }catch(RuntimeException error){notificationLedger.release(p.planId,event);}}
     private static String fmt(double v){return new DecimalFormat("0.########").format(v);}

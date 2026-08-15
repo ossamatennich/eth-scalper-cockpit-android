@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.6.6 — NMC Stable 6.6 / runtime V4 uniquement
+
+- Remplace le service foreground historique par `V4ForegroundService`, hôte unique de `V4RuntimeCoordinator`.
+- Retire `MainActivity` et `MarketWatchService` du manifeste de production sans supprimer les sources historiques.
+- Ajoute le canal silencieux `nmc_v4_monitor_v1`, alimenté par le statut V4 réel et ouvrant exclusivement `V4MainActivity`.
+- Annule la notification historique `22801` et retire le canal `eth_scalper_watch_v22801` lors de la migration.
+- Conserve sans changement le canal fort `nmc_final_signal_loud_v2`, son son, sa vibration et sa déduplication persistante.
+
 ## 2.34.6.5 — NMC Stable 6.5 / finition opérationnelle et alerte forte
 
 - Réutilise le canal sonore NMC `nmc_final_signal_loud_v2`, son personnalisé et vibration longue pour les événements V4 actionnables, entrée exécutée, TP et SL.

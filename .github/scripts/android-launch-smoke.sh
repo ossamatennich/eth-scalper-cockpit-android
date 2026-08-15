@@ -6,6 +6,7 @@ PACKAGE=com.ethscalper.cockpit.stable
 ACTIVITY=com.ethscalper.cockpit.V4MainActivity
 UI_FILE="${RUNNER_TEMP:-/tmp}/nmc-ui.xml"
 SCREEN_FILE="${RUNNER_TEMP:-/tmp}/nmc-screen.png"
+SHADE_FILE="${RUNNER_TEMP:-/tmp}/nmc-notification-shade.png"
 
 adb install -r "$APK"
 adb shell pm grant "$PACKAGE" android.permission.POST_NOTIFICATIONS
@@ -32,9 +33,23 @@ test -n "$PID"
 adb shell dumpsys activity activities | grep -q "$ACTIVITY"
 adb shell dumpsys window windows | grep -q "$PACKAGE/$ACTIVITY"
 printf 'ANDROID_LAUNCH_PROCESS=PASS pid=%s\n' "$PID"
+SERVICE_DUMP="$(adb shell dumpsys activity services "$PACKAGE")"
+printf '%s\n' "$SERVICE_DUMP" | grep -q 'V4ForegroundService'
+if printf '%s\n' "$SERVICE_DUMP" | grep -q 'MarketWatchService'; then
+  printf 'LEGACY_MARKET_WATCH_SERVICE=RUNNING\n'
+  exit 1
+fi
+printf 'ANDROID_V4_FOREGROUND_SERVICE=PASS legacy=absent\n'
 CHANNEL_DUMP="$(adb shell dumpsys notification --noredact)"
 printf '%s\n' "$CHANNEL_DUMP" | grep -q 'nmc_final_signal_loud_v2'
+printf '%s\n' "$CHANNEL_DUMP" | grep -q 'nmc_v4_monitor_v1'
+printf '%s\n' "$CHANNEL_DUMP" | grep -q 'NMC.*Surveillance V4'
+if printf '%s\n' "$CHANNEL_DUMP" | grep -q 'eth_scalper_watch_v22801'; then
+  printf 'LEGACY_FOREGROUND_CHANNEL=PRESENT\n'
+  exit 1
+fi
 printf 'ANDROID_LOUD_NOTIFICATION_CHANNEL=PASS id=nmc_final_signal_loud_v2 permission=granted\n'
+printf 'ANDROID_V4_MONITOR_NOTIFICATION=PASS id=nmc_v4_monitor_v1 legacy=retired\n'
 adb exec-out screencap -p > "$SCREEN_FILE"
 test -s "$SCREEN_FILE"
 printf 'ANDROID_SCREENSHOT=PASS bytes=%s\n' "$(wc -c < "$SCREEN_FILE")"
@@ -72,7 +87,7 @@ PY
   sleep 1
   adb shell uiautomator dump --compressed /sdcard/nmc-ui-plans.xml
   adb pull /sdcard/nmc-ui-plans.xml "${RUNNER_TEMP:-/tmp}/nmc-ui-plans.xml" >/dev/null
-  grep -q 'text="ORDRES LIMITES POSSIBLES"' "${RUNNER_TEMP:-/tmp}/nmc-ui-plans.xml"
+  grep -q 'text="ORDRES LIMITES POSSIBLES' "${RUNNER_TEMP:-/tmp}/nmc-ui-plans.xml"
   printf 'ANDROID_BOTTOM_NAV=VISIBLE_AND_CLICKABLE\n'
   printf 'ANDROID_UI_HIERARCHY=NMC\n'
 else
@@ -105,6 +120,45 @@ else
   printf 'ANDROID_BOTTOM_NAV=VISIBLE_CLICKABLE_VISUAL_TRANSITIONS\n'
   printf 'ANDROID_UI_HIERARCHY=UNAVAILABLE_NAVIGATION_VERIFIED_BY_RENDERED_TRANSITIONS\n'
 fi
+
+# The foreground notification itself must keep V4 alive and reopen only the
+# current V4 Activity after the application is backgrounded.
+adb shell input keyevent KEYCODE_HOME
+sleep 3
+BACKGROUND_SERVICE_DUMP="$(adb shell dumpsys activity services "$PACKAGE")"
+printf '%s\n' "$BACKGROUND_SERVICE_DUMP" | grep -q 'V4ForegroundService'
+if printf '%s\n' "$BACKGROUND_SERVICE_DUMP" | grep -q 'MarketWatchService'; then exit 1; fi
+printf 'ANDROID_V4_BACKGROUND_HOST=PASS\n'
+SCREEN_SIZE="$(adb shell wm size | sed -n 's/.*: \([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p' | tail -n 1)"
+set -- $SCREEN_SIZE
+test "$#" -eq 2
+SCREEN_WIDTH="$1"
+SCREEN_HEIGHT="$2"
+NOTIFICATION_CLICKED=false
+# The foreground notification is the only application notification on this
+# fresh install. Avoid uiautomator here: the real 15-second status refresh can
+# keep the system shade from reaching accessibility-idle on headless API 35.
+adb shell cmd statusbar expand-notifications
+sleep 2
+adb exec-out screencap -p > "$SHADE_FILE"
+for Y_PERCENT in 40 38 45 52 59 66 73 80; do
+  printf 'ANDROID_V4_MONITOR_TAP_ATTEMPT y_percent=%s\n' "$Y_PERCENT"
+  adb shell cmd statusbar expand-notifications
+  sleep 2
+  adb shell input tap "$(( SCREEN_WIDTH / 2 ))" "$(( SCREEN_HEIGHT * Y_PERCENT / 100 ))"
+  sleep 3
+  V4_FOCUS="$(
+    { adb shell dumpsys window windows; adb shell dumpsys activity activities; } |
+      grep -E 'mCurrentFocus|mFocusedApp|topResumedActivity|mResumedActivity|ResumedActivity' || true
+  )"
+  printf '%s\n' "$V4_FOCUS"
+  if printf '%s\n' "$V4_FOCUS" | grep -q "$ACTIVITY"; then
+    NOTIFICATION_CLICKED=true
+    break
+  fi
+done
+test "$NOTIFICATION_CLICKED" = true
+printf 'ANDROID_V4_MONITOR_CLICK_TARGET=PASS activity=%s\n' "$ACTIVITY"
 
 ANDROID_RUNTIME_ERRORS="$(adb logcat -d -v threadtime AndroidRuntime:E '*:S')"
 if printf '%s\n' "$ANDROID_RUNTIME_ERRORS" | grep -q "$PACKAGE"; then
