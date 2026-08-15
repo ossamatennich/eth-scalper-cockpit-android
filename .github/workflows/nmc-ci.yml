@@ -86,6 +86,12 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: sh .github/scripts/android-launch-smoke.sh
+      - name: Upload Android launch screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: NMC-v2.34.6.2-launch-smoke
+          path: ${{ runner.temp }}/nmc-screen.png
+          if-no-files-found: error
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
