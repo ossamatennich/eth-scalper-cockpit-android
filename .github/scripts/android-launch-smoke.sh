@@ -137,7 +137,8 @@ NOTIFICATION_CLICKED=false
 # The foreground notification is the only application notification on this
 # fresh install. Avoid uiautomator here: the real 15-second status refresh can
 # keep the system shade from reaching accessibility-idle on headless API 35.
-for Y_PERCENT in 15 22 30; do
+for Y_PERCENT in 38 45 52 59 66 73 80; do
+  printf 'ANDROID_V4_MONITOR_TAP_ATTEMPT y_percent=%s\n' "$Y_PERCENT"
   adb shell cmd statusbar expand-notifications
   sleep 2
   adb shell input tap "$(( SCREEN_WIDTH / 2 ))" "$(( SCREEN_HEIGHT * Y_PERCENT / 100 ))"
