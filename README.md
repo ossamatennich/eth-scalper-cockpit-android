@@ -1,6 +1,6 @@
 # NMC — Native Market Cockpit
 
-La version courante est **NMC Stable 6.2** (`2.34.6.2`, `versionCode 23462`).
+La version courante est **NMC Stable 6.3** (`2.34.6.3`, `versionCode 23463`).
 Le moteur public est désormais `NMC_PROP_DAILY_HYBRID_V4`: un scanner quotidien
 reset-safe des 53 cryptos Kraken Prop, alimenté par des klines USD-M mises en
 cache et un multiplex `bookTicker` léger. L'ancien `NMC_SCALP_CV_CORE_V1` reste

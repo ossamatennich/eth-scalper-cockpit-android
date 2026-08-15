@@ -37,6 +37,29 @@ for attempt in 1 2 3 4 5; do
   sleep 2
 done
 if test "$UI_OK" = true; then
+  grep -q 'text="ACCUEIL"' "$UI_FILE"
+  grep -q 'text="PLANS"' "$UI_FILE"
+  grep -q 'text="HISTORIQUE"' "$UI_FILE"
+  PLANS_CENTER="$(python3 - "$UI_FILE" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+node = next((n for n in root.iter('node') if n.attrib.get('text') == 'PLANS'), None)
+if node is None:
+    raise SystemExit(1)
+m = re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib['bounds'])
+if not m:
+    raise SystemExit(1)
+x1, y1, x2, y2 = map(int, m.groups())
+print((x1 + x2) // 2, (y1 + y2) // 2)
+PY
+)"
+  set -- $PLANS_CENTER
+  adb shell input tap "$1" "$2"
+  sleep 1
+  adb shell uiautomator dump --compressed /sdcard/nmc-ui-plans.xml
+  adb pull /sdcard/nmc-ui-plans.xml "${RUNNER_TEMP:-/tmp}/nmc-ui-plans.xml" >/dev/null
+  grep -q 'text="ORDRES LIMITES POSSIBLES"' "${RUNNER_TEMP:-/tmp}/nmc-ui-plans.xml"
+  printf 'ANDROID_BOTTOM_NAV=VISIBLE_AND_CLICKABLE\n'
   printf 'ANDROID_UI_HIERARCHY=NMC\n'
 else
   printf 'ANDROID_UI_HIERARCHY=UNAVAILABLE screenshot=%s\n' "$SCREEN_FILE"

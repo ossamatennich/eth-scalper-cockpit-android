@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.6.3 — NMC Stable 6.3 / UI-UX final
+
+- Protège l'en-tête et la navigation basse avec les insets système Android.
+- Rend Accueil et Plans entièrement scrollables, y compris avec plusieurs plans.
+- Ajoute la copie exacte de ENTRY, TP et SL avec retour discret « Copié ».
+- Relie ACTIF / SYNCHRO / HORS LIGNE au réseau, au socket Binance, à la fraîcheur bookTicker et à la dernière analyse réelle.
+- Modernise uniquement l'interface native sans modifier `NMC_PROP_DAILY_HYBRID_V4`, le modèle, le sizing ou les règles de trading.
+
 ## 2.34.6.2 — NMC Stable 6.2 / Android launch hotfix
 
 - aligne `V4MainActivity` sur le thème Android natif `Theme.Material.NoActionBar` en utilisant `android.app.Activity` ;

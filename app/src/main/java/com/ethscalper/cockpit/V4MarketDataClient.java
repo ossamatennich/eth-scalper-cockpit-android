@@ -39,31 +39,40 @@ public final class V4MarketDataClient {
     private final Map<String,List<V4DailyBar>> panel=Collections.synchronizedMap(new LinkedHashMap<>());
     private final Map<String,V4MarketMetadata> metadata=Collections.synchronizedMap(new LinkedHashMap<>());
     private final Map<String,Quote> quotes=Collections.synchronizedMap(new LinkedHashMap<>());private volatile WebSocket socket;
+    private volatile boolean socketConnected,dailySyncInProgress=true,quoteConfirmed,stopped;
+    private volatile long lastQuoteAt,lastSocketFailureAt;
     public V4MarketDataClient(Context c,Listener l){context=c.getApplicationContext();listener=l;http=new OkHttpClient.Builder().connectTimeout(12,TimeUnit.SECONDS)
             .readTimeout(25,TimeUnit.SECONDS).pingInterval(20,TimeUnit.SECONDS).retryOnConnectionFailure(true).build();loadCache();}
-    public void start(){connectQuotes();io.execute(()->{refreshMetadata();refreshDaily();});}
+    public void start(){stopped=false;connectQuotes();io.execute(()->{refreshMetadata();refreshDaily();});}
     public void refreshDailyAsync(){if(!io.isShutdown())io.execute(this::refreshDaily);}
-    public void stop(){if(socket!=null)socket.close(1000,"stop");io.shutdownNow();}
+    public void stop(){stopped=true;socketConnected=false;if(socket!=null)socket.close(1000,"stop");io.shutdownNow();}
     public Map<String,List<V4DailyBar>> panelSnapshot(){synchronized(panel){return new LinkedHashMap<>(panel);}}
     public V4MarketMetadata metadata(String asset){return metadata.get(asset);}
     public Quote quote(String asset){return quotes.get(asset);}
+    public boolean socketConnected(){return socketConnected;}
+    public boolean dailySyncInProgress(){return dailySyncInProgress;}
+    public long lastQuoteAt(){return lastQuoteAt;}
+    public long lastSocketFailureAt(){return lastSocketFailureAt;}
     public static String bookTickerUrl(){StringBuilder b=new StringBuilder("wss://fstream.binance.com/public/stream?streams=");
         for(String a:V4Universe.ASSETS){if(b.charAt(b.length()-1)!='=')b.append('/');b.append(a.toLowerCase(Locale.ROOT)).append("usdt@bookTicker");}return b.toString();}
-    private void connectQuotes(){listener.onState("SYNCHRO");socket=http.newWebSocket(new Request.Builder().url(bookTickerUrl()).build(),new WebSocketListener(){
-        @Override public void onOpen(WebSocket w,Response r){listener.onState("ACTIF");}
+    private void connectQuotes(){socketConnected=false;quoteConfirmed=false;listener.onState("SYNCHRO");socket=http.newWebSocket(new Request.Builder().url(bookTickerUrl()).build(),new WebSocketListener(){
+        @Override public void onOpen(WebSocket w,Response r){socketConnected=true;listener.onState("SYNCHRO");}
         @Override public void onMessage(WebSocket w,String text){try{JSONObject root=new JSONObject(text),d=root.optJSONObject("data");if(d==null)return;
             String symbol=d.optString("s"),asset=symbol.endsWith("USDT")?symbol.substring(0,symbol.length()-4):"";if(!V4Universe.supports(asset))return;
-            double bid=d.getDouble("b"),ask=d.getDouble("a");if(!(bid>0&&ask>=bid))return;Quote q=new Quote(bid,ask,System.currentTimeMillis());quotes.put(asset,q);listener.onQuote(asset,q);
+            double bid=d.getDouble("b"),ask=d.getDouble("a");if(!(bid>0&&ask>=bid))return;long now=System.currentTimeMillis();Quote q=new Quote(bid,ask,now);quotes.put(asset,q);lastQuoteAt=now;
+            if(!quoteConfirmed){quoteConfirmed=true;listener.onState("ACTIF");}listener.onQuote(asset,q);
         }catch(Exception ignored){}}
-        @Override public void onFailure(WebSocket w,Throwable t,Response r){listener.onState("HORS LIGNE");io.execute(()->{try{Thread.sleep(5000);}catch(InterruptedException ignored){}if(!io.isShutdown())connectQuotes();});}});}
+        @Override public void onClosed(WebSocket w,int code,String reason){socketConnected=false;quoteConfirmed=false;if(!stopped)listener.onState("HORS LIGNE");}
+        @Override public void onFailure(WebSocket w,Throwable t,Response r){socketConnected=false;quoteConfirmed=false;lastSocketFailureAt=System.currentTimeMillis();listener.onState("HORS LIGNE");io.execute(()->{try{Thread.sleep(5000);}catch(InterruptedException ignored){}if(!io.isShutdown())connectQuotes();});}});}
     private void loadCache(){File dir=new File(context.getFilesDir(),"v4_daily");for(String asset:V4Universe.ASSETS){File f=new File(dir,asset+".json");if(!f.isFile())continue;
         try(FileInputStream in=new FileInputStream(f)){JSONArray a=new JSONArray(new String(readAll(in),StandardCharsets.UTF_8));ArrayList<V4DailyBar> bars=new ArrayList<>();for(int i=0;i<a.length();i++)bars.add(V4DailyBar.fromBinance(a.getJSONArray(i)));panel.put(asset,bars);}catch(Exception ignored){}}}
-    private void refreshDaily(){long now=System.currentTimeMillis(),start=1672531200000L;for(String asset:V4Universe.ASSETS){if(Thread.currentThread().isInterrupted())return;
-        try{String url=REST+"/fapi/v1/klines?symbol="+V4Universe.binanceSymbol(asset)+"&interval=1d&startTime="+start+"&limit=1500";
-            try(Response response=http.newCall(new Request.Builder().url(url).build()).execute()){if(!response.isSuccessful()||response.body()==null)continue;JSONArray raw=new JSONArray(response.body().string());
-                ArrayList<V4DailyBar> bars=new ArrayList<>();long previous=-1;for(int i=0;i<raw.length();i++){JSONArray row=raw.getJSONArray(i);long at=row.getLong(0);if(at<=previous||at+86_400_000L>now)continue;
-                    V4DailyBar bar=V4DailyBar.fromBinance(row);bars.add(bar);previous=at;}if(!bars.isEmpty()){panel.put(asset,bars);writeCache(asset,raw,now);}}}catch(Exception ignored){}}
-        listener.onDailyReady(panelSnapshot());}
+    private void refreshDaily(){dailySyncInProgress=true;listener.onState("SYNCHRO");long now=System.currentTimeMillis(),start=1672531200000L;
+        try{for(String asset:V4Universe.ASSETS){if(Thread.currentThread().isInterrupted())return;
+            try{String url=REST+"/fapi/v1/klines?symbol="+V4Universe.binanceSymbol(asset)+"&interval=1d&startTime="+start+"&limit=1500";
+                try(Response response=http.newCall(new Request.Builder().url(url).build()).execute()){if(!response.isSuccessful()||response.body()==null)continue;JSONArray raw=new JSONArray(response.body().string());
+                    ArrayList<V4DailyBar> bars=new ArrayList<>();long previous=-1;for(int i=0;i<raw.length();i++){JSONArray row=raw.getJSONArray(i);long at=row.getLong(0);if(at<=previous||at+86_400_000L>now)continue;
+                        V4DailyBar bar=V4DailyBar.fromBinance(row);bars.add(bar);previous=at;}if(!bars.isEmpty()){panel.put(asset,bars);writeCache(asset,raw,now);}}}catch(Exception ignored){}}}
+        finally{dailySyncInProgress=false;listener.onDailyReady(panelSnapshot());}}
     private void writeCache(String asset,JSONArray raw,long now)throws Exception{JSONArray complete=new JSONArray();for(int i=0;i<raw.length();i++)if(raw.getJSONArray(i).getLong(0)+86_400_000L<=now)complete.put(raw.getJSONArray(i));
         File dir=new File(context.getFilesDir(),"v4_daily");if(!dir.exists()&&!dir.mkdirs())return;try(FileOutputStream out=new FileOutputStream(new File(dir,asset+".json"))){out.write(complete.toString().getBytes(StandardCharsets.UTF_8));}}
     private void refreshMetadata(){try(Response response=http.newCall(new Request.Builder().url(REST+"/fapi/v1/exchangeInfo").build()).execute()){
