@@ -141,13 +141,18 @@ NOTIFICATION_CLICKED=false
 adb shell cmd statusbar expand-notifications
 sleep 2
 adb exec-out screencap -p > "$SHADE_FILE"
-for Y_PERCENT in 38 45 52 59 66 73 80; do
+for Y_PERCENT in 40 38 45 52 59 66 73 80; do
   printf 'ANDROID_V4_MONITOR_TAP_ATTEMPT y_percent=%s\n' "$Y_PERCENT"
   adb shell cmd statusbar expand-notifications
   sleep 2
   adb shell input tap "$(( SCREEN_WIDTH / 2 ))" "$(( SCREEN_HEIGHT * Y_PERCENT / 100 ))"
   sleep 3
-  if adb shell dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp' | grep -q "$PACKAGE/$ACTIVITY"; then
+  V4_FOCUS="$(
+    { adb shell dumpsys window windows; adb shell dumpsys activity activities; } |
+      grep -E 'mCurrentFocus|mFocusedApp|topResumedActivity|mResumedActivity|ResumedActivity' || true
+  )"
+  printf '%s\n' "$V4_FOCUS"
+  if printf '%s\n' "$V4_FOCUS" | grep -q "$ACTIVITY"; then
     NOTIFICATION_CLICKED=true
     break
   fi
