@@ -75,8 +75,9 @@ public final class MultiMarketDiagnosticsTest {
         ActivePlanState eth=state(MarketProfile.eth(),3),sol=state(MarketProfile.sol(),70);
         c.publish("ETHUSDT",eth,1);c.publish("SOLUSDT",sol,1);
         for(MarketRuntime r:c.runtimes().values()){r.resetDiagnosticsPreservingActivePlan();
-            assertEquals(2,r.recorder.eventMaps().size());assertTrue(r.hasActivePlan());
-            assertEquals(r.profile.symbol,r.recorder.eventMaps().get(1).get("symbol"));}
+            assertEquals(3,r.recorder.eventMaps().size());assertTrue(r.hasActivePlan());
+            assertEquals("SHADOW_STATE_RESET",r.recorder.eventMaps().get(1).get("eventType"));
+            assertEquals(r.profile.symbol,r.recorder.eventMaps().get(2).get("symbol"));}
         assertEquals(eth.notificationId,c.runtime("ETHUSDT").activePlan.notificationId);
         assertEquals(sol.notificationId,c.runtime("SOLUSDT").activePlan.notificationId);
     }
@@ -101,9 +102,11 @@ public final class MultiMarketDiagnosticsTest {
     }
 
     @Test public void completeZipContractUsesOnlyCurrentVersion() {
-        assertEquals(16,DiagnosticExportContract.REQUIRED_FILES.size());
+        assertEquals(18,DiagnosticExportContract.REQUIRED_FILES.size());
         assertTrue(DiagnosticExportContract.REQUIRED_FILES.contains("market_events.jsonl"));
         assertTrue(DiagnosticExportContract.REQUIRED_FILES.contains("market_frames.jsonl"));
+        assertTrue(DiagnosticExportContract.REQUIRED_FILES.contains("causal_market_stream.jsonl"));
+        assertTrue(DiagnosticExportContract.REQUIRED_FILES.contains("causal_market_manifest.json"));
         assertEquals("NMC_Diagnostic_v2_34_1_0_",
                 DiagnosticExportContract.zipPrefix("2.34.1.0"));
         assertFalse(DiagnosticExportContract.instructions("2.34.1.0").contains("Scalper Cockpit"));

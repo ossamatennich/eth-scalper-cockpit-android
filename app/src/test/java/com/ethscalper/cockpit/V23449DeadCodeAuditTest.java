@@ -1,0 +1,12 @@
+package com.ethscalper.cockpit;
+import org.junit.Test;import java.nio.file.*;import java.util.*;import static org.junit.Assert.*;
+public final class V23449DeadCodeAuditTest {
+ @Test public void noOldRuntimeClassNames()throws Exception{String all=runtimeSources(false);assertFalse(all.contains("Scalp"+"Action"));assertFalse(all.contains("LegacyPublic"+"Comparator"));}
+ @Test public void noOldRoutesOrModesInRuntime()throws Exception{String all=runtimeSources(false);for(String value:Arrays.asList("ETH_SHORT_RANGE_"+"EXTREME_V1","ETH_CONFIRM_"+"MOVE3_V1","ETH_P01_SHORT_LOW_SOL_"+"MICROVOL_V1","ETH_CONT_SOL_"+"COVERAGE_V1","ETH_REVERSAL_"+"8M_V1","ACTION_"+"ON","DIAGNOSTICS_"+"ONLY"))assertFalse(value,all.contains(value));}
+ @Test public void compatibilityIsConfinedAndCannotCreatePlans()throws Exception{String s=read(repoRoot().resolve("app/src/main/java/com/ethscalper/cockpit/LegacyV23448ActivePlanCompatibility.java"));assertTrue(s.contains("isRestoredPlan"));assertFalse(s.contains("SignalDecision.confirmed"));assertFalse(s.contains("ActivePlanState.builder"));}
+ @Test public void exactlyThreeRuntimeRoutes(){assertNotNull(CvCorePolicy.route(CvCorePolicy.DUAL_EXHAUSTION_SHORT.routeId));assertNotNull(CvCorePolicy.route(CvCorePolicy.CAPITULATION_LONG.routeId));assertNotNull(CvCorePolicy.route(CvCorePolicy.P02_BALANCED_SHORT.routeId));assertNull(CvCorePolicy.route("FOURTH_ROUTE"));}
+ @Test public void uiHasNoModeToggle()throws Exception{String s=read(repoRoot().resolve("app/src/main/java/com/ethscalper/cockpit/MainActivity.java"));assertTrue(s.contains("MOTEUR : CV CORE V1"));assertFalse(s.contains("diagnostics seulement"));assertFalse(s.contains("ACTION_"+"ON"));}
+ private static String runtimeSources(boolean includeCompatibility)throws Exception{StringBuilder b=new StringBuilder();Path root=repoRoot().resolve("app/src/main/java/com/ethscalper/cockpit");try(java.util.stream.Stream<Path> stream=Files.list(root)){for(Path p:(Iterable<Path>)stream.filter(x->x.toString().endsWith(".java"))::iterator){if(!includeCompatibility&&p.getFileName().toString().equals("LegacyV23448ActivePlanCompatibility.java"))continue;b.append(read(p));}}return b.toString();}
+ private static Path repoRoot(){Path root=Paths.get(System.getProperty("user.dir")).toAbsolutePath();return Files.exists(root.resolve("app"))?root:root.getParent();}
+ private static String read(Path p)throws Exception{return new String(Files.readAllBytes(p),java.nio.charset.StandardCharsets.UTF_8);}
+}

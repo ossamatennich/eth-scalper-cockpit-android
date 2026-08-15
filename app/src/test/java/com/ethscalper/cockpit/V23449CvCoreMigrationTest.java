@@ -1,0 +1,11 @@
+package com.ethscalper.cockpit;
+import org.junit.Test;import java.util.Map;import static org.junit.Assert.*;
+public final class V23449CvCoreMigrationTest {
+ @Test public void formatTwoRestoresUnchanged(){ActivePlanState s=state(2,"","","",0);ActivePlanState r=ActivePlanState.fromMap(s.toMap());assertNotNull(r);assertEquals(1900,r.entry,0);assertEquals(1902,r.takeProfit,0);assertEquals(1898,r.stopLoss,0);}
+ @Test public void formatThreeLegacyEngineRestores(){ActivePlanState s=state(3,"NMC_SCALP_ACTION_V1","OLD","old-episode",0);assertTrue(LegacyV23448ActivePlanCompatibility.isRestoredPlan(ActivePlanState.fromMap(s.toMap())));}
+ @Test public void formatThreeDoesNotBecomeCvPlan(){ActivePlanState s=state(3,"NMC_SCALP_ACTION_V1","OLD","old-episode",0);assertNull(CvCorePlan.fromState(ActivePlanState.fromMap(s.toMap())));}
+ @Test public void formatFourRestoresCvMetadata(){ActivePlanState s=state(4,CvCorePolicy.ENGINE_ID,CvCorePolicy.CAPITULATION_LONG.routeId,"cv-episode",14.55);ActivePlanState r=ActivePlanState.fromMap(s.toMap());assertNotNull(r);assertEquals(CvCorePolicy.POLICY_ID,r.policyId);assertEquals(CvCorePolicy.SCHEMA_ID,r.schemaId);assertNotNull(CvCorePlan.fromState(r));}
+ @Test public void formatFourRequiresExactPolicySchema(){Map<String,String> m=state(4,CvCorePolicy.ENGINE_ID,CvCorePolicy.CAPITULATION_LONG.routeId,"e",14.55).toMap();m.put("policyId","BAD");assertNull(ActivePlanState.fromMap(m));}
+ private static ActivePlanState state(int format,String engine,String route,String episode,double budget){ActivePlanState.Builder b=ActivePlanState.builder().formatVersion(format).market(MarketProfile.eth()).status("ACTIVE").side("LONG").family("F").reasonCode("R").reasonText("T").score(90).quantity(1).prices(1900,1902,1898).risk(2,2).times(1,1,1).notification("sig",1).lastMarket(1900,1899,1901,1).lastP01ConfirmedAt(0).movement("I",false,1900,1902,2).replayRisk("","").p01(Double.NaN,Double.NaN,Double.NaN,Double.NaN,Double.NaN).sizingDiagnostic("").unitRisk(1.43,0,budget,3.43);
+        if(format==3)b.enginePlan(engine,"","",route,episode,1,5001,"VALIDE",0);if(format==4)b.enginePlan(engine,CvCorePolicy.POLICY_ID,CvCorePolicy.SCHEMA_ID,route,episode,1,5001,"VALIDE",budget);return b.build();}
+}

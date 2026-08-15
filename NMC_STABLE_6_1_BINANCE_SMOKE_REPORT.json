@@ -1,0 +1,57 @@
+{
+  "bookTickerWebSocket": {
+    "endpoint": "wss://fstream.binance.com/public/stream?streams=aaveusdt@bookTicker/adausdt@bookTicker/aixbtusdt@bookTicker/algousdt@bookTicker/aptusdt@bookTicker/arbusdt@bookTicker/asterusdt@bookTicker/atomusdt@bookTicker/avaxusdt@bookTicker/bchusdt@bookTicker/bnbusdt@bookTicker/btcusdt@bookTicker/crvusdt@bookTicker/dogeusdt@bookTicker/dotusdt@bookTicker/etcusdt@bookTicker/ethusdt@bookTicker/fartcoinusdt@bookTicker/filusdt@bookTicker/grassusdt@bookTicker/hbarusdt@bookTicker/hypeusdt@bookTicker/injusdt@bookTicker/jtousdt@bookTicker/jupusdt@bookTicker/kaitousdt@bookTicker/ldousdt@bookTicker/linkusdt@bookTicker/ltcusdt@bookTicker/moodengusdt@bookTicker/nearusdt@bookTicker/ondousdt@bookTicker/opusdt@bookTicker/penguusdt@bookTicker/pnutusdt@bookTicker/polusdt@bookTicker/popcatusdt@bookTicker/pumpusdt@bookTicker/renderusdt@bookTicker/susdt@bookTicker/solusdt@bookTicker/stxusdt@bookTicker/suiusdt@bookTicker/taousdt@bookTicker/tiausdt@bookTicker/trumpusdt@bookTicker/trxusdt@bookTicker/uniusdt@bookTicker/virtualusdt@bookTicker/wifusdt@bookTicker/wldusdt@bookTicker/xplusdt@bookTicker/xrpusdt@bookTicker",
+    "observed": [
+      "AAVEUSDT",
+      "BNBUSDT",
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "XRPUSDT"
+    ],
+    "required": [
+      "AAVEUSDT",
+      "BNBUSDT",
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "XRPUSDT"
+    ],
+    "status": "PASS"
+  },
+  "credentialsUsed": false,
+  "dailyRest": {
+    "endpoint": "https://fapi.binance.com/fapi/v1/klines",
+    "rows": 2,
+    "status": "PASS",
+    "symbol": "BTCUSDT"
+  },
+  "exchangeInfo": {
+    "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+    "metadata": {
+      "AAVEUSDT": {
+        "minNotional": "5",
+        "minQty": "0.1",
+        "stepSize": "0.1",
+        "tickSize": "0.010"
+      },
+      "BTCUSDT": {
+        "minNotional": "50",
+        "minQty": "0.001",
+        "stepSize": "0.001",
+        "tickSize": "0.10"
+      }
+    },
+    "status": "PASS"
+  },
+  "minuteReconstruction": {
+    "chronological": true,
+    "endpoint": "https://fapi.binance.com/fapi/v1/klines",
+    "interval": "1m",
+    "rows": 10,
+    "status": "PASS",
+    "symbol": "BTCUSDT"
+  },
+  "observedAtUtc": "2026-08-15T16:49:02.833816+00:00",
+  "schema": "NMC_V4_BINANCE_NETWORK_SMOKE_V1"
+}

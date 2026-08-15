@@ -32,7 +32,18 @@ public final class MarketDiagnosticRecorder {
         LinkedHashMap<String,Object> value=base(at,type,reasonCode,reasonText,classification,
                 historicalDiagnosticCode,sleeve,signal,snapshot,candidateAgeMs,marketFresh,
                 btcFresh,adverse);
-        if(details!=null)value.putAll(details);
+        List<SafeJsonNormalizer.Issue> normalizationIssues=new ArrayList<>();
+        if(details!=null)for(Map.Entry<String,Object> entry:details.entrySet())
+            value.put(entry.getKey(),SafeJsonNormalizer.normalize(entry.getValue(),
+                    "$.details."+entry.getKey(),normalizationIssues));
+        // Keep normalization evidence inside the original event. Creating another recorder event
+        // here would recursively normalize its own diagnostic payload and could loop forever.
+        if(!normalizationIssues.isEmpty()){
+            List<Map<String,Object>> boundedIssues=new ArrayList<>();
+            for(SafeJsonNormalizer.Issue issue:normalizationIssues)boundedIssues.add(issue.asMap());
+            value.put("normalizationIssueCount",normalizationIssues.size());
+            value.put("normalizationIssues",boundedIssues);
+        }
         normalizeTerminal(value);
         Record record=new Record(++sequence,value);
         if("MARKET_FRAME".equals(type)){frames.addLast(record);trim(frames,MAX_FRAMES);}
@@ -88,10 +99,10 @@ public final class MarketDiagnosticRecorder {
         String type=String.valueOf(record.values.get("eventType"));
         if(type.contains("CANDIDATE"))candidates+=delta;
         if(type.contains("REJECT")||type.contains("TOMBSTONE")||type.contains("MISSED"))rejected+=delta;
-        if("PLAN_CONFIRMED".equals(type))confirmed+=delta;
+        if("PLAN_CONFIRMED".equals(type)||"CV_CORE_PLAN_PERSISTED".equals(type))confirmed+=delta;
         if("PLAN_RESTORED".equals(type))restored+=delta;
-        if("TP_TOUCHED".equals(type))tp+=delta;
-        if("SL_TOUCHED".equals(type))sl+=delta;
+        if("TP_TOUCHED".equals(type)||"CV_CORE_TP_TOUCHED".equals(type))tp+=delta;
+        if("SL_TOUCHED".equals(type)||"CV_CORE_SL_TOUCHED".equals(type))sl+=delta;
     }
 
     private LinkedHashMap<String,Object> base(long at,String type,String code,String text,
@@ -135,7 +146,12 @@ public final class MarketDiagnosticRecorder {
 
     private static void normalizeTerminal(Map<String,Object> value) {
         String type=String.valueOf(value.get("eventType"));
-        if("TP_TOUCHED".equals(type)||"SL_TOUCHED".equals(type))value.put("terminalStatus",type);
+        if("TP_TOUCHED".equals(type)||"SL_TOUCHED".equals(type)
+                ||"CV_CORE_TP_TOUCHED".equals(type)||"CV_CORE_SL_TOUCHED".equals(type)
+                ||"SHADOW_TP_TOUCHED".equals(type)||"SHADOW_SL_TOUCHED".equals(type)) {
+            Object supplied=value.get("terminalStatus");
+            if(supplied==null||String.valueOf(supplied).isEmpty())value.put("terminalStatus",type);
+        }
         else value.put("terminalStatus","");
     }
     private static void put(Map<String,Object> map,String key,double value){map.put(key,Double.isFinite(value)?value:null);}

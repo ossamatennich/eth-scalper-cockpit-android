@@ -31,9 +31,11 @@ public final class PersistentRecorderIndex {
     public synchronized void recordEvent(Map<String,?> event,long currentEventBytes,long currentFrameBytes) {
         if(event==null||"MARKET_FRAME".equals(string(event.get("eventType"))))return;
         eventCount++;recordCommon(event);String type=string(event.get("eventType"));
-        increment(byEventType,type);if("PLAN_CONFIRMED".equals(type))confirmedTrades++;
+        increment(byEventType,type);if("PLAN_CONFIRMED".equals(type)
+                ||"CV_CORE_PLAN_PERSISTED".equals(type))confirmedTrades++;
         if("PLAN_RESTORED".equals(type))restoredActivePlans++;
-        if("TP_TOUCHED".equals(type))tp++;if("SL_TOUCHED".equals(type))sl++;
+        if("TP_TOUCHED".equals(type)||"CV_CORE_TP_TOUCHED".equals(type))tp++;
+        if("SL_TOUCHED".equals(type)||"CV_CORE_SL_TOUCHED".equals(type))sl++;
         if(type.contains("CANDIDATE")||type.contains("P01")||type.contains("P02"))candidates++;
         if("ADMISSION_REJECTED".equals(type))rejectedAdmissions++;
         if(type.contains("FEED_")||type.contains("SOURCE_TRANSITION"))staleFreshTransitions++;

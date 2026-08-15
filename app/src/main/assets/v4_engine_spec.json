@@ -1,0 +1,41 @@
+{
+  "schema": "NMC_PROP_DAILY_HYBRID_V4_SPEC",
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "engineVersion": "4.0.0",
+  "activationUtc": "00:35",
+  "expiryUtc": "00:25",
+  "resetUtc": "00:30",
+  "maximumConcurrentPlans": 2,
+  "maximumFreshPlansPerDay": 1,
+  "core": {
+    "candidates": ["BTC", "ETH", "SOL", "BNB", "XRP"],
+    "residualWindowDays": 14,
+    "absoluteZThreshold": 0.5,
+    "tpAtr": 3.0,
+    "slAtr": 0.4,
+    "maximumSegments": 2
+  },
+  "fallback": {
+    "minimumHistoryDays": 90,
+    "minimumQv30Rank": 0.4,
+    "tpAtr": 2.0,
+    "slAtr": 1.0,
+    "minimumPriorBestScores": 45,
+    "priorScoreWindow": 90,
+    "priorScorePercentile": 0.3,
+    "featureOrder": ["ret1", "ret3", "ret5", "ret7", "ret14", "ret21", "of3", "of7", "buy_ratio", "qvz7", "qvz30", "atr14", "loc14", "loc21"]
+  },
+  "risk": {
+    "coreDesired": 0.0225,
+    "fallbackDesired": 0.0075,
+    "combinedCeiling": 0.024,
+    "leverageHeadroom": 0.8,
+    "costFundingBuffer": 0.00133
+  },
+  "safety": {
+    "realTradingAllowed": false,
+    "privateApi": false,
+    "automaticOrderPlacement": false,
+    "ambiguousBar": "STOP_FIRST"
+  }
+}

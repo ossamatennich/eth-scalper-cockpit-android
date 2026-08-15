@@ -79,8 +79,9 @@ public final class MarketStatusIsolationTest {
         assertFalse(hot.contains("marketRecorderSummaryJson()"));
         assertFalse(hot.contains("observationSummaryJson()"));
         assertFalse(hot.contains("calibrationSummaryJson()"));
-        assertTrue(hot.contains("publishMinimalStatus(type,message,error)"));
-        assertTrue(service.contains("private synchronized void handleMessage"));
+        assertTrue(hot.contains("publishMinimalStatus(type,message,error,requestId,flushCompleted)"));
+        assertTrue(service.contains("private synchronized boolean handlePublicMessage"));
+        assertTrue(service.contains("private synchronized boolean handleMarketMessage"));
         assertTrue(service.contains("private void postMarketState(Runnable task)"));
         int frameStart=service.indexOf("private void recordMarketFrame");
         int frameEnd=service.indexOf("private String setupCandidateFor",frameStart);

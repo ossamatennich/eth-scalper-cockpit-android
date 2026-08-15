@@ -1,5 +1,170 @@
 # Changelog
 
+## 2.34.6.1 — NMC Stable 6.1 / V4 operational corrections
+
+- rend l'historique de confiance FALLBACK idempotent et persistant par date UTC ;
+- applique fill puis STOP lorsqu'un ordre posé touche ENTRY et SL dans la même bougie 1m ;
+- protège les quantités engagées, réserve le risque restant et sépare les gardes fresh/continuation ;
+- aligne tout seed cross-sectionnel sur une date UTC commune, sans réutiliser une ligne J-1.
+
+## 2.34.6.0 — NMC Stable 6.0 / NMC_PROP_DAILY_HYBRID_V4
+
+- remplace la publication publique CV Core par le moteur quotidien V4 reset-safe, sans supprimer les diagnostics historiques ;
+- ajoute le registre central des 53 cryptos et des leviers Kraken Prop imposés, sans sélecteur de levier ;
+- ajoute les klines quotidiennes USD-M validées/mises en cache, un flux `bookTicker` léger et la reconstruction 1 minute réservée aux plans suivis ;
+- fige le CORE residual momentum et les deux ExtraTrees FALLBACK entraînés uniquement sur 2023–2025 (`207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680`) ;
+- ajoute le sizing quantitatif borné, les métadonnées exchangeInfo, le journal d'équité local et le lifecycle persistant complet ;
+- remplace l'accueil historique par une UX Accueil / Plans / Historique dédiée à l'exécution manuelle ;
+- conserve `realTradingAllowed=false`, n'utilise aucune API privée et ne place aucun ordre.
+
+## 2.34.5.5 — Incremental Depth Stability + Storage Fix
+
+- remplace `@depth@100ms` par le flux USD-M officiel `@depth` à cadence par défaut 250 ms, sans toucher aux flux 5.3 ni aux diffs bruts ;
+- applique une machine d’état bornée par symbole : buffer avant snapshot, couverture `U/u`, chaînage `pu`, requête unique en vol et retry/backoff contrôlé ;
+- supprime le storm REST et le GAP `DEPTH_DIFF_UNANCHORED` par message ; une rupture réelle produit une seule invalidation puis une resynchronisation ;
+- utilise le snapshot public officiel de 500 niveaux et expose cadence observée, volume/h et estimation de rétention dans le manifeste ;
+- ajoute la télémétrie parser/raw/pu mismatch/drop/resync et des fixtures longues sans réseau ;
+- conserve intégralement `NMC_SCALP_CV_CORE_V1` et `realTradingAllowed=false`.
+
+## 2.34.5.3 — Forced Liquidation Capture V3
+
+- ajoute `ethusdt@forceOrder`, `solusdt@forceOrder` et `btcusdt@forceOrder` exclusivement à `MARKET_WS` ;
+- introduit `NMC_CAUSAL_MARKET_CAPTURE_V3` et le kind `LIQUIDATION_SNAPSHOT`, avec validation stricte, stockage borné, CRC et replay V1/V2/V3 ;
+- expose les compteurs par symbole et dans le manifeste FULL sans faire du silence naturel de ce stream une condition de santé ;
+- met à jour l’outil offline pour charger V1/V2/V3 et compter les snapshots sans créer de règle de stratégie ;
+- conserve intégralement `NMC_SCALP_CV_CORE_V1` et `realTradingAllowed=false`.
+
+## 2.34.5.2 — Market/Public WebSocket Namespace Fix
+
+- sépare les flux Binance USD-M Futures entre `PUBLIC_WS` (`bookTicker`, `depth20@100ms`) via `/public/stream` et `MARKET_WS` (`aggTrade`, `kline_1m`) via `/market/stream` pour ETH/SOL/BTC ;
+- interdit par routage testable qu’une famille de messages soit acceptée sur la mauvaise socket ;
+- exige un `aggTrade` MARKET_WS récent sur les trois symboles pour rendre une capture utilisable : le fallback REST seul reste dégradé ;
+- expose connexions, reconnexions, échecs et fermetures bornées avec endpoint, code/reason, statut handshake, exception et âge du dernier message ;
+- conserve Capture V2, queue/writer, CRC, REST gap-fill et le moteur public `NMC_SCALP_CV_CORE_V1` sans aucune recalibration ; `realTradingAllowed=false`.
+
+## 2.34.5.1 — Reliable Microstructure Capture V2
+
+- découple la recherche microstructure sur une socket Futures publique `aggTrade` + `depth20@100ms`, sans changer le flux de décision CV Core ;
+- capture les trades agressifs en buckets de réception locale de 100 ms avec convention maker documentée, déduplication WS/REST, gaps d’IDs et provenance ;
+- conserve les niveaux bruts bid/ask top 20 à cadence bornée de 250 ms et coalesce aussi le top-of-book avant la file ;
+- remplace l’attente writer de deux secondes par un drain signalé à haute pression et une latence maximale de 75 ms, avec pertes explicites par type ;
+- expose la santé indépendante de chaque stream/symbole, le manifeste V2 et l’outil offline `microstructure_research.py` sans activer de nouvelle règle ;
+- maintient `NMC_SCALP_CV_CORE_V1`, `realTradingAllowed=false`, les alertes et le lifecycle public strictement inchangés.
+
+## 2.34.5.0 — capture causale prospective et laboratoire anti-surapprentissage
+
+- conserve strictement le moteur public CV Core 4.9 : aucun candidat ETH/SOL n’a franchi les gates de robustesse, donc aucun seuil, signal, plan, sizing, TP/SL ou alerte n’est modifié ;
+- ajoute une capture fail-open des `bookTicker` et `aggTrade` publics Binance Futures pour ETHUSDT, SOLUSDT et BTCUSDT, ordonnée par temps de réception local ;
+- agrège les trades par seconde avec OHLC, flow acheteur/vendeur, notionnel, VWAP, trous d’identifiants, sessions et gaps explicites ;
+- stocke des blocs compressés CRC32 dans une rétention FIFO bornée, avec file non bloquante et export ZIP en streaming ;
+- ajoute un replay strict bid/ask sans point futur ainsi qu’un laboratoire reproductible qui garde le holdout avril–juillet 2026 fermé tant qu’ETH et SOL n’ont pas chacun un finaliste robuste ;
+- documente le rejet des meilleurs backtests fragiles après frais/latence, sans promesse de rentabilité, et maintient `realTradingAllowed=false`.
+
+## 2.34.4.9 — CV Core V1, moteur public unique
+
+- correctif d’audit : un plan CV Core produit désormais exactement une ouverture économique et un seul terminal TP ou SL dans le recorder, l’index persistant et l’export FULL ;
+- ajoute des clés d’idempotence bornées et persistées `OPEN|engineId|signature` et `TERMINAL|engineId|signature|terminalStatus`, sans modifier les épisodes de trading ;
+- aligne `confirmedTrades`, `tp`, `sl`, le résumé CV Core et `market_summary.txt` sur le nombre réel de plans économiques ;
+- remplace le moteur public 4.8 par `NMC_SCALP_CV_CORE_V1`, toujours actif et limité à trois voies ETH figées ;
+- fixe les épisodes de mouvement avant toute règle, avec déduplication causale de 180 secondes et sans cooldown terminal ;
+- calcule les rendements et efficacités directionnels ETH/SOL sur des historiques une seconde bornés, sans point futur ;
+- réserve 14,55 USDT de risque frais inclus aux voies RAW et exactement 7,275 USDT à la confirmation P02 ;
+- supprime le mode utilisateur, les cinq anciennes voies et le comparateur legacy, tout en conservant la migration d’un plan 4.8 déjà actif ;
+- maintient la suppression des nouvelles publications legacy ETH/SOL, les diagnostics complets et `realTradingAllowed=false`.
+
+## 2.34.4.8 — Scalp Action V1 manuel
+
+- corrige l’arbitrage global inter-source : toutes les confirmations legacy et la décision RAW d’un même cycle sont comparées avant l’unique publication ;
+- revalide les flux, le plan actif, la fenêtre de cinq secondes, l’économie et le budget juste avant la persistance, avec un code de refus précis ;
+- affiche pour Scalp Action la perte totale frais inclus et le budget exact de 14,55 USDT, sans modifier le rendu des plans legacy restaurés ;
+- complète le résumé live avec temps frais, profit factor, expectancy, drawdown, frais et fréquence ;
+- conserve les métriques de confirmation au timestamp causal et ajoute les événements explicites de non-sélection, doublon et comparateur occupé ;
+- ajoute `NMC_SCALP_ACTION_V1`, moteur public ETH indépendant à cinq voies figées ;
+- observe causalement les décisions brutes et les confirmations legacy, avec contexte ETH/SOL/BTC borné ;
+- calcule l’entrée au bid/ask exécutable, des niveaux conservateurs et une quantité frais inclus sous 14,55 USDT ;
+- neutralise les nouvelles publications legacy ETH/SOL tout en conservant diagnostics, frozen, shadow et comparateurs silencieux ;
+- restaure sans conversion les plans déjà actifs, ajoute une fenêtre d’entrée de cinq secondes et un rollback local persistant ;
+- reste manuel uniquement, sans ordre automatique, avec `realTradingAllowed=false`.
+
+## 2.34.4.7 — protocole frozen de calibration de rentabilité
+
+- ajoute un portefeuille shadow indépendant : ETH Range haute volatilité et deux branches SOL Accel38 simultanées ;
+- fige les seuils, les multiples de A, la signature structurelle et les buckets de sensibilité pour le futur holdout ;
+- applique un sizing frais inclus sous 14,55 USDT et remplit les terminaux exactement aux TP/SL planifiés ;
+- expose un résumé borné distinct sans importer les résultats historiques dans les compteurs futurs ;
+- politique `SHADOW_V23447_20260804`, schéma `SHADOW_SCHEMA_V8`, protocole public interdit, moteur public inchangé.
+
+## 2.34.4.6 — intégrité des télémétries shadow
+
+- calcule Range Reclaim depuis `movementExtreme`, avec `movementOrigin` conservé uniquement comme diagnostic séparé ;
+- attribue No-Retrace au composant officiel `ETH_NO_RETRACE_BREAKOUT_RESEARCH` ;
+- remet à zéro l’horloge Reacceleration dès qu’un plan shadow est actif ;
+- expose des snapshots FIFO bornés à 160 mouvements avec compteurs de doublons consolidés ;
+- politique `SHADOW_V23446_20260803`, schéma `SHADOW_SCHEMA_V7`, moteur public inchangé.
+
+## 2.34.4.5 — recherche shadow réaccélération et fréquence protégée
+
+- remplace le baseline universel SOL P01 par un garde shadow propre à SOL, sans effet sur les confirmations publiques ;
+- ajoute `ETH_FLOW_REACCELERATION_V2`, avec deux branches de flow et dix secondes de stabilité continue avant toute ouverture shadow ;
+- conserve l’ancienne continuation ETH comme comparateur sans ouverture et place Range Fade en quarantaine ;
+- ajoute les télémétries bornées Range Reclaim et No-Retrace Breakout, sans plan, alerte ni faux terminal ;
+- étend le résumé expérimental V6 et conserve le sizing shadow frais inclus ;
+- politique `SHADOW_V23445_20260803`, schéma `SHADOW_SCHEMA_V6`, moteur public inchangé.
+
+## 2.34.4.4 — comptabilité shadow qualité/fréquence corrigée
+
+- qualifications, occasions exécutables et ouvertures comptées séparément, sans double incrément ;
+- unions exactes public/shadow et agrégat `ALL` ETH+SOL ;
+- registre FIFO borné à 256 plans permettant les overlaps après TP ou SL shadow ;
+- quantité des lanes shadow réellement calculée avec frais, pas, minimum, maximum et plafond qualité ;
+- résumé et terminaux publics entièrement isolés en fail-open ;
+- politique `SHADOW_V23444_20260802`, schéma `SHADOW_SCHEMA_V5`, moteur public inchangé.
+
+## 2.34.4.3 — architecture shadow qualité + fréquence
+
+- garde P01 symbolique : strict sur ETH, baseline publique conservée sur SOL ;
+- reprise P01 précoce SOL réutilisant le sélecteur et la stabilité existants ;
+- voie ETH de continuation à flow confirmé et voie secondaire RANGE_FADE LONG, ré-ancrées causalement ;
+- déduplication par composant et par mouvement, overlaps public/shadow explicitement mesurés ;
+- résumé incrémental borné de qualité, résultats nets et fréquence dans le statut et l’export ;
+- politique `SHADOW_V23443_20260802`, schéma `SHADOW_SCHEMA_V4`, aucune activation publique.
+
+## 2.34.4.2 — bridge shadow ETH et politiques symboliques
+
+- pont fail-open entre le moteur ETH historique et la couche d’observation shadow commune à SOL ;
+- une décision A/B et une sonde de sizing possibles pour chaque confirmation publique ETH ou SOL ;
+- quarantaine shadow des P02 SOL et score shadow minimal de 85 pour les P02 ETH, sans veto public ;
+- nouvelle voie de recherche silencieuse `ETH_FLOW_EXPANSION_EXTENDED`, avec mesure de latence et déduplication ;
+- télémétrie bornée des mouvements ETH BTC-led manqués, sans ouverture de plan ;
+- politique `SHADOW_V23442_20260802`, schéma `SHADOW_SCHEMA_V3`, aucun changement du moteur public.
+
+## 2.34.4.1 — durcissement de l’observabilité shadow
+
+- isolation de toutes les exceptions shadow afin qu’elles ne puissent jamais interrompre le moteur public ;
+- terminaux shadow acceptés uniquement sur une cotation tradée fraîche et valide ;
+- schéma `SHADOW_SCHEMA_V2` avec `E60` absolu et `eNormalized` séparés ;
+- `resultR` calculé sur le risque net planifié, frais inclus ;
+- protection causale contre une cible déjà touchée avant l’ouverture shadow ;
+- tests fonctionnels renforcés sans modification des seuils ni des plans publics.
+
+## 2.34.4.0 — calibration A/B shadow isolée
+
+- garde P01 finale et anti-épuisement P02 mesurés sans modifier les confirmations publiques ;
+- deux voies de recherche shadow causales, dédupliquées et silencieuses ;
+- suivi shadow immuable jusqu’au TP ou au SL, indépendant des compteurs et plans publics ;
+- sonde de sizing tenant compte des frais, sans modifier la quantité active ;
+- événements shadow typés et exportables sous la politique `SHADOW_V23440_20260801` ;
+- aucune modification des filtres, timings, TP, SL, quantités, alertes ou lifecycles publics.
+
+## 2.34.3.9 — statut, export et diagnostics fiabilisés
+
+- normalisation JSON récursive des nombres non finis, maps, listes, tableaux et valeurs Java inconnues ;
+- conservation stricte du dernier statut valide et statut minimal riche en cas d’échec d’une section optionnelle ;
+- export déclenché uniquement après acquittement du flush, avec snapshot unique et traçabilité SHA-256 ;
+- coalescence des diagnostics répétitifs sur des champs stables, sans perdre les événements métier ;
+- observabilité complète du canal sonore, de la ressource, du volume et des restrictions Android, sans modifier les réglages ;
+- aucune modification du moteur, des entrées, TP, SL, quantités ou lifecycles.
+
 ## 2.34.3.8 — diagnostic complet et alerte finale vérifiée
 
 - index recorder, événements récents, plans actifs et santé du canal conservés dans le statut de secours ;
@@ -78,3 +243,10 @@
 - plans actifs persistants, immuables et terminés uniquement au TP ou au SL ;
 - interface native NMC et diagnostics multi-marchés bornés ;
 - alerte sonore centrale unique pour chaque nouveau plan final.
+## 2.34.5.4 — Incremental Depth Capture V4
+
+- ajoute un troisième WebSocket Futures public isolé avec `ethusdt@depth@100ms`, `solusdt@depth@100ms` et `btcusdt@depth@100ms` ;
+- ajoute les records causaux bruts `DEPTH_DIFF` et les ancres REST publiques `DEPTH_BOOTSTRAP` (`limit=1000`) dans `NMC_CAUSAL_MARKET_CAPTURE_V4` ;
+- vérifie la continuité officielle `U/u/pu`, invalide explicitement les intervalles perdus et ré-ancre sans bloquer les flux 5.3 ;
+- préserve le replay V1/V2/V3, ajoute V4 au manifest et à l’outil offline, avec une santé incremental-depth distincte ;
+- release collector-only : moteur `NMC_SCALP_CV_CORE_V1`, règles, risques, publication et notifications inchangés ; `realTradingAllowed=false`.

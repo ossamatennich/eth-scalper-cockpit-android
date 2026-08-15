@@ -1,0 +1,599 @@
+package com.ethscalper.cockpit;
+
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Shared, fail-open shadow observation layer used by both the legacy ETH engine and the
+ * generic per-market orchestrator. It owns no public plan state and has no Android dependency.
+ */
+public final class ShadowObservationEngine {
+    public static final String ETH_FLOW_EXPANSION_EXTENDED="ETH_FLOW_EXPANSION_EXTENDED";
+    public static final String ETH_BTC_LED_BREAKOUT_RESEARCH="ETH_BTC_LED_BREAKOUT_RESEARCH";
+    private static final String DUPLICATE_HIGHER="SHADOW_DUPLICATE_HIGHER_PRIORITY_LANE";
+    private static final long MISSED_MOVEMENT_BUCKET_MS=15_000L;
+
+    @FunctionalInterface public interface OperationRunner {
+        void execute(String operation,Runnable action);
+    }
+    @FunctionalInterface public interface EventSink {
+        void record(ShadowEvent event);
+    }
+
+    public static final class Context {
+        public final MarketRuntime runtime;
+        public final MarketSnapshot snapshot;
+        public final List<MarketRuntime.MarketBar> structuralBars;
+        public final long now;
+        public final boolean marketFresh,btcFresh,productionActivePlan,rearmComplete,tombstoned;
+        public Context(MarketRuntime runtime,MarketSnapshot snapshot,long now,
+                       boolean marketFresh,boolean btcFresh,boolean productionActivePlan,
+                       boolean rearmComplete,boolean tombstoned,
+                       List<MarketRuntime.MarketBar> structuralBars){
+            if(runtime==null)throw new IllegalArgumentException("runtime");
+            this.runtime=runtime;this.snapshot=snapshot;this.now=now;
+            this.marketFresh=marketFresh;this.btcFresh=btcFresh;
+            this.productionActivePlan=productionActivePlan;this.rearmComplete=rearmComplete;
+            this.tombstoned=tombstoned;
+            this.structuralBars=structuralBars==null?Collections.emptyList():structuralBars;
+        }
+    }
+
+    /** Mutable diagnostic adapter; synchronization back to the public candidate is explicit. */
+    public static final class Candidate {
+        public final SignalDecision signal;
+        public final String sleeve,signature,historicalDiagnosticCode;
+        public final long createdAt;
+        public final boolean historicalReplayRiskVeto;
+        public double adverse,favorable;
+        public final LinkedHashMap<String,String> lastShadowStateByComponent=new LinkedHashMap<>();
+        public long shadowDuplicateEventsSuppressed;
+        public long extendedQualificationAt,extendedFirstExecutableAt;
+        public long solEarlyQualitySince,solEarlyStabilityMs,solEarlyConfirmedAt;
+        public String solEarlyQualityMode="",solEarlyLastReasonCode="";
+        public long reaccelQualitySince,reaccelStabilityMs,reaccelConfirmedAt;
+        public String reaccelBranch="",reaccelLastReasonCode="";
+        public Candidate(SignalDecision signal,String sleeve,String signature,long createdAt,
+                         double adverse,double favorable,boolean replayVeto,String historicalCode){
+            this.signal=signal;this.sleeve=sleeve==null?"":sleeve;
+            this.signature=signature==null?"":signature;this.createdAt=createdAt;
+            this.adverse=adverse;this.favorable=favorable;
+            historicalReplayRiskVeto=replayVeto;
+            historicalDiagnosticCode=historicalCode==null?"":historicalCode;
+        }
+    }
+
+    public static final class ShadowEvent {
+        final Context context;final SignalDecision signal;final String type,code,text,sleeve;
+        final long age;final double adverse;final Map<String,Object> details;
+        ShadowEvent(Context context,SignalDecision signal,String type,String code,String text,
+                    String sleeve,long age,double adverse,Map<String,Object> details){
+            this.context=context;this.signal=signal;this.type=type;this.code=code;this.text=text;
+            this.sleeve=sleeve;this.age=age;this.adverse=adverse;this.details=details;
+        }
+    }
+
+    private final OperationRunner runner;
+    private final EventSink sink;
+    private final ShadowOpenedPlanRegistry openedRegistry=new ShadowOpenedPlanRegistry();
+    private final ShadowTelemetryRegistry telemetryRegistry=new ShadowTelemetryRegistry();
+
+    public ShadowObservationEngine(){this((operation,action)->action.run(),defaultSink());}
+    public ShadowObservationEngine(OperationRunner runner){this(runner,defaultSink());}
+    public ShadowObservationEngine(OperationRunner runner,EventSink sink){
+        this.runner=runner==null?(operation,action)->action.run():runner;
+        this.sink=sink==null?defaultSink():sink;
+    }
+    public static OperationRunner noOpRunner(){return (operation,action)->{};}
+    public static EventSink defaultSink(){return event->event.context.runtime.recorder.record(
+            event.context.now,event.type,event.code,event.text,"SHADOW_OBSERVABILITY","",
+            event.sleeve,event.signal,event.context.snapshot,event.age,event.context.marketFresh,
+            event.context.btcFresh,event.adverse,event.details);}
+
+    public void safeObserveTerminal(Context context){safe(context,"SHADOW_LIFECYCLE",
+            "OBSERVE_TERMINAL",()->observeTerminal(context));}
+    public void safeConsiderAddedPlan(Context context,Candidate candidate){safe(context,
+            "SHADOW_ADDED_LANES","CONSIDER_OPEN",()->considerAddedPlan(context,candidate));}
+    public void safeObserveProductionConfirmation(Context context,Candidate candidate,
+                                                  CandidateLifecycle.FillResult result,
+                                                  String entryRevalidationCode){safe(context,
+            "SHADOW_AB_GUARD","OBSERVE_CONFIRMATION",()->observeProductionConfirmation(
+                    context,candidate,result,entryRevalidationCode));}
+    public void safeObserveMissedMove(Context context,Candidate candidate,
+                                      Map<String,Object> creationContext){safe(context,
+            ShadowCalibrationPolicy.ETH_NO_RETRACE,"OBSERVE_MISSED_MOVE",()->observeMissedMove(
+                    context,candidate,creationContext));}
+
+    public synchronized void resetResearchMemory(){
+        try{openedRegistry.reset();telemetryRegistry.reset();}
+        catch(RuntimeException ignored){/* reset is shadow-only and fail-open */}
+    }
+    public ShadowOpenedPlanRegistry openedRegistry(){return openedRegistry;}
+    public ShadowTelemetryRegistry telemetryRegistry(){return telemetryRegistry;}
+
+    private void safe(Context c,String component,String operation,Runnable action){
+        try{runner.execute(operation,action);}catch(RuntimeException failure){
+            safeRecordInternalError(c,component,operation,failure);
+        }
+    }
+
+    public void safeRecordInternalError(Context c,String component,String operation,
+                                        RuntimeException failure) {
+        try{
+            LinkedHashMap<String,Object>d=base(c,null,component);
+            d.put("operation",operation);d.put("exceptionClass",failure.getClass().getName());
+            String message=failure.getMessage()==null?"":failure.getMessage();
+            d.put("message",message.substring(0,Math.min(256,message.length())));
+            write(c,null,"SHADOW_INTERNAL_ERROR","SHADOW_INTERNAL_ERROR",
+                    "Erreur shadow isolée; moteur public poursuivi.","",0,0,d);
+        }catch(RuntimeException ignored){/* the shadow recorder is isolated too */}
+    }
+
+    private void observeTerminal(Context c){
+        ShadowPlanState active=c.runtime.shadowResearch.active();
+        ShadowPlanState.Terminal terminal=c.runtime.shadowResearch.observe(c.now,
+                c.snapshot==null?Double.NaN:c.snapshot.marketBid,
+                c.snapshot==null?Double.NaN:c.snapshot.marketAsk,c.marketFresh);
+        if(active==null||terminal==null)return;
+        ShadowOpenedPlanRegistry.Record record=openedRegistry.markTerminal(active.shadowPlanId,
+                terminal.at,terminal.status);
+        LinkedHashMap<String,Object>d=base(c,null,active.component);
+        d.put("decision","TERMINAL");d.put("shadowReasonCode",terminal.status);
+        addPlan(d,active);d.put("candidateSignature",active.candidateSignature);
+        d.put("sourceCandidateCreatedAt",active.sourceCandidateCreatedAt);
+        d.put("side",active.side);d.put("sleeve",active.sleeve);
+        d.put("openedAt",active.openedAt);d.put("terminalAt",terminal.at);
+        d.put("durationMs",terminal.at-active.openedAt);d.put("exitQuote",terminal.exitQuote);
+        d.put("plannedGrossStopUsdt",terminal.plannedGrossStopUsdt);
+        d.put("plannedFeesUsdt",terminal.plannedFeesUsdt);
+        d.put("plannedNetStopUsdt",terminal.plannedNetStopUsdt);
+        d.put("grossResultUsdt",terminal.grossResultUsdt);
+        d.put("estimatedFeesUsdt",terminal.estimatedFeesUsdt);
+        d.put("netResultUsdt",terminal.netResultUsdt);
+        d.put("resultR",finiteOrNull(terminal.resultR));d.put("terminalStatus",terminal.status);
+        addRegistryRecord(d,record);c.runtime.shadowExperiment.safeRegistryStats(openedRegistry.snapshotStats());
+        write(c,null,terminal.status,terminal.status,"Terminal shadow observé; compteurs publics inchangés.",
+                active.sleeve,c.now-active.sourceCandidateCreatedAt,0,d);
+    }
+
+    private void observeProductionConfirmation(Context c,Candidate candidate,
+                                               CandidateLifecycle.FillResult result,
+                                               String revalidation){
+        if(candidate==null||result==null||!result.confirmed||result.publishedSignal==null)return;
+        NormalizedSignalMetrics.Result metrics=result.normalizedMetrics;
+        ShadowCalibrationPolicy.Decision decision=CandidateLifecycle.SLEEVE_P02.equals(candidate.sleeve)
+                ?ShadowCalibrationPolicy.p02Symbolic(c.runtime.profile,candidate.signal.score,metrics)
+                :MarketProfile.SOL_SYMBOL.equals(c.runtime.profile.symbol)
+                ?ShadowCalibrationPolicy.solP01QualityGuard(candidate.signal.score,metrics,c.marketFresh,c.btcFresh)
+                :ShadowCalibrationPolicy.p01Symbolic(c.runtime.profile,candidate.signal.score,metrics,
+                        result.p01SleeveFilter,revalidation);
+        String component=CandidateLifecycle.SLEEVE_P02.equals(candidate.sleeve)
+                ?ShadowCalibrationPolicy.P02_GUARD:ShadowCalibrationPolicy.p01Component(c.runtime.profile);
+        LinkedHashMap<String,Object>d=base(c,candidate,component);
+        d.put("decision",decision.decision);d.put("shadowReasonCode",decision.reasonCode);
+        d.put("productionConfirmed",true);d.put("score",candidate.signal.score);
+        putMetrics(d,metrics,candidate.adverse);d.put("entryRevalidationCode",safe(revalidation));
+        d.put("entryRevalidationAlreadyBlocksProduction",revalidation!=null&&!revalidation.isEmpty());
+        d.put("entryRevalidationHistoricalDiagnostic",false);
+        d.put("recordedHistoricalDiagnosticCode",candidate.historicalDiagnosticCode);
+        if(result.p01SleeveFilter!=null){d.put("p01Phase",result.p01SleeveFilter.phase);
+            d.put("flowBacked",result.p01SleeveFilter.flowBacked);
+            d.put("priceLed",result.p01SleeveFilter.priceLed);
+        }else{d.put("p01Phase","");d.put("flowBacked",false);d.put("priceLed",false);}
+        SignalDecision published=result.publishedSignal;
+        d.put("entry",published.entry);d.put("tp",published.takeProfit);
+        d.put("sl",published.stopLoss);d.put("quantity",published.quantity);
+        write(c,published,"SHADOW_AB_DECISION",decision.reasonCode,
+                "Décision A/B shadow sur confirmation publique.",candidate.sleeve,
+                c.now-candidate.createdAt,candidate.adverse,d);
+        ShadowPlanFactory.Result geometry=ShadowPlanFactory.fromProduction(c.runtime.profile,
+                candidate.signature,component,candidate.sleeve,candidate.createdAt,c.now,result);
+        if(geometry.valid)recordFeeAware(c,published,geometry.state,geometry.economics,true,
+                geometry.baselineQuantity);
+        String candidateMovement=movementKey(c,candidate);
+        ShadowOpenedPlanRegistry.Record shadow=openedRegistry.findOverlap(candidate.signature,candidateMovement);
+        if(shadow!=null&&openedRegistry.markPublicOverlap(shadow.shadowPlanId)){
+            shadow=openedRegistry.findOverlap(candidate.signature,candidateMovement);
+            LinkedHashMap<String,Object> overlap=base(c,candidate,shadow.component);
+            overlap.put("decision","OVERLAP");overlap.put("shadowReasonCode","SHADOW_PUBLIC_OVERLAP");
+            overlap.put("publicOverlap",true);addRegistryRecord(overlap,shadow);
+            write(c,published,"SHADOW_PUBLIC_OVERLAP","SHADOW_PUBLIC_OVERLAP",
+                    "Confirmation publique recouvrant une occasion shadow.",candidate.sleeve,
+                    c.now-candidate.createdAt,candidate.adverse,overlap);
+        }
+    }
+
+    private void considerAddedPlan(Context c,Candidate candidate){
+        if(candidate==null||candidate.signal==null||c.snapshot==null
+                ||!CandidateLifecycle.SLEEVE_P01.equals(candidate.sleeve))return;
+        NormalizedSignalMetrics.Result metrics=NormalizedSignalMetrics.calculate(c.runtime.profile,
+                candidate.signal.side,candidate.signal,c.snapshot,candidate.adverse);
+        String candidateMovement=movementKey(c,candidate);
+        ShadowCalibrationPolicy.Decision range=ShadowCalibrationPolicy.ethRangeFadeLongHighConfidence(
+                c.runtime.profile,candidate.signal,metrics);
+        if(candidate.signal.family!=null&&candidate.signal.family.contains("RANGE_FADE")){
+            if(range.keep){
+                c.runtime.shadowExperiment.safeQualified(ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG,
+                        candidateMovement,c.now);
+                recordSkipOnce(c,candidate,metrics,ShadowCalibrationPolicy.ETH_RANGE_FADE_LONG,
+                        "SHADOW_ETH_RANGE_FADE_QUARANTINE","BLOCK");
+                observeRangeReclaim(c,candidate,metrics,candidateMovement);
+            }
+            return;
+        }
+        ShadowCalibrationPolicy.Decision pullback=ShadowCalibrationPolicy.pullback(
+                candidate.signal.score,metrics);
+        ShadowCalibrationPolicy.Decision baseline=ShadowCalibrationPolicy.ethFlowContinuationHighConfidence(
+                c.runtime.profile,candidate.signal,metrics);
+        ShadowCalibrationPolicy.ReaccelerationDecision reaccel=
+                ShadowCalibrationPolicy.ethFlowReaccelerationV2(c.runtime.profile,candidate.signal,metrics);
+        CandidateLifecycle.FillResult solEarly=solEarlyResult(c,candidate,metrics);
+        boolean solEarlyKeep=solEarly!=null&&solEarly.confirmed;
+        boolean reaccelKeep=advanceReacceleration(c,candidate,metrics,reaccel,candidateMovement);
+        if(baseline.keep)recordBaselineWouldQualify(c,candidate,metrics);
+        if(!pullback.keep&&!reaccelKeep&&!solEarlyKeep)return;
+        boolean executable=CandidateLifecycle.currentlyExecutable(candidate.signal,c.snapshot);
+        String selected=solEarlyKeep?ShadowCalibrationPolicy.SOL_EARLY
+                :pullback.keep?ShadowCalibrationPolicy.PULLBACK
+                :ShadowCalibrationPolicy.ETH_REACCELERATION;
+        c.runtime.shadowExperiment.safeQualified(selected,candidateMovement,c.now);
+        if(pullback.keep&&reaccelKeep)recordWouldQualify(c,candidate,metrics,
+                ShadowCalibrationPolicy.ETH_REACCELERATION);
+        if(!c.marketFresh||!c.btcFresh){recordSkipOnce(c,candidate,metrics,selected,
+                reaccelReason(selected,"SHADOW_FEED_STALE"),"SKIP");return;}
+        if(c.productionActivePlan){recordSkipOnce(c,candidate,metrics,selected,
+                reaccelReason(selected,"SHADOW_PRODUCTION_PLAN_ACTIVE"),"SKIP");return;}
+        if(!c.rearmComplete){recordSkipOnce(c,candidate,metrics,selected,
+                reaccelReason(selected,"SHADOW_PRODUCTION_REARM_ACTIVE"),"SKIP");return;}
+        if(c.tombstoned){recordSkipOnce(c,candidate,metrics,selected,
+                reaccelReason(selected,"SHADOW_CANDIDATE_TOMBSTONED"),"SKIP");return;}
+        if(!executable){recordSkipOnce(c,candidate,metrics,selected,
+                reaccelReason(selected,"SHADOW_LIMIT_NOT_EXECUTABLE"),"SKIP");return;}
+        if(!ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate.signal,candidate.favorable)){
+            recordSkipOnce(c,candidate,metrics,selected,
+                    reaccelReason(selected,"SHADOW_TARGET_ALREADY_TOUCHED_BEFORE_OPEN"),"SKIP");return;}
+        boolean reanchored=ShadowCalibrationPolicy.ETH_REACCELERATION.equals(selected);
+        ShadowPlanFactory.Result built=reanchored
+                ?ShadowPlanFactory.buildReanchored(c.runtime.profile,candidate.signal,candidate.sleeve,
+                    candidate.signature,selected,c.snapshot,candidate.adverse,
+                    candidate.historicalReplayRiskVeto,c.structuralBars,candidate.createdAt,c.now)
+                :ShadowPlanFactory.build(c.runtime.profile,candidate.signal,candidate.sleeve,
+                    candidate.signature,selected,c.snapshot,candidate.adverse,
+                    candidate.historicalReplayRiskVeto,c.structuralBars,candidate.createdAt,c.now);
+        if(!built.valid){recordSkipOnce(c,candidate,metrics,selected,built.reasonCode,"SKIP");return;}
+        if(!built.economics.valid||!(built.economics.netTargetUsdt>0)
+                ||!(built.economics.netStopUsdt>0)||built.economics.netRewardRisk+1e-12<.40){
+            recordSkipOnce(c,candidate,metrics,selected,ShadowCalibrationPolicy.ETH_REACCELERATION.equals(selected)
+                    ?"SHADOW_ETH_REACCEL_NET_RR_TOO_LOW":"SHADOW_NET_REWARD_RISK_TOO_LOW","SKIP");return;}
+        c.runtime.shadowExperiment.safeOpportunity(selected,candidateMovement);
+        if(openedRegistry.findOverlap(candidate.signature,candidateMovement)!=null){
+            recordSkipOnce(c,candidate,metrics,selected,"SHADOW_MOVEMENT_ALREADY_OBSERVED","SKIP");return;}
+        if(!c.runtime.shadowResearch.canOpen(candidate.signature,c.now)){
+            recordSkipOnce(c,candidate,metrics,selected,c.runtime.shadowResearch.active()!=null
+                    ?"SHADOW_PLAN_ALREADY_ACTIVE":"SHADOW_DEDUP_OR_COOLDOWN","SKIP");return;}
+        if(!c.runtime.shadowResearch.open(built.state)){recordSkipOnce(c,candidate,metrics,selected,
+                "SHADOW_DEDUP_OR_COOLDOWN","SKIP");return;}
+        boolean higherPriority=pullback.keep&&reaccelKeep;
+        ShadowOpenedPlanRegistry.Record opened=openedRegistry.registerOpen(built.state,candidateMovement,
+                candidate.signal.family,higherPriority);
+        c.runtime.shadowExperiment.safeRegistryStats(openedRegistry.snapshotStats());
+        LinkedHashMap<String,Object>d=base(c,candidate,selected);
+        d.put("decision","OPEN");d.put("shadowReasonCode","SHADOW_PLAN_OPENED");
+        addPlan(d,built.state);putMetrics(d,metrics,candidate.adverse);
+        d.put("movementKey",movementKey(c,candidate));d.put("publicOverlap",false);
+        d.put("higherPriorityOverlap",higherPriority);
+        if(reanchored){d.put("branch",candidate.reaccelBranch);
+            d.put("qualificationAt",candidate.reaccelQualitySince);d.put("stabilityStartedAt",candidate.reaccelQualitySince);
+            d.put("stabilityMs",candidate.reaccelStabilityMs);d.put("originalCandidateEntry",candidate.signal.entry);
+            d.put("executableQuote","LONG".equals(candidate.signal.side)
+                    ?c.snapshot.marketAsk:c.snapshot.marketBid);
+            d.put("reanchoredEntry",built.state.entry);d.put("reanchoredTp",built.state.tp);
+            d.put("reanchoredSl",built.state.sl);
+            d.put("quoteDriftFromOriginal",Math.abs(built.state.entry-candidate.signal.entry));}
+        putQualificationLatency(d,candidate,selected,c.now);
+        if(ShadowCalibrationPolicy.SOL_EARLY.equals(selected)){
+            d.put("solEarlyQualitySince",candidate.solEarlyQualitySince);
+            d.put("solEarlyQualityMode",candidate.solEarlyQualityMode);
+            d.put("solEarlyStabilityMs",candidate.solEarlyStabilityMs);
+            d.put("solEarlyConfirmedAt",candidate.solEarlyConfirmedAt);}
+        write(c,candidate.signal,"SHADOW_PLAN_OPENED","SHADOW_PLAN_OPENED",
+                "Plan shadow ouvert sans publication ni alerte.",candidate.sleeve,
+                c.now-candidate.createdAt,candidate.adverse,d);
+        recordFeeAware(c,candidate.signal,built.state,built.economics,false,built.baselineQuantity);
+    }
+
+    private boolean advanceReacceleration(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
+            ShadowCalibrationPolicy.ReaccelerationDecision decision,String movement){
+        if(!decision.keep){resetReacceleration(candidate,decision.reasonCode);return false;}
+        String operational="";
+        if(c.snapshot==null||c.snapshot.now!=c.now)operational="SHADOW_ETH_REACCEL_STABILITY_RESET";
+        else if(!c.marketFresh||!c.btcFresh)operational="SHADOW_ETH_REACCEL_FEED_STALE";
+        else if(c.productionActivePlan)operational="SHADOW_ETH_REACCEL_PUBLIC_PLAN_ACTIVE";
+        else if(!c.rearmComplete)operational="SHADOW_ETH_REACCEL_REARM_ACTIVE";
+        else if(c.tombstoned)operational="SHADOW_ETH_REACCEL_TOMBSTONED";
+        else if(c.runtime.shadowResearch.active()!=null)operational="SHADOW_ETH_REACCEL_SHADOW_PLAN_ACTIVE";
+        else if(!CandidateLifecycle.currentlyExecutable(candidate.signal,c.snapshot))operational="SHADOW_ETH_REACCEL_NOT_EXECUTABLE";
+        else if(!ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate.signal,candidate.favorable))
+            operational="SHADOW_ETH_REACCEL_TARGET_ALREADY_TOUCHED";
+        if(!operational.isEmpty()){resetReacceleration(candidate,operational);
+            recordSkipOnce(c,candidate,metrics,ShadowCalibrationPolicy.ETH_REACCELERATION,operational,"STABILITY_RESET");return false;}
+        if(candidate.reaccelQualitySince<=0||!decision.branch.equals(candidate.reaccelBranch)){
+            boolean changed=candidate.reaccelQualitySince>0&&!decision.branch.equals(candidate.reaccelBranch);
+            candidate.reaccelQualitySince=c.now;candidate.reaccelBranch=decision.branch;candidate.reaccelStabilityMs=0;
+            candidate.reaccelLastReasonCode=changed?"SHADOW_ETH_REACCEL_STABILITY_RESET":"SHADOW_ETH_REACCEL_STABILITY_PENDING";
+            c.runtime.shadowExperiment.safeQualified(ShadowCalibrationPolicy.ETH_REACCELERATION,movement,c.now);
+            recordSkipOnce(c,candidate,metrics,ShadowCalibrationPolicy.ETH_REACCELERATION,
+                    candidate.reaccelLastReasonCode,changed?"STABILITY_RESET":"STABILITY_PENDING");return false;}
+        candidate.reaccelStabilityMs=Math.max(0,c.now-candidate.reaccelQualitySince);
+        if(candidate.reaccelStabilityMs<10_000L){candidate.reaccelLastReasonCode="SHADOW_ETH_REACCEL_STABILITY_PENDING";
+            recordSkipOnce(c,candidate,metrics,ShadowCalibrationPolicy.ETH_REACCELERATION,
+                    candidate.reaccelLastReasonCode,"STABILITY_PENDING");return false;}
+        candidate.reaccelConfirmedAt=c.now;candidate.reaccelLastReasonCode="SHADOW_ETH_REACCEL_CONFIRMED";return true;
+    }
+
+    private static void resetReacceleration(Candidate c,String reason){c.reaccelQualitySince=0;c.reaccelBranch="";
+        c.reaccelStabilityMs=0;c.reaccelConfirmedAt=0;c.reaccelLastReasonCode=reason;}
+
+    private static String reaccelReason(String component,String generic){if(!ShadowCalibrationPolicy.ETH_REACCELERATION.equals(component))return generic;
+        if("SHADOW_FEED_STALE".equals(generic))return "SHADOW_ETH_REACCEL_FEED_STALE";
+        if("SHADOW_PRODUCTION_PLAN_ACTIVE".equals(generic))return "SHADOW_ETH_REACCEL_PUBLIC_PLAN_ACTIVE";
+        if("SHADOW_PRODUCTION_REARM_ACTIVE".equals(generic))return "SHADOW_ETH_REACCEL_REARM_ACTIVE";
+        if("SHADOW_CANDIDATE_TOMBSTONED".equals(generic))return "SHADOW_ETH_REACCEL_TOMBSTONED";
+        if("SHADOW_LIMIT_NOT_EXECUTABLE".equals(generic))return "SHADOW_ETH_REACCEL_NOT_EXECUTABLE";
+        if("SHADOW_TARGET_ALREADY_TOUCHED_BEFORE_OPEN".equals(generic))return "SHADOW_ETH_REACCEL_TARGET_ALREADY_TOUCHED";return generic;}
+
+    private CandidateLifecycle.FillResult solEarlyResult(Context c,Candidate candidate,
+                                                         NormalizedSignalMetrics.Result metrics){
+        if(!MarketProfile.SOL_SYMBOL.equals(c.runtime.profile.symbol))return null;
+        if(candidate.signal.score<95||candidate.signal.family==null
+                ||!candidate.signal.family.contains("CONTINUATION")){
+            resetSolEarly(candidate,"SHADOW_SOL_EARLY_PROFILE_REJECTED");return null;}
+        long age=c.now-candidate.createdAt;
+        if(age<0||age>=P01EarlyConfirmation.MAX_EARLY_AGE_MS){resetSolEarly(candidate,
+                "SHADOW_SOL_EARLY_AGE_OUTSIDE_WINDOW");return null;}
+        if(c.snapshot==null||c.snapshot.now!=c.now){resetSolEarly(candidate,"SHADOW_SOL_EARLY_SNAPSHOT_NOT_CAUSAL");return null;}
+        if(!c.marketFresh){resetSolEarly(candidate,"SHADOW_SOL_EARLY_MARKET_STALE");return null;}
+        if(!c.btcFresh){resetSolEarly(candidate,"SHADOW_SOL_EARLY_BTC_STALE");return null;}
+        if(c.productionActivePlan){resetSolEarly(candidate,"SHADOW_SOL_EARLY_PUBLIC_PLAN_ACTIVE");return null;}
+        if(!c.rearmComplete){resetSolEarly(candidate,"SHADOW_SOL_EARLY_REARM_ACTIVE");return null;}
+        if(c.tombstoned){resetSolEarly(candidate,"SHADOW_SOL_EARLY_TOMBSTONED");return null;}
+        if(!CandidateLifecycle.currentlyExecutable(candidate.signal,c.snapshot)){
+            resetSolEarly(candidate,"SHADOW_SOL_EARLY_NOT_EXECUTABLE");return null;}
+        if(!ShadowCalibrationPolicy.targetUntouchedBeforeOpen(candidate.signal,candidate.favorable)){
+            resetSolEarly(candidate,"SHADOW_SOL_EARLY_TARGET_ALREADY_TOUCHED");return null;}
+        double progress=Double.isFinite(candidate.signal.targetMove)&&candidate.signal.targetMove>0
+                ?Math.max(0,candidate.favorable/candidate.signal.targetMove):0;
+        CandidateLifecycle.FillResult probe=CandidateLifecycle.processEarlyP01Candidate(
+                c.runtime.profile,candidate.signal,c.snapshot,c.marketFresh,candidate.createdAt,c.now,
+                progress,candidate.adverse,candidate.historicalReplayRiskVeto,
+                !c.productionActivePlan,c.rearmComplete,candidate.signal.entry,false);
+        P01EarlyConfirmation.StabilityResult stability=P01EarlyConfirmation.advance(c.now,
+                candidate.solEarlyQualitySince,candidate.solEarlyQualityMode,probe.earlyP01);
+        candidate.solEarlyQualitySince=stability.qualitySince;
+        candidate.solEarlyQualityMode=stability.mode;
+        candidate.solEarlyStabilityMs=stability.stabilityMs;
+        candidate.solEarlyLastReasonCode=stability.reasonCode;
+        if(!stability.confirmed){String decision=stability.qualitySince>0?"STABILITY_PENDING":"STABILITY_RESET";
+            recordSkipOnce(c,candidate,metrics,ShadowCalibrationPolicy.SOL_EARLY,
+                    stability.reasonCode,decision);return null;}
+        CandidateLifecycle.FillResult confirmed=CandidateLifecycle.processEarlyP01Candidate(
+                c.runtime.profile,candidate.signal,c.snapshot,c.marketFresh,candidate.createdAt,c.now,
+                progress,candidate.adverse,candidate.historicalReplayRiskVeto,
+                !c.productionActivePlan,c.rearmComplete,candidate.signal.entry,true);
+        if(confirmed.confirmed)candidate.solEarlyConfirmedAt=c.now;
+        return confirmed;
+    }
+
+    private static void resetSolEarly(Candidate candidate,String reason){candidate.solEarlyQualitySince=0;
+        candidate.solEarlyQualityMode="";candidate.solEarlyStabilityMs=0;
+        candidate.solEarlyLastReasonCode=reason;candidate.solEarlyConfirmedAt=0;}
+
+    private void recordWouldQualify(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
+                                    String component){
+        c.runtime.shadowExperiment.safeQualified(component,movementKey(c,candidate),c.now);
+        recordSkipOnce(c,candidate,metrics,component,DUPLICATE_HIGHER,"WOULD_QUALIFY");
+    }
+
+    private void recordBaselineWouldQualify(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics){
+        String component=ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE;
+        c.runtime.shadowExperiment.safeQualified(component,movementKey(c,candidate),c.now);
+        recordSkipOnce(c,candidate,metrics,component,"SHADOW_BASELINE_REJECTED_FOR_OPENING","WOULD_QUALIFY");
+    }
+
+    private void recordSkipOnce(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
+                                String component,String reason,String decision){
+        String key=decision+"|"+reason;String previous=candidate.lastShadowStateByComponent.get(component);
+        if(key.equals(previous)){candidate.shadowDuplicateEventsSuppressed++;
+            c.runtime.shadowExperiment.safeDuplicateSuppressed(component,candidate.signature);return;}
+        if(!candidate.lastShadowStateByComponent.containsKey(component)
+                &&candidate.lastShadowStateByComponent.size()>=16){
+            String eldest=candidate.lastShadowStateByComponent.keySet().iterator().next();
+            candidate.lastShadowStateByComponent.remove(eldest);}
+        candidate.lastShadowStateByComponent.put(component,key);
+        LinkedHashMap<String,Object>d=base(c,candidate,component);
+        d.put("decision",decision);d.put("shadowReasonCode",reason);
+        d.put("movementKey",movementKey(c,candidate));
+        d.put("shadowDuplicateEventsSuppressed",candidate.shadowDuplicateEventsSuppressed);
+        putMetrics(d,metrics,candidate.adverse);
+        if(ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(component))putLatency(d,candidate,0);
+        if(ShadowCalibrationPolicy.ETH_REACCELERATION.equals(component)){
+            d.put("branch",candidate.reaccelBranch);
+            d.put("qualificationAt",candidate.reaccelQualitySince>0?candidate.reaccelQualitySince:null);
+            d.put("stabilityStartedAt",candidate.reaccelQualitySince>0?candidate.reaccelQualitySince:null);
+            d.put("stabilityMs",candidate.reaccelStabilityMs);
+        }
+        write(c,candidate.signal,"SHADOW_PLAN_SKIPPED",reason,
+                "Voie shadow observée sans effet public.",candidate.sleeve,
+                c.now-candidate.createdAt,candidate.adverse,d);
+    }
+
+    private synchronized void observeMissedMove(Context c,Candidate candidate,
+                                                Map<String,Object> creationContext){
+        if(candidate==null||candidate.signal==null
+                ||!MarketProfile.ETH_SYMBOL.equals(c.runtime.profile.symbol))return;
+        String movement=movementKey(c,candidate);
+        long firstExecutable=longFrom(creationContext,"firstExecutableAt",0);
+        ShadowTelemetryRegistry.BreakoutUpdate update=telemetryRegistry.observeBreakout(movement,candidate.signature,
+                candidate.signal,c.snapshot,candidate.createdAt,c.now,candidate.adverse,candidate.favorable,
+                stringFrom(creationContext,"reasonCode","V2329_TARGET_REACHED_BEFORE_CONFIRMED_FILL"),firstExecutable);
+        c.runtime.shadowExperiment.safeTelemetrySnapshot(ShadowCalibrationPolicy.ETH_NO_RETRACE,
+                telemetryRegistry.noRetraceSnapshots());
+        if(!update.created){c.runtime.shadowExperiment.safeTelemetryDeduplicated(
+                ShadowCalibrationPolicy.ETH_NO_RETRACE);return;}
+        LinkedHashMap<String,Object>d=base(c,candidate,ShadowCalibrationPolicy.ETH_NO_RETRACE);
+        d.put("decision","OBSERVE");d.put("shadowReasonCode","SHADOW_NO_RETRACE_BREAKOUT_OBSERVED");
+        NormalizedSignalMetrics.Result metrics=NormalizedSignalMetrics.calculate(c.runtime.profile,
+                candidate.signal.side,candidate.signal,c.snapshot,candidate.adverse);
+        putMetrics(d,metrics,candidate.adverse);d.putAll(update.details);
+        if(creationContext!=null)d.putAll(creationContext);
+        write(c,candidate.signal,"SHADOW_NO_RETRACE_BREAKOUT_OBSERVATION",
+                "SHADOW_NO_RETRACE_BREAKOUT_OBSERVED",
+                "Mouvement ETH manqué observé sans ouvrir de plan shadow.",candidate.sleeve,
+                c.now-candidate.createdAt,candidate.adverse,d);
+    }
+
+    private void observeRangeReclaim(Context c,Candidate candidate,NormalizedSignalMetrics.Result metrics,
+                                     String movement){
+        ShadowTelemetryRegistry.RangeUpdate update=telemetryRegistry.observeRange(movement,candidate.signature,candidate.signal,
+                metrics,c.snapshot,c.now,candidate.adverse,c.marketFresh,c.btcFresh);
+        c.runtime.shadowExperiment.safeTelemetrySnapshot(ShadowCalibrationPolicy.ETH_RANGE_RECLAIM,
+                telemetryRegistry.rangeSnapshots());
+        if(!update.changed){c.runtime.shadowExperiment.safeTelemetryDeduplicated(
+                ShadowCalibrationPolicy.ETH_RANGE_RECLAIM);return;}
+        LinkedHashMap<String,Object>d=base(c,candidate,ShadowCalibrationPolicy.ETH_RANGE_RECLAIM);
+        d.put("decision","OBSERVE");d.put("shadowReasonCode","SHADOW_RANGE_RECLAIM_OBSERVED");
+        d.putAll(update.details);putMetrics(d,metrics,candidate.adverse);
+        String type=update.terminal?"SHADOW_RANGE_RECLAIM_TERMINAL_OBSERVATION"
+                :"SHADOW_RANGE_RECLAIM_OBSERVATION";
+        write(c,candidate.signal,type,"SHADOW_RANGE_RECLAIM_OBSERVED",
+                "Télémétrie causale de reclaim range, sans plan shadow.",candidate.sleeve,
+                c.now-candidate.createdAt,candidate.adverse,d);
+    }
+
+    private static long longFrom(Map<String,Object> values,String key,long fallback){
+        Object v=values==null?null:values.get(key);return v instanceof Number?((Number)v).longValue():fallback;
+    }
+    private static String stringFrom(Map<String,Object> values,String key,String fallback){
+        Object v=values==null?null:values.get(key);return v==null?fallback:String.valueOf(v);
+    }
+
+    private void recordFeeAware(Context c,SignalDecision signal,ShadowPlanState state,
+                                ShadowNetEconomics.Result e,boolean productionConfirmed,
+                                int baselineQuantity){
+        if(e==null||!e.valid)return;LinkedHashMap<String,Object>d=base(c,null,"SHADOW_FEE_AWARE_SIZING");
+        d.put("decision","MEASURE");d.put("shadowReasonCode","SHADOW_FEE_AWARE_SIZING");
+        d.put("sourceComponent",state.component);
+        addPlan(d,state);d.put("candidateSignature",state.candidateSignature);
+        addRegistryRecord(d,openedRegistry.findOverlap(state.candidateSignature,""));
+        d.put("sourceCandidateCreatedAt",state.sourceCandidateCreatedAt);
+        d.put("productionConfirmed",productionConfirmed);
+        if(productionConfirmed)d.put("activeQuantity",state.quantity);
+        else{d.put("baselineGrossQuantity",baselineQuantity);d.put("shadowQuantity",state.quantity);}
+        d.put("feeAwareQuantity",e.feeAwareQuantity);
+        d.put("riskBudgetUsdt",state.riskBudgetUsdt);d.put("roundedStopDistance",state.stopDistance);
+        d.put("estimatedRoundTripCostPerUnit",e.estimatedRoundTripCostPerUnit);
+        if(productionConfirmed){
+            d.put("activeGrossStopLossUsdt",e.activeGrossStopLossUsdt);
+            d.put("activeEstimatedFeesUsdt",e.activeEstimatedFeesUsdt);
+            d.put("activeTotalStopLossUsdt",e.activeTotalStopLossUsdt);
+        }else{
+            d.put("baselineGrossStopLossUsdt",baselineQuantity*state.stopDistance);
+            d.put("baselineEstimatedFeesUsdt",baselineQuantity*e.estimatedRoundTripCostPerUnit);
+        }
+        d.put("feeAwareGrossStopLossUsdt",e.feeAwareGrossStopLossUsdt);
+        d.put("feeAwareEstimatedFeesUsdt",e.feeAwareEstimatedFeesUsdt);
+        d.put("feeAwareTotalStopLossUsdt",e.feeAwareTotalStopLossUsdt);
+        d.put("netTargetUsdt",e.netTargetUsdt);d.put("netStopUsdt",e.netStopUsdt);
+        d.put("netRewardRisk",e.netRewardRisk);
+        d.put("shadowGrossTargetUsdt",state.quantity*state.targetDistance);
+        d.put("shadowEstimatedFeesUsdt",state.quantity*e.estimatedRoundTripCostPerUnit);
+        d.put("shadowNetTargetUsdt",state.quantity*(state.targetDistance-e.estimatedRoundTripCostPerUnit));
+        d.put("shadowGrossStopUsdt",state.quantity*state.stopDistance);
+        d.put("shadowNetStopUsdt",state.quantity*(state.stopDistance+e.estimatedRoundTripCostPerUnit));
+        d.put("shadowNetRewardRisk",e.netRewardRisk);
+        d.put("activeExceedsBudgetAfterFees",e.activeExceedsBudgetAfterFees);
+        write(c,signal,"SHADOW_FEE_AWARE_SIZING","SHADOW_FEE_AWARE_SIZING",
+                "Sonde de sizing frais inclus; quantité publique inchangée.",state.sleeve,
+                c.now-state.sourceCandidateCreatedAt,0,d);
+    }
+
+    private static LinkedHashMap<String,Object> base(Context c,Candidate candidate,String component){
+        LinkedHashMap<String,Object>d=new LinkedHashMap<>();
+        d.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);
+        d.put("shadowSchemaVersion",ShadowCalibrationPolicy.SCHEMA_VERSION);
+        d.put("component",component);d.put("observedAt",c.now);
+        d.put("productionActivePlan",c.productionActivePlan);d.put("productionConfirmed",false);
+        d.put("marketFeedFresh",c.marketFresh);d.put("btcFeedFresh",c.btcFresh);
+        d.put("symbol",c.runtime.profile.symbol);d.put("asset",c.runtime.profile.asset);
+        d.put("profileVersion",c.runtime.profile.profileVersion);
+        if(candidate!=null){d.put("candidateSignature",candidate.signature);
+            d.put("sourceCandidateCreatedAt",candidate.createdAt);d.put("side",candidate.signal.side);
+            d.put("sleeve",candidate.sleeve);d.put("family",candidate.signal.family);
+            d.put("score",candidate.signal.score);d.put("movementKey",movementKey(c,candidate));
+            d.put("publicOverlap",false);d.put("originalCandidateEntry",candidate.signal.entry);}
+        return d;
+    }
+
+    static String movementKey(Context c,Candidate candidate){
+        if(c==null||candidate==null||candidate.signal==null)return "";
+        String family=candidate.signal.family==null?"":candidate.signal.family;
+        String group=family.contains("RANGE_FADE")?"RANGE_FADE":family.contains("CONTINUATION")
+                ?"CONTINUATION":family;
+        double origin=Double.isFinite(candidate.signal.movementOrigin)
+                ?candidate.signal.movementOrigin:candidate.signal.entry;
+        long rounded=Double.isFinite(origin)&&c.runtime.profile.priceTick>0
+                ?Math.round(origin/c.runtime.profile.priceTick):0;
+        return c.runtime.profile.symbol+"|"+candidate.signal.side+"|"+group+"|"
+                +(candidate.createdAt/MISSED_MOVEMENT_BUCKET_MS)+"|"+rounded;
+    }
+
+    private static void addPlan(Map<String,Object>d,ShadowPlanState p){
+        d.put("shadowPlanId",p.shadowPlanId);d.put("entry",p.entry);d.put("tp",p.tp);
+        d.put("sl",p.sl);d.put("quantity",p.quantity);d.put("roundedStopDistance",p.stopDistance);
+        d.put("roundedTargetDistance",p.targetDistance);d.put("A",finiteOrNull(p.a));
+        d.put("E60",finiteOrNull(p.adverseExcursion60));d.put("eNormalized",finiteOrNull(p.eNormalized));
+    }
+    private static void addRegistryRecord(Map<String,Object>d,ShadowOpenedPlanRegistry.Record r){if(r==null)return;
+        d.put("shadowPlanId",r.shadowPlanId);d.put("candidateSignature",r.candidateSignature);
+        d.put("movementKey",r.movementKey);d.put("component",r.component);d.put("family",r.family);
+        d.put("openedAt",r.openedAt);d.put("terminalAt",r.terminalAt>0?r.terminalAt:null);
+        d.put("terminalStatus",r.terminalStatus);d.put("publicOverlap",r.publicOverlap);
+        d.put("higherPriorityOverlap",r.higherPriorityOverlap);}
+    static void putMetrics(Map<String,Object>d,NormalizedSignalMetrics.Result m,double adverse){
+        if(m==null)return;d.put("A",finiteOrNull(m.a));d.put("E60",finiteOrNull(adverse));
+        d.put("eNormalized",finiteOrNull(m.e));d.put("room",finiteOrNull(m.room));
+        d.put("m1",finiteOrNull(m.m1));d.put("m3",finiteOrNull(m.m3));d.put("m8",finiteOrNull(m.m8));
+        d.put("f30",finiteOrNull(m.f30));d.put("f60",finiteOrNull(m.f60));
+        d.put("volumeRatio",finiteOrNull(m.volumeRatio));d.put("directionalEdge",finiteOrNull(m.directionalEdge));
+    }
+    private static void putLatency(Map<String,Object>d,Candidate c,long openedAt){
+        d.put("qualificationAt",c.extendedQualificationAt>0?c.extendedQualificationAt:null);
+        d.put("firstExecutableAt",c.extendedFirstExecutableAt>0?c.extendedFirstExecutableAt:null);
+        d.put("shadowOpenedAt",openedAt>0?openedAt:null);
+        d.put("executableDelayMs",c.extendedQualificationAt>0&&c.extendedFirstExecutableAt>0
+                ?Math.max(0,c.extendedFirstExecutableAt-c.extendedQualificationAt):null);
+    }
+    private static void putQualificationLatency(Map<String,Object>d,Candidate c,String component,long openedAt){
+        long qualified=ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(component)
+                ?c.extendedQualificationAt:ShadowCalibrationPolicy.SOL_EARLY.equals(component)
+                ?c.solEarlyQualitySince:ShadowCalibrationPolicy.ETH_REACCELERATION.equals(component)
+                ?c.reaccelQualitySince:openedAt;
+        d.put("qualificationAt",qualified>0?qualified:null);d.put("shadowOpenedAt",openedAt);
+        d.put("qualificationToOpenMs",qualified>0?Math.max(0,openedAt-qualified):null);
+        if(ShadowCalibrationPolicy.ETH_FLOW_HIGH_CONFIDENCE.equals(component))
+            d.put("executableDelayMs",c.extendedQualificationAt>0&&c.extendedFirstExecutableAt>0
+                    ?Math.max(0,c.extendedFirstExecutableAt-c.extendedQualificationAt):null);
+    }
+    private void write(Context c,SignalDecision signal,String type,String code,String text,
+                       String sleeve,long age,double adverse,Map<String,Object> details){
+        LinkedHashMap<String,Object> normalized=new LinkedHashMap<>(details);
+        normalized.put("shadowPolicyVersion",ShadowCalibrationPolicy.VERSION);
+        normalized.put("shadowSchemaVersion",ShadowCalibrationPolicy.SCHEMA_VERSION);
+        c.runtime.shadowExperiment.safeObserve(type,normalized);
+        sink.record(new ShadowEvent(c,signal,type,code,text,sleeve,Math.max(0,age),adverse,normalized));
+    }
+    private static Object finiteOrNull(double value){return Double.isFinite(value)?value:null;}
+    private static String safe(String value){return value==null?"":value;}
+}
