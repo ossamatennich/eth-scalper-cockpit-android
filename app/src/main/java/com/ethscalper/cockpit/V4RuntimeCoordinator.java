@@ -1,13 +1,17 @@
 package com.ethscalper.cockpit;
 
-import android.app.NotificationChannel;
+import android.Manifest;
+import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.media.AudioManager;
+import android.net.Uri;
 import android.os.Build;
 
 import androidx.core.app.NotificationCompat;
@@ -31,6 +35,7 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
     public static synchronized V4RuntimeCoordinator start(Context c){if(instance==null)instance=new V4RuntimeCoordinator(c.getApplicationContext());instance.startInternal();return instance;}
     public static V4RuntimeCoordinator get(){return instance;}
     private final Context context;private final V4PlanStore store;private final V4AccountProfile account;private final V4MarketDataClient market;
+    private final V4NotificationLedger notificationLedger;
     private final ScheduledExecutorService scheduler=Executors.newSingleThreadScheduledExecutor();private final V4Engine engine;
     private volatile String transportState="SYNCHRO",lastError="";private volatile long lastAnalysisAt,lastErrorAt;private volatile int dataEligible;
     private volatile Map<String,V4FeatureEngine.Snapshot> snapshots=new LinkedHashMap<>();private volatile V4FeatureEngine.Candidate pending;
@@ -41,8 +46,12 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
         android.content.SharedPreferences hp=c.getSharedPreferences("v4_fallback_daily_history",Context.MODE_PRIVATE);
         V4FallbackHistory history=new V4FallbackHistory(new V4FallbackHistory.Backend(){public String load(){return hp.getString("records","[]");}
             public void save(String json){hp.edit().putString("records",json).commit();}});
+        android.content.SharedPreferences np=c.getSharedPreferences("v4_loud_notification_events",Context.MODE_PRIVATE);
+        notificationLedger=new V4NotificationLedger(new V4NotificationLedger.Backend(){public String load(){return np.getString("events","[]");}
+            public boolean save(String json){return np.edit().putString("events",json).commit();}});
+        if(!np.getBoolean("legacy_statuses_seeded",false)){for(V4Plan p:store.all())seedExistingNotificationState(p);np.edit().putBoolean("legacy_statuses_seeded",true).commit();}
         engine=new V4Engine(m,history);market=new V4MarketDataClient(c,this);}
-    private synchronized void startInternal(){if(started)return;started=true;ensureChannel();market.start();scheduler.scheduleAtFixedRate(this::tick,2,15,TimeUnit.SECONDS);
+    private synchronized void startInternal(){if(started)return;started=true;MarketWatchService.ensureChannels(context);market.start();scheduler.scheduleAtFixedRate(this::tick,2,15,TimeUnit.SECONDS);
         scheduler.scheduleAtFixedRate(market::refreshDailyAsync,6,6,TimeUnit.HOURS);}
     public synchronized void stop(){market.stop();scheduler.shutdownNow();started=false;instance=null;}
     @Override public void onQuote(String asset,V4MarketDataClient.Quote quote){long now=System.currentTimeMillis();if(now-lastQuoteTickScheduled>1000){lastQuoteTickScheduled=now;scheduler.execute(this::tick);}}
@@ -64,7 +73,8 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
         V4PlanLifecycle.evaluate(p,path,now,meta);
         if(p.status==V4Plan.Status.OPEN&&now>=p.expiresAt){p.status=V4Plan.Status.CLOSED_OTHER;p.closedAt=now;p.closePrice=q.mid();p.closeReason="Clôture avant reset";p.statusReason="Segment terminé avant reset";
             if(V4ContinuationPolicy.mayCreateSecondSegment(p)){V4FeatureEngine.Snapshot s=snapshots.get(p.symbol);if(s!=null){continuation=new V4FeatureEngine.Candidate(V4Plan.Source.CORE,p.symbol,p.side,s.atr,0,0);continuationParent=p.planId;}}}
-        store.save(p);if(p.status!=before){if(p.status==V4Plan.Status.CLOSED_TP||p.status==V4Plan.Status.CLOSED_SL||p.status==V4Plan.Status.CLOSED_OTHER)account.applyClosedPlan(p);notifyTransition(p,before);}}
+        store.save(p);if(p.status!=before){if(p.status==V4Plan.Status.CLOSED_TP||p.status==V4Plan.Status.CLOSED_SL||p.status==V4Plan.Status.CLOSED_OTHER)account.applyClosedPlan(p);notifyTransition(p,before);}
+        else notifyUndeliveredActiveState(p);}for(V4Plan p:store.all())notifyUndeliveredTerminalState(p);
         if(V4Engine.afterActivation(now)){if(V4ContinuationPolicy.freshWins(pending,continuation)){replaceContinuationParent();continuation=null;continuationParent=null;}
             if(pending!=null&&canCreateFresh(pending)){createPending(pending,null);pending=null;}
             if(continuation!=null&&canCreateContinuation(continuation)){createPending(continuation,continuationParent);continuation=null;continuationParent=null;}}publishChanged();}
@@ -102,11 +112,34 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
                 &&capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);}
         catch(Exception ignored){return false;}}
     private void publishChanged(){context.sendBroadcast(new Intent(ACTION_CHANGED).setPackage(context.getPackageName()));}
-    private void ensureChannel(){NotificationManager nm=context.getSystemService(NotificationManager.class);if(Build.VERSION.SDK_INT>=26)nm.createNotificationChannel(new NotificationChannel("nmc_v4_plans","Plans V4",NotificationManager.IMPORTANCE_HIGH));}
-    private void notifyTransition(V4Plan p,V4Plan.Status before){if(p.status==before)return;boolean useful=p.status==V4Plan.Status.EXECUTABLE||p.status==V4Plan.Status.OPEN||p.status==V4Plan.Status.INVALIDATED||p.status==V4Plan.Status.EXPIRED||p.status==V4Plan.Status.CLOSED_TP||p.status==V4Plan.Status.CLOSED_SL;
-        if(!useful)return;Intent i=new Intent(context,V4MainActivity.class);PendingIntent pi=PendingIntent.getActivity(context,40,i,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
-        String title=p.symbol+" "+p.side.name()+" — "+V4Plan.french(p.status),text="Qté "+fmt(p.quantity())+" · Entry "+fmt(p.entry)+" · TP "+fmt(p.tp)+" · SL "+fmt(p.sl);
-        context.getSystemService(NotificationManager.class).notify(("v4:"+p.planId+":"+p.status).hashCode(),new NotificationCompat.Builder(context,"nmc_v4_plans").setSmallIcon(android.R.drawable.stat_notify_more)
-                .setContentTitle(title).setContentText(text).setContentIntent(pi).setAutoCancel(true).setOnlyAlertOnce(true).build());}
+    private void seedExistingNotificationState(V4Plan p){V4NotificationPolicy.Event event=currentActiveNotificationEvent(p);
+        if(event!=V4NotificationPolicy.Event.NONE)notificationLedger.claim(p.planId,event);
+        if(p.status==V4Plan.Status.CLOSED_TP)notificationLedger.claim(p.planId,V4NotificationPolicy.Event.TP);
+        if(p.status==V4Plan.Status.CLOSED_SL)notificationLedger.claim(p.planId,V4NotificationPolicy.Event.SL);}
+    private void notifyUndeliveredActiveState(V4Plan p){V4NotificationPolicy.Event event=currentActiveNotificationEvent(p);if(event!=V4NotificationPolicy.Event.NONE)notifyEvent(p,event);}
+    private void notifyUndeliveredTerminalState(V4Plan p){if(p.status==V4Plan.Status.CLOSED_TP)notifyEvent(p,V4NotificationPolicy.Event.TP);
+        else if(p.status==V4Plan.Status.CLOSED_SL)notifyEvent(p,V4NotificationPolicy.Event.SL);}
+    private static V4NotificationPolicy.Event currentActiveNotificationEvent(V4Plan p){if(p.status==V4Plan.Status.LIMIT_ORDER_POSSIBLE||p.status==V4Plan.Status.EXECUTABLE)return V4NotificationPolicy.Event.ACTIONABLE;
+        if(p.status==V4Plan.Status.OPEN&&"ORDER_PLACED".equals(p.userFollowState))return V4NotificationPolicy.Event.ENTRY_FILLED;return V4NotificationPolicy.Event.NONE;}
+    private void notifyTransition(V4Plan p,V4Plan.Status before){
+        V4NotificationPolicy.Event event=V4NotificationPolicy.event(before,p.status);if(event==V4NotificationPolicy.Event.NONE)return;
+        notifyEvent(p,event);}
+    private void notifyEvent(V4Plan p,V4NotificationPolicy.Event event){
+        MarketWatchService.ensureChannels(context);NotificationManager manager=context.getSystemService(NotificationManager.class);
+        if(manager==null||!manager.areNotificationsEnabled()||(Build.VERSION.SDK_INT>=33&&context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED))return;
+        if(!notificationLedger.claim(p.planId,event))return;
+        try{
+            Intent i=new Intent(context,V4MainActivity.class).putExtra("v4_plan_id",p.planId).putExtra("v4_open_plans",true);
+            PendingIntent pi=PendingIntent.getActivity(context,p.planId.hashCode(),i,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
+            V4NotificationPolicy.Message message=V4NotificationPolicy.message(p,event);
+            Uri sound=Uri.parse("android.resource://"+context.getPackageName()+"/"+R.raw.eth_alert_loud);
+            Notification notification=new NotificationCompat.Builder(context,MarketWatchService.FINAL_SIGNAL_LOUD_CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_stat_nmc).setContentTitle(message.title).setContentText(message.body)
+                    .setStyle(new NotificationCompat.BigTextStyle().bigText(message.body)).setContentIntent(pi)
+                    .setPriority(NotificationCompat.PRIORITY_MAX).setCategory(NotificationCompat.CATEGORY_ALARM)
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC).setSound(sound,AudioManager.STREAM_ALARM)
+                    .setVibrate(MarketWatchService.ALERT_VIBRATION).setAutoCancel(true).setOnlyAlertOnce(false).build();
+            manager.notify(("v4:"+p.planId+":"+event.name()).hashCode(),notification);
+        }catch(RuntimeException error){notificationLedger.release(p.planId,event);}}
     private static String fmt(double v){return new DecimalFormat("0.########").format(v);}
 }
