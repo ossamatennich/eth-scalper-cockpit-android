@@ -143,7 +143,7 @@ for Y_PERCENT in 38 45 52 59 66 73 80; do
   sleep 2
   adb shell input tap "$(( SCREEN_WIDTH / 2 ))" "$(( SCREEN_HEIGHT * Y_PERCENT / 100 ))"
   sleep 3
-  if adb shell dumpsys activity activities | grep 'mResumedActivity' | grep -q "$ACTIVITY"; then
+  if adb shell dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp' | grep -q "$PACKAGE/$ACTIVITY"; then
     NOTIFICATION_CLICKED=true
     break
   fi
