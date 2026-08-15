@@ -76,7 +76,34 @@ PY
   printf 'ANDROID_BOTTOM_NAV=VISIBLE_AND_CLICKABLE\n'
   printf 'ANDROID_UI_HIERARCHY=NMC\n'
 else
-  printf 'ANDROID_UI_HIERARCHY=UNAVAILABLE screenshot=%s\n' "$SCREEN_FILE"
+  # API 35 occasionally returns a null accessibility root on the headless
+  # emulator even though the native Activity is visible. Keep navigation a
+  # mandatory smoke assertion by tapping the two remaining bottom-nav thirds
+  # and requiring a real rendered transition after each tap.
+  SCREEN_SIZE="$(adb shell wm size | sed -n 's/.*: \([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p' | tail -n 1)"
+  set -- $SCREEN_SIZE
+  test "$#" -eq 2
+  SCREEN_WIDTH="$1"
+  SCREEN_HEIGHT="$2"
+  NAV_Y=$((SCREEN_HEIGHT * 93 / 100))
+  PLANS_X=$((SCREEN_WIDTH / 2))
+  HISTORY_X=$((SCREEN_WIDTH * 5 / 6))
+  PLANS_SCREEN="${RUNNER_TEMP:-/tmp}/nmc-screen-plans.png"
+  HISTORY_SCREEN="${RUNNER_TEMP:-/tmp}/nmc-screen-history.png"
+
+  adb shell input tap "$PLANS_X" "$NAV_Y"
+  sleep 2
+  adb exec-out screencap -p > "$PLANS_SCREEN"
+  test -s "$PLANS_SCREEN"
+  ! cmp -s "$SCREEN_FILE" "$PLANS_SCREEN"
+
+  adb shell input tap "$HISTORY_X" "$NAV_Y"
+  sleep 2
+  adb exec-out screencap -p > "$HISTORY_SCREEN"
+  test -s "$HISTORY_SCREEN"
+  ! cmp -s "$PLANS_SCREEN" "$HISTORY_SCREEN"
+  printf 'ANDROID_BOTTOM_NAV=VISIBLE_CLICKABLE_VISUAL_TRANSITIONS\n'
+  printf 'ANDROID_UI_HIERARCHY=UNAVAILABLE_NAVIGATION_VERIFIED_BY_RENDERED_TRANSITIONS\n'
 fi
 
 ANDROID_RUNTIME_ERRORS="$(adb logcat -d -v threadtime AndroidRuntime:E '*:S')"

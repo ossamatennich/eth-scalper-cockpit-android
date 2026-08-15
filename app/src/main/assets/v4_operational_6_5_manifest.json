@@ -18,7 +18,7 @@
     {"path":"app/src/main/java/com/ethscalper/cockpit/V4NotificationLedger.java","sha256":"7fee22c72a7efbd6bb2bea659a5fc176808defcd1b6925c930531f1fd68f2c25"},
     {"path":"app/src/main/java/com/ethscalper/cockpit/V4MainActivity.java","sha256":"6f8d200283d9edaaea4de3f13febd44fe65ffd9c3f145bce50c813dfb0e23c4a"},
     {"path":"app/src/main/java/com/ethscalper/cockpit/V4Plan.java","sha256":"b7af692feee9443b6bd743d93280fdb045b025eb8c70640aaa31516a4c8e070d"},
-    {"path":".github/scripts/android-launch-smoke.sh","sha256":"f2bc5de61101c24f9a40eaea68e83fb3c410dd8f660930d3143157016e5e4d3c"},
+    {"path":".github/scripts/android-launch-smoke.sh","sha256":"1418397e8fc2efd4496befc6dc973f8ea01c1d6326631e8385721476f4eb46af"},
     {"path":".github/workflows/nmc-ci.yml","sha256":"4a3ee57e1b95b06b99efecd8b8a4151980eb935754a0950b8067fe8495a35c3d"}
   ]
 }
