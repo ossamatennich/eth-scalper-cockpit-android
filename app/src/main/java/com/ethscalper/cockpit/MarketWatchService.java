@@ -89,7 +89,7 @@ public class MarketWatchService extends Service {
     private static final String CV_ECONOMIC_EVENT_KEYS = "remembered_keys";
     private static final int NOTIF_WATCH_ID = 22801;
     static final int NOTIF_TEST_AUDIBLE_ID = 23_411_001;
-    private static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
+    static final long[] ALERT_VIBRATION = {0, 750, 180, 750, 180, 1200};
     private static final long[] AUDIBLE_RETRY_DELAYS_MS = {5_000L,30_000L,120_000L};
     private static final long OBSERVATION_MAX_AGE_MS = 15 * 60 * 1000L;
     private static final long LIMIT_ORDER_MAX_AGE_MS = 45 * 60 * 1000L;

@@ -1,0 +1,24 @@
+{
+  "schema": "NMC_V4_OPERATIONAL_PRESENTATION_FREEZE_V1",
+  "versionName": "2.34.6.5",
+  "versionCode": 23465,
+  "label": "NMC Stable 6.5",
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "scope": "UI_ALERTS_AND_PLAN_STATUS_PRESENTATION_ONLY",
+  "modelSha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+  "parentFrozenManifestCanonicalSha256": "47b62ac8b29ec7a72b7a3e698e14573528dd4c8dbbdd25aa130170992252e7f3",
+  "parentUiManifestCanonicalSha256": "800364980b55c86748f1af6c60c4aec72a6ffdb4f500635354fd6c4c533341fa",
+  "realTradingAllowed": false,
+  "files": [
+    {"path":"app/build.gradle","sha256":"d6fdb3591aa89b67cecc91e537b635c6cc5746df80e6a215c3e07560e9912200"},
+    {"path":"app/src/main/AndroidManifest.xml","sha256":"f4e8e0d4ff5f37fcd71f7d0cddf608f1428b5d8b98c8ee706eb908221c36286c"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/MarketWatchService.java","sha256":"344785495b57a9dc5c6cb3f82db922e5724ed248155b3cf817e4f12236ea84df"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java","sha256":"d861f69917600605ed71c44448acefc2b51b19c0d1f580c2b064a7cd15a6dc65"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/V4NotificationPolicy.java","sha256":"054f3dc029387f4494f4393a807e6eaea3665dba13b42ec5d6236e140cfb5056"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/V4NotificationLedger.java","sha256":"7fee22c72a7efbd6bb2bea659a5fc176808defcd1b6925c930531f1fd68f2c25"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/V4MainActivity.java","sha256":"6f8d200283d9edaaea4de3f13febd44fe65ffd9c3f145bce50c813dfb0e23c4a"},
+    {"path":"app/src/main/java/com/ethscalper/cockpit/V4Plan.java","sha256":"b7af692feee9443b6bd743d93280fdb045b025eb8c70640aaa31516a4c8e070d"},
+    {"path":".github/scripts/android-launch-smoke.sh","sha256":"f2bc5de61101c24f9a40eaea68e83fb3c410dd8f660930d3143157016e5e4d3c"},
+    {"path":".github/workflows/nmc-ci.yml","sha256":"4a3ee57e1b95b06b99efecd8b8a4151980eb935754a0950b8067fe8495a35c3d"}
+  ]
+}

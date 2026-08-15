@@ -8,6 +8,7 @@ UI_FILE="${RUNNER_TEMP:-/tmp}/nmc-ui.xml"
 SCREEN_FILE="${RUNNER_TEMP:-/tmp}/nmc-screen.png"
 
 adb install -r "$APK"
+adb shell pm grant "$PACKAGE" android.permission.POST_NOTIFICATIONS
 adb shell am force-stop "$PACKAGE"
 adb logcat -c
 adb shell input keyevent KEYCODE_WAKEUP || true
@@ -31,6 +32,9 @@ test -n "$PID"
 adb shell dumpsys activity activities | grep -q "$ACTIVITY"
 adb shell dumpsys window windows | grep -q "$PACKAGE/$ACTIVITY"
 printf 'ANDROID_LAUNCH_PROCESS=PASS pid=%s\n' "$PID"
+CHANNEL_DUMP="$(adb shell dumpsys notification --noredact)"
+printf '%s\n' "$CHANNEL_DUMP" | grep -q 'nmc_final_signal_loud_v2'
+printf 'ANDROID_LOUD_NOTIFICATION_CHANNEL=PASS id=nmc_final_signal_loud_v2 permission=granted\n'
 adb exec-out screencap -p > "$SCREEN_FILE"
 test -s "$SCREEN_FILE"
 printf 'ANDROID_SCREENSHOT=PASS bytes=%s\n' "$(wc -c < "$SCREEN_FILE")"

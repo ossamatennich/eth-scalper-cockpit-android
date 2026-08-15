@@ -57,6 +57,6 @@ public final class V4Plan {
         p.closeReason=o.optString("close_reason","");return p;}catch(Exception e){throw new IllegalArgumentException("plan json",e);}}
     public static String french(Status s){return switch(s){case WAITING->"EN ATTENTE";case LIMIT_ORDER_POSSIBLE->"ORDRE LIMITE POSSIBLE";
         case EXECUTABLE->"EXÉCUTABLE";case ORDER_PLACED->"ORDRE POSÉ";case OPEN->"EN COURS";case MISSED_TOO_LATE->"TROP TARD";
-        case INVALIDATED->"INVALIDÉ";case EXPIRED->"EXPIRÉ";case CLOSED_TP->"GAGNÉ / TP";case CLOSED_SL->"STOP / SL";
+        case INVALIDATED->"INVALIDÉ";case EXPIRED->"EXPIRÉ";case CLOSED_TP->"TP ATTEINT";case CLOSED_SL->"SL ATTEINT";
         case CLOSED_MANUAL->"FERMÉ";case CLOSED_OTHER->"TERMINÉ";case DATA_UNAVAILABLE->"DONNÉES INDISPONIBLES";};}
 }

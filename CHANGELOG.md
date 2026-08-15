@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.6.5 — NMC Stable 6.5 / finition opérationnelle et alerte forte
+
+- Réutilise le canal sonore NMC `nmc_final_signal_loud_v2`, son personnalisé et vibration longue pour les événements V4 actionnables, entrée exécutée, TP et SL.
+- Déduplique durablement chaque alerte par identifiant de plan et événement de lifecycle.
+- Ajoute la copie exacte de la quantité et sépare visuellement LONG/SHORT du symbole.
+- Clarifie les badges `ORDRE POSÉ`, `EN COURS`, `TP ATTEINT` et `SL ATTEINT` sans modifier le lifecycle de trading.
+- Conserve strictement `NMC_PROP_DAILY_HYBRID_V4`, le modèle, l'alpha, le sizing et `realTradingAllowed=false`.
+
 ## 2.34.6.4 — NMC Stable 6.4 / finition UI mobile
 
 - Stabilise le scroll en évitant la reconstruction des écrans lors des simples ticks runtime.

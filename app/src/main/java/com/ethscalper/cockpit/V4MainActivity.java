@@ -1,5 +1,6 @@
 package com.ethscalper.cockpit;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
@@ -10,6 +11,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
 import android.util.TypedValue;
@@ -46,6 +49,7 @@ import java.util.TimeZone;
 
 /** Premium operational UI for manually executed V4 plans. */
 public final class V4MainActivity extends Activity {
+    private static final int NOTIFICATION_PERMISSION_REQUEST=23465;
     private static final int BG=Color.rgb(5,10,19),CARD=Color.rgb(15,24,38),CARD_ALT=Color.rgb(18,29,45);
     private static final int BORDER=Color.rgb(39,58,82),MUTED=Color.rgb(148,161,184),TEXT=Color.rgb(245,248,252);
     private static final int ACCENT=Color.rgb(53,125,255),GREEN=Color.rgb(45,204,132),RED=Color.rgb(255,81,91),AMBER=Color.rgb(245,174,63);
@@ -69,9 +73,19 @@ public final class V4MainActivity extends Activity {
         super.onCreate(state);
         configureSystemBars();
         buildShell();
+        if(getIntent()!=null&&getIntent().getBooleanExtra("v4_open_plans",false))tab=1;
+        requestNotificationPermissionOnce();
         ContextCompat.startForegroundService(this,new Intent(this,MarketWatchService.class).setAction(MarketWatchService.ACTION_START));
         V4RuntimeCoordinator.start(this);
         render();
+    }
+
+    private void requestNotificationPermissionOnce(){
+        if(Build.VERSION.SDK_INT<33||checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED)return;
+        android.content.SharedPreferences preferences=getSharedPreferences("v4_ui_permissions",Context.MODE_PRIVATE);
+        if(preferences.getBoolean("post_notifications_requested",false))return;
+        preferences.edit().putBoolean("post_notifications_requested",true).apply();
+        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},NOTIFICATION_PERMISSION_REQUEST);
     }
 
     @Override protected void onStart(){
@@ -303,9 +317,7 @@ public final class V4MainActivity extends Activity {
             any=true;
             LinearLayout row=card(false);
             row.setOnClickListener(view->detail(plan));
-            TextView title=text(plan.side.name()+" "+plan.symbol,19,plan.side==V4Plan.Side.LONG?GREEN:RED,true);
-            title.setSingleLine(true);
-            row.addView(title);
+            row.addView(directionTitle(plan,19,13));
             row.addView(text(day(plan.createdAt)+"  ·  "+V4Plan.french(plan.status),13,MUTED,false));
             row.addView(text("ENTRY  "+fmt(plan.entry)+"     SORTIE  "+(plan.closePrice>0?fmt(plan.closePrice):"—"),14,TEXT,false));
             body.addView(row);
@@ -327,10 +339,7 @@ public final class V4MainActivity extends Activity {
 
         LinearLayout top=new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title=text(plan.side.name()+" "+plan.symbol,hero?27:20,plan.side==V4Plan.Side.LONG?GREEN:RED,true);
-        title.setSingleLine(true);
-        title.setAutoSizeTextTypeUniformWithConfiguration(hero?17:14,hero?27:20,1,TypedValue.COMPLEX_UNIT_SP);
-        top.addView(title,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));
+        top.addView(directionTitle(plan,hero?27:20,hero?14:12),new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));
         TextView badge=text(V4Plan.french(plan.status),11,TEXT,true);
         badge.setGravity(Gravity.CENTER);
         badge.setMaxLines(2);
@@ -345,9 +354,17 @@ public final class V4MainActivity extends Activity {
         LinearLayout.LayoutParams quantityLabelParams=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,ViewGroup.LayoutParams.WRAP_CONTENT);
         quantityLabelParams.setMargins(0,hero?dp(18):dp(13),0,0);
         card.addView(quantityLabel,quantityLabelParams);
-        TextView quantity=text(fmt(plan.quantity()),hero?31:25,TEXT,true);
+        LinearLayout quantityRow=new LinearLayout(this);
+        quantityRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView quantity=text(V4PriceDisplay.compact(plan.quantity()),hero?31:25,TEXT,true);
         quantity.setSingleLine(true);
-        card.addView(quantity);
+        quantityRow.addView(quantity,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));
+        ImageButton quantityCopy=copyButton("quantité",V4PriceDisplay.exact(plan.quantity()));
+        quantityCopy.setContentDescription("Copier quantité");
+        LinearLayout.LayoutParams quantityCopyParams=new LinearLayout.LayoutParams(dp(34),dp(34));
+        quantityCopyParams.setMargins(dp(10),0,0,0);
+        quantityRow.addView(quantityCopy,quantityCopyParams);
+        card.addView(quantityRow);
 
         LinearLayout levels=new LinearLayout(this);
         LinearLayout.LayoutParams levelsParams=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -369,8 +386,9 @@ public final class V4MainActivity extends Activity {
         timing.addView(expires,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));
         card.addView(timing);
 
-        if(!plan.statusReason.isEmpty()){
-            TextView reason=text("ⓘ  "+plan.statusReason,13,MUTED,false);
+        String displayReason=displayReason(plan);
+        if(!displayReason.isEmpty()){
+            TextView reason=text("ⓘ  "+displayReason,13,MUTED,false);
             reason.setBackground(roundStroke(Color.rgb(17,29,44),13,BORDER,1));
             reason.setPadding(dp(11),dp(7),dp(11),dp(7));
             LinearLayout.LayoutParams reasonParams=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -407,6 +425,16 @@ public final class V4MainActivity extends Activity {
         price.setEllipsize(null);
         price.setAutoSizeTextTypeUniformWithConfiguration(8,15,1,TypedValue.COMPLEX_UNIT_SP);
         level.addView(price,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(27)));
+        ImageButton copy=copyButton(name,exact);
+        LinearLayout.LayoutParams copyParams=new LinearLayout.LayoutParams(dp(31),dp(31));
+        copyParams.setMargins(0,dp(3),0,0);
+        level.addView(copy,copyParams);
+        LinearLayout.LayoutParams levelParams=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1);
+        if(index>0)levelParams.setMargins(dp(7),0,0,0);
+        parent.addView(level,levelParams);
+    }
+
+    private ImageButton copyButton(String name,String exact){
         ImageButton copy=new ImageButton(this);
         copy.setImageResource(R.drawable.ic_v4_copy);
         copy.setColorFilter(TEXT);
@@ -415,12 +443,7 @@ public final class V4MainActivity extends Activity {
         copy.setContentDescription("Copier "+name);
         copy.setBackground(roundStroke(Color.rgb(21,44,83),10,Color.rgb(51,91,151),1));
         copy.setOnClickListener(view->copyValue(name,exact));
-        LinearLayout.LayoutParams copyParams=new LinearLayout.LayoutParams(dp(31),dp(31));
-        copyParams.setMargins(0,dp(3),0,0);
-        level.addView(copy,copyParams);
-        LinearLayout.LayoutParams levelParams=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1);
-        if(index>0)levelParams.setMargins(dp(7),0,0,0);
-        parent.addView(level,levelParams);
+        return copy;
     }
 
     private void copyValue(String label,String value){
@@ -469,13 +492,40 @@ public final class V4MainActivity extends Activity {
     private void detail(V4Plan plan){
         LinearLayout view=column();
         view.setPadding(dp(20),0,dp(20),0);
-        TextView title=text(plan.side.name()+" "+plan.symbol,24,plan.side==V4Plan.Side.LONG?GREEN:RED,true);
-        title.setSingleLine(true);
-        view.addView(title);
-        view.addView(text("Quantité  "+fmt(plan.quantity())+"\nENTRY  "+fmt(plan.entry)+"\nTP  "+fmt(plan.tp)+"\nSL  "+fmt(plan.sl)+"\n\n"+V4Plan.french(plan.status)+"\n"+plan.statusReason,16,TEXT,false));
+        view.addView(directionTitle(plan,24,14));
+        view.addView(text("Quantité  "+V4PriceDisplay.compact(plan.quantity())+"\nENTRY  "+V4PriceDisplay.compact(plan.entry)
+                +"\nTP  "+V4PriceDisplay.compact(plan.tp)+"\nSL  "+V4PriceDisplay.compact(plan.sl)+"\n\n"
+                +V4Plan.french(plan.status)+"\n"+displayReason(plan),16,TEXT,false));
         AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("Détail du plan").setView(view).setNegativeButton("FERMER",null);
         if(plan.status==V4Plan.Status.OPEN)dialog.setPositiveButton("FERMÉ MANUELLEMENT",(ignored,which)->manualClose(plan));
         dialog.show();
+    }
+
+    private LinearLayout directionTitle(V4Plan plan,int maxTextSize,int minSymbolSize){
+        LinearLayout title=new LinearLayout(this);
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        title.setBaselineAligned(true);
+        TextView side=text(plan.side.name(),maxTextSize,plan.side==V4Plan.Side.LONG?GREEN:RED,true);
+        side.setSingleLine(true);
+        side.setAutoSizeTextTypeUniformWithConfiguration(Math.max(12,maxTextSize-8),maxTextSize,1,TypedValue.COMPLEX_UNIT_SP);
+        title.addView(side,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView symbol=text(plan.symbol,maxTextSize,TEXT,true);
+        symbol.setSingleLine(true);
+        symbol.setAutoSizeTextTypeUniformWithConfiguration(minSymbolSize,maxTextSize,1,TypedValue.COMPLEX_UNIT_SP);
+        LinearLayout.LayoutParams symbolParams=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1);
+        symbolParams.setMargins(dp(8),0,0,0);
+        title.addView(symbol,symbolParams);
+        return title;
+    }
+
+    private String displayReason(V4Plan plan){
+        return switch(plan.status){
+            case ORDER_PLACED->"Ordre limite déclaré · attente du prix d'entrée";
+            case OPEN->"Entrée exécutée à "+V4PriceDisplay.compact(plan.entry);
+            case CLOSED_TP->"TP atteint à "+V4PriceDisplay.compact(plan.tp);
+            case CLOSED_SL->"SL atteint à "+V4PriceDisplay.compact(plan.sl);
+            default->plan.statusReason==null?"":plan.statusReason;
+        };
     }
 
     private void manualClose(V4Plan plan){
