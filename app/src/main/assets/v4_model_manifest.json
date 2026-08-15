@@ -1,0 +1,50 @@
+{
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "featureOrder": [
+    "ret1",
+    "ret3",
+    "ret5",
+    "ret7",
+    "ret14",
+    "ret21",
+    "of3",
+    "of7",
+    "buy_ratio",
+    "qvz7",
+    "qvz30",
+    "atr14",
+    "loc14",
+    "loc21"
+  ],
+  "hyperparameters": {
+    "max_depth": 5,
+    "max_features": 0.7,
+    "min_samples_leaf": 100,
+    "n_estimators": 120,
+    "n_jobs": 1,
+    "random_state": 23455
+  },
+  "modelAsset": "v4_fallback_model.json",
+  "modelSha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+  "schema": "NMC_V4_MODEL_MANIFEST",
+  "sources": [
+    {
+      "path": "panel_stage1.csv",
+      "sha256": "95d99d2d9dcf2f281fec2ddcda20939a8a667aaab0b7fef6a829c6e3fc46b182"
+    },
+    {
+      "path": "panel_stage2.csv",
+      "sha256": "1d57b81b63d34cbe239f39c1b52bb704c28a835d066d67ae295d7fe0dd0cb3a4"
+    },
+    {
+      "path": "panel_stage3.csv",
+      "sha256": "7b42c1bc688e84f7d9a476f6c074ae21353afc8553d3c54f56e7d11d734a5572"
+    }
+  ],
+  "trainingCodeSha256": "e21b6b1ea48db89ff58febd65b245f86c6de4571b396bc427b9f7169c089afcb",
+  "trainingDateRange": [
+    "2023-01-01",
+    "2025-12-31"
+  ],
+  "trainingRows": 23191
+}

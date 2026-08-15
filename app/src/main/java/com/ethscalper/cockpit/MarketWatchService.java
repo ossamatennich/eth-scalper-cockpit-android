@@ -663,6 +663,7 @@ public class MarketWatchService extends Service {
                 .retryOnConnectionFailure(true)
                 .build();
         aiAdvisor = new AiAdvisor(this);
+        V4RuntimeCoordinator.start(this);
         acquireWakeLock();
         registerNetworkMonitoring();
     }
@@ -675,6 +676,7 @@ public class MarketWatchService extends Service {
             stopSocket();
             stopMarketSocket();
             stopIncrementalDepthSocket();
+            V4RuntimeCoordinator v4=V4RuntimeCoordinator.get();if(v4!=null)v4.stop();
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
@@ -3871,6 +3873,8 @@ public class MarketWatchService extends Service {
 
     private CvCorePublicationGuard.PublicationResult publishCvCorePlan(
             CvCoreEngine.Result result,CvCorePlan plan,MarketSnapshot snapshot,long now){
+        if(!V4PublicationPolicy.mayPublishNewPlan(CvCorePolicy.ENGINE_ID))
+            return new CvCorePublicationGuard.PublicationResult(false,"LEGACY_ENGINE_PUBLICATION_DISABLED_BY_V4");
         MarketSnapshot current=buildSnapshot(now);CvCoreEngine.Common common=cvCommon(now);
         CvCoreMovementRegistry.Episode episode=result==null?null:cvMovements.find(result.episode.episodeId);
         CvCorePublicationGuard.PublicationResult gate=CvCorePublicationGuard.validate(plan,
@@ -5711,10 +5715,13 @@ public class MarketWatchService extends Service {
             state.put("cvCoreEngineId",CvCorePolicy.ENGINE_ID);
             state.put("cvCorePolicyId",CvCorePolicy.POLICY_ID);
             state.put("cvCoreSchema",CvCorePolicy.SCHEMA_ID);
-            state.put("cvCoreState","ACTIVE");
-            state.put("cvCorePublicEnabled",true);
+            state.put("cvCoreState","LEGACY_DIAGNOSTIC_ONLY");
+            state.put("cvCorePublicEnabled",false);
             state.put("cvCoreActivePlan",activeCvPlan!=null);
             state.put("cvCoreSummary",new JSONObject(cvSummary.snapshot(activeCvPlan!=null)));
+            V4RuntimeCoordinator v4=V4RuntimeCoordinator.get();
+            state.put("currentPublicEngineId",V4Universe.ENGINE_ID);
+            state.put("v4",v4==null?new JSONObject().put("scannerState","SYNCHRO"):v4.status());
             putOptionalStatusObject(state,"causalMarketCapture",this::causalCaptureStatusJson);
             state.put("aiEnabled", AiAdvisor.isEnabled(this));
             state.put("aiMode", AiAdvisor.isEnabled(this)

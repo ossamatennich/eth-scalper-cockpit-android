@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.34.6.0 — NMC Stable 6.0 / NMC_PROP_DAILY_HYBRID_V4
+
+- remplace la publication publique CV Core par le moteur quotidien V4 reset-safe, sans supprimer les diagnostics historiques ;
+- ajoute le registre central des 53 cryptos et des leviers Kraken Prop imposés, sans sélecteur de levier ;
+- ajoute les klines quotidiennes USD-M validées/mises en cache, un flux `bookTicker` léger et la reconstruction 1 minute réservée aux plans suivis ;
+- fige le CORE residual momentum et les deux ExtraTrees FALLBACK entraînés uniquement sur 2023–2025 (`207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680`) ;
+- ajoute le sizing quantitatif borné, les métadonnées exchangeInfo, le journal d'équité local et le lifecycle persistant complet ;
+- remplace l'accueil historique par une UX Accueil / Plans / Historique dédiée à l'exécution manuelle ;
+- conserve `realTradingAllowed=false`, n'utilise aucune API privée et ne place aucun ordre.
+
 ## 2.34.5.5 — Incremental Depth Stability + Storage Fix
 
 - remplace `@depth@100ms` par le flux USD-M officiel `@depth` à cadence par défaut 250 ms, sans toucher aux flux 5.3 ni aux diffs bruts ;

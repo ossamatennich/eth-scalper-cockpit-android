@@ -1,0 +1,71 @@
+{
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "files": [
+    {
+      "path": "app/src/main/assets/v4_engine_spec.json",
+      "sha256": "781466f6aa6ef2e6afb01bd5e9048a00dc8c3b176417617af26ce6d051035f97"
+    },
+    {
+      "path": "app/src/main/assets/v4_fallback_model.json",
+      "sha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680"
+    },
+    {
+      "path": "app/src/main/assets/v4_model_manifest.json",
+      "sha256": "6f44388ac7b7d3731ce57f42726b02813535d3191b64d03a4043e4ff0d3b7994"
+    },
+    {
+      "path": "tools/v4_reference/build_v4_model.py",
+      "sha256": "e21b6b1ea48db89ff58febd65b245f86c6de4571b396bc427b9f7169c089afcb"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4Universe.java",
+      "sha256": "4e4ae88f2cad04612cb25349bb947594fac749b4e7a6098f2680fb5697dcad7d"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4DailyBar.java",
+      "sha256": "f1aa451dbc6574535b7d32d57119008c1b9a0911939d698c90df947b8417fbaf"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4FeatureEngine.java",
+      "sha256": "df3993531e7d7836a05065bc069821c773179a0a08f4f9b364954e627ce9708f"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4ExtraTreesModel.java",
+      "sha256": "837330bb6afbbfba3bc2ca01bf539c1c335d4d0c933f2e06c72fef794ca79ac8"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4Engine.java",
+      "sha256": "aa127a6b0caa2eb39a701ca4b61ff8438474f1df6560d28bbbad3e7d1ac01124"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4RiskSizer.java",
+      "sha256": "66bdfe6917d64752275d84abed902dd115d2adf98685195f1aafdda44c62d4d5"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4ContinuationPolicy.java",
+      "sha256": "e52e9d00eeaa16c22d5115a8b432dcadf8f4ad36da1905399fd5390d929870bc"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4Plan.java",
+      "sha256": "63c665bdfa15d5f52bf4c048c0c78fa8eed1a1d3322565fb764d7bf716331bdb"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4PlanLifecycle.java",
+      "sha256": "01f42d33851dd46bfb07b84948cd2275aee8252597bcd98763940ad05f888cda"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4MarketDataClient.java",
+      "sha256": "fad8dd826f16bf04ac3f78dc136501664369c3e4959e28cad0f16a4c183b5ed4"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java",
+      "sha256": "0a9343b83cd209a05920c1d5b09beda57c4f13174b6d34f39458edcd82711141"
+    },
+    {
+      "path": "app/src/test/resources/v4_prediction_fixture.json",
+      "sha256": "b6717e8b0e7883ce8c06be793d7027d0760c823cc9e6de13ceef4b4f1825c9ba"
+    }
+  ],
+  "realTradingAllowed": false,
+  "schema": "NMC_PROP_DAILY_HYBRID_V4_FREEZE"
+}
