@@ -1,0 +1,17 @@
+{
+  "schema": "NMC_V4_UI_UX_FREEZE_V1",
+  "versionName": "2.34.6.3",
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "parentFrozenManifestCanonicalSha256": "47b62ac8b29ec7a72b7a3e698e14573528dd4c8dbbdd25aa130170992252e7f3",
+  "modelSha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+  "realTradingAllowed": false,
+  "scope": "UI_UX_AND_RUNTIME_DISPLAY_STATUS_ONLY",
+  "files": [
+    {"path": "app/build.gradle", "sha256": "bd2ee37cbb2ca79278941678ac7140d5e67e8565ca9b38f0b306f9d8c9c31d93"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4MainActivity.java", "sha256": "d0497f48ffd6e72ab979576f0c4171e5fcd4ef91e541ab97220b742e7153987b"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4MarketDataClient.java", "sha256": "cbb15e67a3aaff481ab5f142d42a19194e72c2adad8abb5643a428f2dd858be8"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java", "sha256": "e6fe14e2ce640e282ae638b46eabc16bd3a5abf61fdc26bd87b942f8e24c3622"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4RuntimeStatusPolicy.java", "sha256": "fcb13c9550c3dc740d89b28a27ffbdd1e3160433c93ea736b883855a125c8e03"},
+    {"path": "app/src/main/java/com/ethscalper/cockpit/V4PlanDisplayPolicy.java", "sha256": "a7eaf17cfb53dc34a449a17adb4e46ab540e0023008e4f39fe54a054bac0b4e3"}
+  ]
+}

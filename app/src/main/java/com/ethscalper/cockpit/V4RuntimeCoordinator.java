@@ -5,6 +5,9 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 
 import androidx.core.app.NotificationCompat;
@@ -29,7 +32,7 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
     public static V4RuntimeCoordinator get(){return instance;}
     private final Context context;private final V4PlanStore store;private final V4AccountProfile account;private final V4MarketDataClient market;
     private final ScheduledExecutorService scheduler=Executors.newSingleThreadScheduledExecutor();private final V4Engine engine;
-    private volatile String scannerState="SYNCHRO",lastError="";private volatile long lastAnalysisAt;private volatile int dataEligible;
+    private volatile String transportState="SYNCHRO",lastError="";private volatile long lastAnalysisAt,lastErrorAt;private volatile int dataEligible;
     private volatile Map<String,V4FeatureEngine.Snapshot> snapshots=new LinkedHashMap<>();private volatile V4FeatureEngine.Candidate pending;
     private volatile V4FeatureEngine.Candidate continuation;private volatile String continuationParent;
     private boolean started,historySeeded;private volatile long lastQuoteTickScheduled;
@@ -43,11 +46,11 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
         scheduler.scheduleAtFixedRate(market::refreshDailyAsync,6,6,TimeUnit.HOURS);}
     public synchronized void stop(){market.stop();scheduler.shutdownNow();started=false;instance=null;}
     @Override public void onQuote(String asset,V4MarketDataClient.Quote quote){long now=System.currentTimeMillis();if(now-lastQuoteTickScheduled>1000){lastQuoteTickScheduled=now;scheduler.execute(this::tick);}}
-    @Override public void onState(String state){scannerState=state;publishChanged();}
+    @Override public void onState(String state){transportState=state;publishChanged();}
     @Override public void onDailyReady(Map<String,List<V4DailyBar>> panel){scheduler.execute(()->analyse(panel));}
     private void analyse(Map<String,List<V4DailyBar>> panel){try{long cutoff=V4FeatureEngine.latestCutoff(panel);if(!historySeeded){seedHistory(panel,cutoff);historySeeded=true;}
         snapshots=V4FeatureEngine.computeAt(panel,cutoff);dataEligible=snapshots.size();
-        pending=engine.select(snapshots);lastAnalysisAt=System.currentTimeMillis();lastError="";tick();}catch(Exception e){lastError=e.getClass().getSimpleName();}}
+        pending=engine.select(snapshots);lastAnalysisAt=System.currentTimeMillis();lastError="";lastErrorAt=0;tick();}catch(Exception e){lastError=e.getClass().getSimpleName();lastErrorAt=System.currentTimeMillis();publishChanged();}}
     private void seedHistory(Map<String,List<V4DailyBar>> panel,long currentCutoff){for(int back=90;back>=1;back--){long day=currentCutoff-back*86_400_000L;
         try{engine.observePrior(V4FeatureEngine.computeAt(panel,day));}catch(Exception ignored){}}}
     private synchronized void tick(){long now=System.currentTimeMillis();for(V4Plan p:store.active()){V4MarketDataClient.Quote q=market.quote(p.symbol);if(q==null)continue;
@@ -84,10 +87,20 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
     public synchronized void markTaken(String id){V4Plan p=store.find(id);if(p!=null){V4PlanLifecycle.markTaken(p,System.currentTimeMillis());store.save(p);publishChanged();}}
     public synchronized void manualClose(String id,double price){V4Plan p=store.find(id);if(p!=null){V4PlanLifecycle.manualClose(p,System.currentTimeMillis(),price);store.save(p);account.applyClosedPlan(p);publishChanged();}}
     public V4PlanStore store(){return store;}public V4AccountProfile account(){return account;}
-    public JSONObject status(){try{JSONObject o=new JSONObject();o.put("engineId",V4Universe.ENGINE_ID);o.put("engineVersion",V4Plan.ENGINE_VERSION);o.put("scannerState",scannerState);
-        o.put("lastAnalysisAt",lastAnalysisAt);o.put("marketsConfigured",53);o.put("dataEligibleAssets",dataEligible);o.put("lastError",lastError);o.put("realTradingAllowed",false);
+    public JSONObject status(){try{long now=System.currentTimeMillis();boolean network=networkAvailable();V4RuntimeStatusPolicy.State state=V4RuntimeStatusPolicy.evaluate(
+            new V4RuntimeStatusPolicy.Input(now,network,market.socketConnected(),transportState,market.lastQuoteAt(),market.dailySyncInProgress(),
+                    lastAnalysisAt,dataEligible,lastError,lastErrorAt));JSONObject o=new JSONObject();o.put("engineId",V4Universe.ENGINE_ID);o.put("engineVersion",V4Plan.ENGINE_VERSION);o.put("scannerState",state.name().replace('_',' '));
+        o.put("networkAvailable",network);o.put("priceSocketConnected",market.socketConnected());o.put("lastBookTickerAt",market.lastQuoteAt());
+        o.put("lastBookTickerAgeMs",V4RuntimeStatusPolicy.quoteAgeMs(now,market.lastQuoteAt()));o.put("dailySyncInProgress",market.dailySyncInProgress());
+        o.put("analysisHealthy",lastAnalysisAt>0&&lastError.isEmpty()&&dataEligible>0);o.put("lastAnalysisAt",lastAnalysisAt);o.put("marketsConfigured",53);o.put("dataEligibleAssets",dataEligible);
+        o.put("lastError",lastError);o.put("lastErrorAt",lastErrorAt);o.put("lastSocketFailureAt",market.lastSocketFailureAt());o.put("realTradingAllowed",false);
         JSONArray active=new JSONArray(),history=new JSONArray();for(V4Plan p:store.all()){if(p.terminal())history.put(p.toJson());else active.put(p.toJson());}o.put("activePlans",active);o.put("history",history);
         o.put("accountMode",account.mode().name());o.put("trackedEquity",account.equity());o.put("evaluationTarget",account.target());return o;}catch(Exception e){throw new IllegalStateException("V4 status",e);}}
+    private boolean networkAvailable(){try{ConnectivityManager manager=context.getSystemService(ConnectivityManager.class);if(manager==null)return false;Network active=manager.getActiveNetwork();
+        NetworkCapabilities capabilities=active==null?null:manager.getNetworkCapabilities(active);return capabilities!=null
+                &&capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                &&capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);}
+        catch(Exception ignored){return false;}}
     private void publishChanged(){context.sendBroadcast(new Intent(ACTION_CHANGED).setPackage(context.getPackageName()));}
     private void ensureChannel(){NotificationManager nm=context.getSystemService(NotificationManager.class);if(Build.VERSION.SDK_INT>=26)nm.createNotificationChannel(new NotificationChannel("nmc_v4_plans","Plans V4",NotificationManager.IMPORTANCE_HIGH));}
     private void notifyTransition(V4Plan p,V4Plan.Status before){if(p.status==before)return;boolean useful=p.status==V4Plan.Status.EXECUTABLE||p.status==V4Plan.Status.OPEN||p.status==V4Plan.Status.INVALIDATED||p.status==V4Plan.Status.EXPIRED||p.status==V4Plan.Status.CLOSED_TP||p.status==V4Plan.Status.CLOSED_SL;
