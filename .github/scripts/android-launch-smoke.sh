@@ -12,9 +12,19 @@ adb shell am force-stop "$PACKAGE"
 adb logcat -c
 adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
-START_OUTPUT="$(adb shell am start -W "$PACKAGE/$ACTIVITY")"
-printf '%s\n' "$START_OUTPUT"
-printf '%s\n' "$START_OUTPUT" | grep -q 'Status: ok'
+START_OK=false
+for attempt in 1 2 3; do
+  printf 'ANDROID_LAUNCH_ATTEMPT=%s\n' "$attempt"
+  START_OUTPUT="$(adb shell am start -W "$PACKAGE/$ACTIVITY")"
+  printf '%s\n' "$START_OUTPUT"
+  if printf '%s\n' "$START_OUTPUT" | grep -q 'Status: ok'; then
+    START_OK=true
+    break
+  fi
+  adb shell am force-stop "$PACKAGE"
+  sleep 4
+done
+test "$START_OK" = true
 sleep 8
 PID="$(adb shell pidof "$PACKAGE")"
 test -n "$PID"
