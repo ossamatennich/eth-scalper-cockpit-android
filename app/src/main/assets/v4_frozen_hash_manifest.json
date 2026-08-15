@@ -11,7 +11,7 @@
     },
     {
       "path": "app/src/main/assets/v4_model_manifest.json",
-      "sha256": "6f44388ac7b7d3731ce57f42726b02813535d3191b64d03a4043e4ff0d3b7994"
+      "sha256": "ff1237b2074c9c2b4df7f8b9afb3074ab9a0dcd2336f87fc9fef5d5579e1a474"
     },
     {
       "path": "tools/v4_reference/build_v4_model.py",
@@ -63,7 +63,7 @@
     },
     {
       "path": "app/src/test/resources/v4_prediction_fixture.json",
-      "sha256": "b6717e8b0e7883ce8c06be793d7027d0760c823cc9e6de13ceef4b4f1825c9ba"
+      "sha256": "a434aa669c52e3abe43bf1cdd1fadda27e3cb09430418c77fcec929d0e165a47"
     }
   ],
   "realTradingAllowed": false,

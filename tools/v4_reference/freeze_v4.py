@@ -21,7 +21,11 @@ FILES=[
  "app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java",
  "app/src/test/resources/v4_prediction_fixture.json"]
 def digest(path:Path)->str:
- h=hashlib.sha256();h.update(path.read_bytes());return h.hexdigest()
+ # Git normalizes text blobs to LF while Windows may check them out as CRLF.
+ # Freeze the canonical repository representation so the same commit verifies
+ # identically on Android CI/Linux and on the Windows development workstation.
+ data=path.read_bytes().replace(b"\r\n",b"\n")
+ h=hashlib.sha256();h.update(data);return h.hexdigest()
 if __name__=="__main__":
  out=ROOT/"app/src/main/assets/v4_frozen_hash_manifest.json"
  payload={"schema":"NMC_PROP_DAILY_HYBRID_V4_FREEZE","engineId":"NMC_PROP_DAILY_HYBRID_V4","realTradingAllowed":False,
