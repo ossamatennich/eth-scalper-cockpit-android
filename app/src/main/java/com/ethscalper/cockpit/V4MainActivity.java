@@ -20,6 +20,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Space;
@@ -49,13 +51,16 @@ public final class V4MainActivity extends Activity {
     private static final int ACCENT=Color.rgb(53,125,255),GREEN=Color.rgb(45,204,132),RED=Color.rgb(255,81,91),AMBER=Color.rgb(245,174,63);
 
     private FrameLayout content;
-    private LinearLayout header,bottomNav;
+    private LinearLayout header,bottomHost,bottomNav;
     private TextView modeChip,scanner,lastAnalysis;
     private View scannerDot;
-    private final Button[] navButtons=new Button[3];
+    private final LinearLayout[] navItems=new LinearLayout[3];
+    private final ImageView[] navIcons=new ImageView[3];
+    private final TextView[] navLabels=new TextView[3];
     private int tab;
     private boolean registered;
     private String historyFilter="TOUS";
+    private String renderedContentSignature="";
 
     private final BroadcastReceiver receiver=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){render();}};
 
@@ -141,29 +146,42 @@ public final class V4MainActivity extends Activity {
         LinearLayout.LayoutParams contentParams=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1);
         root.addView(content,contentParams);
 
+        bottomHost=column();
         bottomNav=new LinearLayout(this);
         bottomNav.setGravity(Gravity.CENTER);
-        bottomNav.setBackground(roundStroke(Color.rgb(11,20,32),18,BORDER,1));
+        bottomNav.setPadding(dp(4),dp(4),dp(4),dp(4));
+        bottomNav.setBackground(roundStroke(Color.rgb(11,20,32),19,BORDER,1));
         String[] names={"ACCUEIL","PLANS","HISTORIQUE"};
+        int[] icons={R.drawable.ic_v4_home,R.drawable.ic_v4_plans,R.drawable.ic_v4_history};
         for(int i=0;i<names.length;i++){
             final int selected=i;
-            Button nav=button(names[i],true);
-            nav.setTextSize(12);
-            nav.setMinHeight(dp(54));
-            nav.setOnClickListener(view->{tab=selected;render();});
-            navButtons[i]=nav;
-            bottomNav.addView(nav,new LinearLayout.LayoutParams(0,dp(54),1));
+            LinearLayout item=column();
+            item.setGravity(Gravity.CENTER);
+            item.setContentDescription(names[i]);
+            item.setClickable(true);
+            item.setFocusable(true);
+            ImageView icon=new ImageView(this);
+            icon.setImageResource(icons[i]);
+            icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            item.addView(icon,new LinearLayout.LayoutParams(dp(23),dp(23)));
+            TextView label=text(names[i],10,MUTED,true);
+            label.setGravity(Gravity.CENTER);
+            label.setSingleLine(true);
+            item.addView(label,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,dp(22)));
+            item.setOnClickListener(view->{tab=selected;renderedContentSignature="";render();});
+            navItems[i]=item;navIcons[i]=icon;navLabels[i]=label;
+            bottomNav.addView(item,new LinearLayout.LayoutParams(0,dp(58),1));
         }
-        LinearLayout.LayoutParams navParams=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);
-        navParams.setMargins(dp(18),dp(6),dp(18),0);
-        root.addView(bottomNav,navParams);
+        bottomHost.addView(bottomNav,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(66)));
+        root.addView(bottomHost,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
 
         ViewCompat.setOnApplyWindowInsetsListener(root,(view,insets)->{
             Insets bars=insets.getInsets(WindowInsetsCompat.Type.systemBars()|WindowInsetsCompat.Type.displayCutout());
             Insets ime=insets.getInsets(WindowInsetsCompat.Type.ime());
             view.setPadding(bars.left,0,bars.right,0);
             header.setPadding(dp(20),bars.top+dp(12),dp(20),0);
-            bottomNav.setPadding(dp(6),dp(5),dp(6),Math.max(bars.bottom,ime.bottom)+dp(8));
+            int safeBottom=Math.max(bars.bottom,ime.bottom);
+            bottomHost.setPadding(dp(16),dp(5),dp(16),safeBottom+dp(8));
             return insets;
         });
         setContentView(root);
@@ -183,17 +201,29 @@ public final class V4MainActivity extends Activity {
         long analysedAt=status.optLong("lastAnalysisAt");
         lastAnalysis.setText(analysedAt>0?"Analyse · "+time(analysedAt):"Première synchronisation");
         updateNavigation();
+        String signature=contentSignature(runtime);
+        if(signature.equals(renderedContentSignature))return;
+        renderedContentSignature=signature;
         content.removeAllViews();
         content.addView(tab==0?home(runtime):tab==1?plans(runtime):history(runtime),new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     private void updateNavigation(){
-        for(int i=0;i<navButtons.length;i++){
+        for(int i=0;i<navItems.length;i++){
             boolean selected=i==tab;
-            navButtons[i].setTextColor(selected?ACCENT:MUTED);
-            navButtons[i].setTypeface(Typeface.DEFAULT,selected?Typeface.BOLD:Typeface.NORMAL);
-            navButtons[i].setBackground(selected?round(Color.rgb(18,40,78),14):null);
+            int color=selected?ACCENT:MUTED;
+            navLabels[i].setTextColor(color);
+            navLabels[i].setTypeface(Typeface.DEFAULT,selected?Typeface.BOLD:Typeface.NORMAL);
+            navIcons[i].setColorFilter(color);
+            navItems[i].setBackground(selected?round(Color.rgb(18,40,78),15):null);
         }
+    }
+
+    private String contentSignature(V4RuntimeCoordinator runtime){
+        StringBuilder signature=new StringBuilder().append(tab).append('|').append(historyFilter);
+        for(V4Plan plan:runtime.store().all())signature.append('|').append(plan.planId).append(':').append(plan.status)
+                .append(':').append(plan.quantity()).append(':').append(plan.statusReason).append(':').append(plan.closePrice);
+        return signature.toString();
     }
 
     private View home(V4RuntimeCoordinator runtime){
@@ -218,7 +248,7 @@ public final class V4MainActivity extends Activity {
                 for(int i=1;i<ordered.size();i++)body.addView(planCard(ordered.get(i),false));
                 Button all=button("VOIR TOUS LES PLANS",true);
                 all.setTextColor(ACCENT);
-                all.setOnClickListener(view->{tab=1;render();});
+                all.setOnClickListener(view->{tab=1;renderedContentSignature="";render();});
                 body.addView(all);
             }
         }
@@ -263,7 +293,7 @@ public final class V4MainActivity extends Activity {
             Button filter=button(value,true);
             filter.setTextColor(value.equals(historyFilter)?ACCENT:MUTED);
             filter.setBackground(value.equals(historyFilter)?round(Color.rgb(18,40,78),14):null);
-            filter.setOnClickListener(view->{historyFilter=value;render();});
+            filter.setOnClickListener(view->{historyFilter=value;renderedContentSignature="";render();});
             filters.addView(filter);
         }
         filterScroll.addView(filters);
@@ -297,14 +327,14 @@ public final class V4MainActivity extends Activity {
 
         LinearLayout top=new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title=text(plan.side.name()+" "+plan.symbol,hero?30:21,plan.side==V4Plan.Side.LONG?GREEN:RED,true);
+        TextView title=text(plan.side.name()+" "+plan.symbol,hero?27:20,plan.side==V4Plan.Side.LONG?GREEN:RED,true);
         title.setSingleLine(true);
-        title.setAutoSizeTextTypeUniformWithConfiguration(hero?18:15,hero?30:21,1,TypedValue.COMPLEX_UNIT_SP);
+        title.setAutoSizeTextTypeUniformWithConfiguration(hero?17:14,hero?27:20,1,TypedValue.COMPLEX_UNIT_SP);
         top.addView(title,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));
         TextView badge=text(V4Plan.french(plan.status),11,TEXT,true);
         badge.setGravity(Gravity.CENTER);
         badge.setMaxLines(2);
-        badge.setPadding(dp(10),dp(7),dp(10),dp(7));
+        badge.setPadding(dp(9),dp(5),dp(9),dp(5));
         badge.setBackground(roundStroke(statusColor(plan.status),99,statusBorder(plan.status),1));
         LinearLayout.LayoutParams badgeParams=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,ViewGroup.LayoutParams.WRAP_CONTENT);
         badgeParams.setMargins(dp(10),0,0,0);
@@ -313,27 +343,27 @@ public final class V4MainActivity extends Activity {
 
         TextView quantityLabel=text("QTÉ",12,MUTED,true);
         LinearLayout.LayoutParams quantityLabelParams=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,ViewGroup.LayoutParams.WRAP_CONTENT);
-        quantityLabelParams.setMargins(0,hero?dp(28):dp(18),0,0);
+        quantityLabelParams.setMargins(0,hero?dp(18):dp(13),0,0);
         card.addView(quantityLabel,quantityLabelParams);
-        TextView quantity=text(fmt(plan.quantity()),hero?36:27,TEXT,true);
+        TextView quantity=text(fmt(plan.quantity()),hero?31:25,TEXT,true);
         quantity.setSingleLine(true);
         card.addView(quantity);
 
         LinearLayout levels=new LinearLayout(this);
         LinearLayout.LayoutParams levelsParams=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);
-        levelsParams.setMargins(0,hero?dp(20):dp(14),0,dp(14));
+        levelsParams.setMargins(0,hero?dp(13):dp(11),0,dp(10));
         addLevel(levels,"ENTRY",plan.entry,ACCENT,0);
         addLevel(levels,"TP",plan.tp,GREEN,1);
         addLevel(levels,"SL",plan.sl,RED,2);
         card.addView(levels,levelsParams);
 
         LinearLayout timing=new LinearLayout(this);
-        timing.setPadding(dp(12),dp(9),dp(12),dp(9));
+        timing.setPadding(dp(10),dp(6),dp(10),dp(6));
         timing.setBackground(roundStroke(Color.rgb(17,29,44),13,BORDER,1));
         timing.addView(metaText("Créé",time(plan.createdAt)),new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));
         View separator=new View(this);
         separator.setBackgroundColor(BORDER);
-        timing.addView(separator,new LinearLayout.LayoutParams(dp(1),dp(32)));
+        timing.addView(separator,new LinearLayout.LayoutParams(dp(1),dp(27)));
         TextView expires=metaText("Expire",time(plan.expiresAt));
         expires.setGravity(Gravity.END);
         timing.addView(expires,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));
@@ -342,9 +372,9 @@ public final class V4MainActivity extends Activity {
         if(!plan.statusReason.isEmpty()){
             TextView reason=text("ⓘ  "+plan.statusReason,13,MUTED,false);
             reason.setBackground(roundStroke(Color.rgb(17,29,44),13,BORDER,1));
-            reason.setPadding(dp(13),dp(11),dp(13),dp(11));
+            reason.setPadding(dp(11),dp(7),dp(11),dp(7));
             LinearLayout.LayoutParams reasonParams=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);
-            reasonParams.setMargins(0,dp(12),0,0);
+            reasonParams.setMargins(0,dp(8),0,0);
             card.addView(reason,reasonParams);
         }
 
@@ -364,24 +394,29 @@ public final class V4MainActivity extends Activity {
     private void addLevel(LinearLayout parent,String name,double value,int accent,int index){
         LinearLayout level=column();
         level.setGravity(Gravity.CENTER_HORIZONTAL);
-        level.setPadding(dp(9),dp(11),dp(9),dp(9));
+        level.setPadding(dp(7),dp(7),dp(7),dp(7));
         level.setBackground(roundStroke(Color.rgb(14,24,38),13,accent,1));
         TextView label=text(name,11,MUTED,true);
         label.setGravity(Gravity.START);
         level.addView(label,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
-        String exact=fmt(value);
-        TextView price=text(exact,17,TEXT,true);
+        String exact=V4PriceDisplay.exact(value);
+        TextView price=text(V4PriceDisplay.compact(value),15,TEXT,true);
+        price.setTypeface(Typeface.MONOSPACE,Typeface.BOLD);
         price.setGravity(Gravity.START);
         price.setSingleLine(true);
-        price.setAutoSizeTextTypeUniformWithConfiguration(10,17,1,TypedValue.COMPLEX_UNIT_SP);
-        level.addView(price,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(33)));
-        Button copy=button("▣",true);
-        copy.setTextSize(19);
+        price.setEllipsize(null);
+        price.setAutoSizeTextTypeUniformWithConfiguration(8,15,1,TypedValue.COMPLEX_UNIT_SP);
+        level.addView(price,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(27)));
+        ImageButton copy=new ImageButton(this);
+        copy.setImageResource(R.drawable.ic_v4_copy);
+        copy.setColorFilter(TEXT);
+        copy.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        copy.setPadding(dp(7),dp(7),dp(7),dp(7));
         copy.setContentDescription("Copier "+name);
         copy.setBackground(roundStroke(Color.rgb(21,44,83),10,Color.rgb(51,91,151),1));
         copy.setOnClickListener(view->copyValue(name,exact));
-        LinearLayout.LayoutParams copyParams=new LinearLayout.LayoutParams(dp(38),dp(38));
-        copyParams.setMargins(0,dp(5),0,0);
+        LinearLayout.LayoutParams copyParams=new LinearLayout.LayoutParams(dp(31),dp(31));
+        copyParams.setMargins(0,dp(3),0,0);
         level.addView(copy,copyParams);
         LinearLayout.LayoutParams levelParams=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1);
         if(index>0)levelParams.setMargins(dp(7),0,0,0);
@@ -411,7 +446,7 @@ public final class V4MainActivity extends Activity {
 
     private LinearLayout.LayoutParams actionParams(){
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54));
-        params.setMargins(0,dp(14),0,0);
+        params.setMargins(0,dp(9),0,0);
         return params;
     }
 
@@ -472,7 +507,7 @@ public final class V4MainActivity extends Activity {
     private LinearLayout screenBody(){LinearLayout body=column();body.setPadding(dp(18),0,dp(18),dp(18));return body;}
     private LinearLayout card(boolean hero){
         LinearLayout card=column();
-        card.setPadding(hero?dp(20):dp(17),hero?dp(20):dp(17),hero?dp(20):dp(17),hero?dp(20):dp(17));
+        card.setPadding(hero?dp(16):dp(14),hero?dp(15):dp(13),hero?dp(16):dp(14),hero?dp(15):dp(13));
         card.setBackground(roundStroke(hero?CARD_ALT:CARD,hero?20:17,hero?Color.rgb(55,104,171):BORDER,1));
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);
         params.setMargins(0,dp(7),0,dp(11));
@@ -486,6 +521,9 @@ public final class V4MainActivity extends Activity {
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
         scroll.setVerticalScrollBarEnabled(false);
+        scroll.setSmoothScrollingEnabled(true);
+        scroll.setNestedScrollingEnabled(false);
+        scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         scroll.addView(child,new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
         return scroll;
     }

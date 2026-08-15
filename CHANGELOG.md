@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.34.6.4 — NMC Stable 6.4 / finition UI mobile
+
+- Stabilise le scroll en évitant la reconstruction des écrans lors des simples ticks runtime.
+- Remplace la navigation basse par des items compacts avec icônes Accueil, Plans et Historique, hors de la safe area système.
+- Compacte les cartes de plan, les métadonnées et les actions sans retirer d'information opérationnelle.
+- Affiche ENTRY, TP et SL avec une précision visuelle adaptée, sans troncature, tout en copiant la valeur moteur complète.
+- Conserve strictement `NMC_PROP_DAILY_HYBRID_V4`, le modèle, l'alpha, le sizing et `realTradingAllowed=false`.
+
 ## 2.34.6.3 — NMC Stable 6.3 / UI-UX final
 
 - Protège l'en-tête et la navigation basse avec les insets système Android.
