@@ -21,6 +21,12 @@ public class V4RiskLimitToggleContractTest {
         assertTrue(ui.contains("Limite de risque simultané"));
         assertTrue(ui.contains("Limite de risque désactivée"));
         assertTrue(ui.contains("riskLimit.setChecked(runtime.simultaneousRiskLimitEnabled())"));
+        assertTrue(runtime.contains("putBoolean(KEY_SIMULTANEOUS_RISK_LIMIT,enabled).commit()"));
+        assertTrue(ui.contains("boolean riskLimitEnabled=riskLimit.isChecked()"));
+        assertTrue(ui.contains("runtime.setSimultaneousRiskLimitEnabled(riskLimitEnabled)"));
+        assertTrue(ui.contains("parseLocalizedNumber"));
+        assertTrue(ui.indexOf("runtime.setSimultaneousRiskLimitEnabled(riskLimitEnabled)")
+                < ui.indexOf("runtime.account().update("));
 
         assertEquals(.0225,V4RiskSizer.CORE_RISK,0);
         assertEquals(.0075,V4RiskSizer.FALLBACK_RISK,0);

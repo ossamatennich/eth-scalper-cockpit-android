@@ -560,7 +560,20 @@ public final class V4MainActivity extends Activity {
         view.addView(reset);
         new AlertDialog.Builder(this).setTitle("Profil du compte · "+runtime.account().mode()).setView(view)
                 .setNeutralButton("EVAL / FUNDED",(ignored,which)->{V4AccountProfile.Mode next=runtime.account().mode()==V4AccountProfile.Mode.EVAL?V4AccountProfile.Mode.FUNDED:V4AccountProfile.Mode.EVAL;runtime.account().update(next,runtime.account().equity(),runtime.account().target(),runtime.account().mdd());render();})
-                .setNegativeButton("ANNULER",null).setPositiveButton("ENREGISTRER",(ignored,which)->{try{runtime.account().update(runtime.account().mode(),Double.parseDouble(equity.getText().toString()),Double.parseDouble(target.getText().toString()),Double.parseDouble(mdd.getText().toString())/100);runtime.setSimultaneousRiskLimitEnabled(riskLimit.isChecked());render();}catch(Exception ignoredError){}}).show();
+                .setNegativeButton("ANNULER",null).setPositiveButton("ENREGISTRER",(ignored,which)->{
+                    boolean riskLimitEnabled=riskLimit.isChecked();
+                    runtime.setSimultaneousRiskLimitEnabled(riskLimitEnabled);
+                    try{
+                        runtime.account().update(
+                                runtime.account().mode(),
+                                parseLocalizedNumber(equity.getText()),
+                                parseLocalizedNumber(target.getText()),
+                                parseLocalizedNumber(mdd.getText())/100);
+                    }catch(Exception ignoredError){
+                        Toast.makeText(this,"Limite de risque enregistrée · valeurs du compte inchangées",Toast.LENGTH_SHORT).show();
+                    }
+                    render();
+                }).show();
     }
 
     private void addRiskLimitNotice(LinearLayout body,V4RuntimeCoordinator runtime){
@@ -610,6 +623,10 @@ public final class V4MainActivity extends Activity {
     private int statusColor(V4Plan.Status status){return switch(status){case EXECUTABLE,OPEN,CLOSED_TP->Color.rgb(20,105,75);case INVALIDATED,CLOSED_SL,MISSED_TOO_LATE->Color.rgb(121,39,51);case EXPIRED,DATA_UNAVAILABLE->Color.rgb(79,65,39);default->Color.rgb(25,54,98);};}
     private int statusBorder(V4Plan.Status status){return switch(status){case EXECUTABLE,OPEN,CLOSED_TP->GREEN;case INVALIDATED,CLOSED_SL,MISSED_TOO_LATE->RED;case EXPIRED,DATA_UNAVAILABLE->AMBER;default->ACCENT;};}
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
+    private static double parseLocalizedNumber(CharSequence value){
+        String normalized=value==null?"":value.toString().trim().replace("\u00A0","").replace(" ","").replace(',','.');
+        return Double.parseDouble(normalized);
+    }
     private static String fmt(double value){return new DecimalFormat("0.########").format(value);}
     private static String time(long value){return date(value,"dd/MM HH:mm 'UTC'");}
     private static String day(long value){return date(value,"dd/MM/yyyy");}

@@ -16,11 +16,11 @@
     },
     {
       "path": "app/src/main/java/com/ethscalper/cockpit/V4MainActivity.java",
-      "sha256": "65a00445b131ea38b7926a36d260fb36572884646ef77f07ded15a612b516ef3"
+      "sha256": "b50994296fa2f695e82bfffdeba2a81646baa8dfc7afc4ab6456078836a0da10"
     },
     {
       "path": "app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java",
-      "sha256": "3c1645d1e848ac5c42a17e15b9f2ec0c20e43f4a8c38a63a7c8f3225806f75b4"
+      "sha256": "e5213932c975d2b77022050415bc2a9a7fa5d017ba1b4a15426381e7fc65e899"
     },
     {
       "path": ".github/workflows/nmc-ci.yml",

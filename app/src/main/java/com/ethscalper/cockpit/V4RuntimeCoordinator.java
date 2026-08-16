@@ -103,8 +103,9 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
                 .getBoolean(KEY_SIMULTANEOUS_RISK_LIMIT,true);
     }
     public synchronized void setSimultaneousRiskLimitEnabled(boolean enabled){
-        context.getSharedPreferences(RISK_PREFS,Context.MODE_PRIVATE)
-                .edit().putBoolean(KEY_SIMULTANEOUS_RISK_LIMIT,enabled).apply();
+        boolean persisted=context.getSharedPreferences(RISK_PREFS,Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_SIMULTANEOUS_RISK_LIMIT,enabled).commit();
+        if(!persisted)throw new IllegalStateException("risk setting persistence");
         publishChanged();
     }
     private double effectiveRiskForNewPlan(double desired){
