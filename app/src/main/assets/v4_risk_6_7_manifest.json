@@ -1,0 +1,30 @@
+{
+  "schema": "NMC_V4_RISK_LIMIT_TOGGLE_FREEZE_V1",
+  "versionName": "2.34.6.7",
+  "versionCode": 23467,
+  "label": "NMC Stable 6.7",
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "scope": "SIMULTANEOUS_RISK_LIMIT_UI_AND_RUNTIME_ONLY",
+  "modelSha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+  "parentFrozenManifestCanonicalSha256": "47b62ac8b29ec7a72b7a3e698e14573528dd4c8dbbdd25aa130170992252e7f3",
+  "parentRuntime66ManifestCanonicalSha256": "32427e195446e51b3de370ac86f87179fe6e98b34955614efa4fff22f63fdefa",
+  "realTradingAllowed": false,
+  "files": [
+    {
+      "path": "app/build.gradle",
+      "sha256": "9f863917be3e4f0f747e625c600d84bba17c4fb82ae1fa6783c818c88623579b"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4MainActivity.java",
+      "sha256": "65a00445b131ea38b7926a36d260fb36572884646ef77f07ded15a612b516ef3"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java",
+      "sha256": "3c1645d1e848ac5c42a17e15b9f2ec0c20e43f4a8c38a63a7c8f3225806f75b4"
+    },
+    {
+      "path": ".github/workflows/nmc-ci.yml",
+      "sha256": "a7848264e9ae172475866d065b00ee3976946c63a9e2ae82cf5fd57a998f9c4f"
+    }
+  ]
+}
