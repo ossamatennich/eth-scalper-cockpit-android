@@ -234,7 +234,7 @@ public final class V4MainActivity extends Activity {
     }
 
     private String contentSignature(V4RuntimeCoordinator runtime){
-        StringBuilder signature=new StringBuilder().append(tab).append('|').append(historyFilter);
+        StringBuilder signature=new StringBuilder().append(tab).append('|').append(historyFilter).append('|').append(runtime.simultaneousRiskLimitEnabled());
         for(V4Plan plan:runtime.store().all())signature.append('|').append(plan.planId).append(':').append(plan.status)
                 .append(':').append(plan.quantity()).append(':').append(plan.statusReason).append(':').append(plan.closePrice);
         return signature.toString();
@@ -242,6 +242,7 @@ public final class V4MainActivity extends Activity {
 
     private View home(V4RuntimeCoordinator runtime){
         LinearLayout body=screenBody();
+        addRiskLimitNotice(body,runtime);
         List<V4Plan> ordered=V4PlanDisplayPolicy.homeOrder(runtime.store().active());
         if(ordered.isEmpty()){
             LinearLayout empty=card(false);
@@ -271,6 +272,7 @@ public final class V4MainActivity extends Activity {
 
     private View plans(V4RuntimeCoordinator runtime){
         LinearLayout body=screenBody();
+        addRiskLimitNotice(body,runtime);
         List<V4Plan> active=runtime.store().active();
         List<V4Plan> all=runtime.store().all();
         section(body,"EXÉCUTABLES",active,V4Plan.Status.EXECUTABLE);
@@ -542,13 +544,48 @@ public final class V4MainActivity extends Activity {
         view.addView(label("Équité suivie",equity));
         view.addView(label("Objectif d'évaluation",target));
         view.addView(label("MDD cumulée (%)",mdd));
+        android.widget.Switch riskLimit=new android.widget.Switch(this);
+        riskLimit.setText("Limite de risque simultané");
+        riskLimit.setTextColor(TEXT);
+        riskLimit.setTextSize(14);
+        riskLimit.setChecked(runtime.simultaneousRiskLimitEnabled());
+        riskLimit.setPadding(0,dp(8),0,dp(2));
+        view.addView(riskLimit);
+        view.addView(text(
+                "ON · plafond cumulé 2,40 %\nOFF · les autres positions ne bloquent pas un nouveau plan",
+                12,MUTED,false));
         Button reset=button("Réinitialiser à 5 000",true);
         reset.setOnClickListener(button->new AlertDialog.Builder(this).setTitle("Réinitialiser l'équité ?").setMessage("Le profil local reviendra à 5 000 USD.")
                 .setNegativeButton("ANNULER",null).setPositiveButton("CONFIRMER",(ignored,which)->{runtime.account().reset();render();}).show());
         view.addView(reset);
         new AlertDialog.Builder(this).setTitle("Profil du compte · "+runtime.account().mode()).setView(view)
                 .setNeutralButton("EVAL / FUNDED",(ignored,which)->{V4AccountProfile.Mode next=runtime.account().mode()==V4AccountProfile.Mode.EVAL?V4AccountProfile.Mode.FUNDED:V4AccountProfile.Mode.EVAL;runtime.account().update(next,runtime.account().equity(),runtime.account().target(),runtime.account().mdd());render();})
-                .setNegativeButton("ANNULER",null).setPositiveButton("ENREGISTRER",(ignored,which)->{try{runtime.account().update(runtime.account().mode(),Double.parseDouble(equity.getText().toString()),Double.parseDouble(target.getText().toString()),Double.parseDouble(mdd.getText().toString())/100);render();}catch(Exception ignoredError){}}).show();
+                .setNegativeButton("ANNULER",null).setPositiveButton("ENREGISTRER",(ignored,which)->{
+                    boolean riskLimitEnabled=riskLimit.isChecked();
+                    runtime.setSimultaneousRiskLimitEnabled(riskLimitEnabled);
+                    try{
+                        runtime.account().update(
+                                runtime.account().mode(),
+                                parseLocalizedNumber(equity.getText()),
+                                parseLocalizedNumber(target.getText()),
+                                parseLocalizedNumber(mdd.getText())/100);
+                    }catch(Exception ignoredError){
+                        Toast.makeText(this,"Limite de risque enregistrée · valeurs du compte inchangées",Toast.LENGTH_SHORT).show();
+                    }
+                    render();
+                }).show();
+    }
+
+    private void addRiskLimitNotice(LinearLayout body,V4RuntimeCoordinator runtime){
+        if(runtime.simultaneousRiskLimitEnabled())return;
+        TextView notice=text("Limite de risque désactivée",12,AMBER,true);
+        notice.setBackground(roundStroke(Color.rgb(48,39,22),12,Color.rgb(104,78,37),1));
+        notice.setPadding(dp(11),dp(7),dp(11),dp(7));
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0,dp(10),0,dp(6));
+        body.addView(notice,params);
     }
 
     private View label(String label,View input){LinearLayout value=column();value.addView(text(label,12,MUTED,true));value.addView(input);return value;}
@@ -586,6 +623,10 @@ public final class V4MainActivity extends Activity {
     private int statusColor(V4Plan.Status status){return switch(status){case EXECUTABLE,OPEN,CLOSED_TP->Color.rgb(20,105,75);case INVALIDATED,CLOSED_SL,MISSED_TOO_LATE->Color.rgb(121,39,51);case EXPIRED,DATA_UNAVAILABLE->Color.rgb(79,65,39);default->Color.rgb(25,54,98);};}
     private int statusBorder(V4Plan.Status status){return switch(status){case EXECUTABLE,OPEN,CLOSED_TP->GREEN;case INVALIDATED,CLOSED_SL,MISSED_TOO_LATE->RED;case EXPIRED,DATA_UNAVAILABLE->AMBER;default->ACCENT;};}
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
+    private static double parseLocalizedNumber(CharSequence value){
+        String normalized=value==null?"":value.toString().trim().replace("\u00A0","").replace(" ","").replace(',','.');
+        return Double.parseDouble(normalized);
+    }
     private static String fmt(double value){return new DecimalFormat("0.########").format(value);}
     private static String time(long value){return date(value,"dd/MM HH:mm 'UTC'");}
     private static String day(long value){return date(value,"dd/MM/yyyy");}

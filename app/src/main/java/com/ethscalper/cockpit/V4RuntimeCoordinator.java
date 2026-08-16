@@ -31,6 +31,8 @@ import java.util.concurrent.TimeUnit;
 /** Application-scoped V4 runtime. It cannot place an order; all actions are local declarations. */
 public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
     public static final String ACTION_CHANGED="com.ethscalper.cockpit.V4_CHANGED";
+    private static final String RISK_PREFS="v4_risk_settings";
+    private static final String KEY_SIMULTANEOUS_RISK_LIMIT="simultaneous_risk_limit_enabled";
     private static volatile V4RuntimeCoordinator instance;
     public static synchronized V4RuntimeCoordinator start(Context c){if(instance==null)instance=new V4RuntimeCoordinator(c.getApplicationContext());instance.startInternal();return instance;}
     public static V4RuntimeCoordinator get(){return instance;}
@@ -64,7 +66,7 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
         try{engine.observePrior(V4FeatureEngine.computeAt(panel,day));}catch(Exception ignored){}}}
     private synchronized void tick(){long now=System.currentTimeMillis();for(V4Plan p:store.active()){V4MarketDataClient.Quote q=market.quote(p.symbol);if(q==null)continue;
         V4MarketMetadata meta=market.metadata(p.symbol);if(p.status==V4Plan.Status.DATA_UNAVAILABLE){if(meta==null){if(now>=p.expiresAt){p.status=V4Plan.Status.EXPIRED;p.closedAt=now;p.statusReason="Fenêtre d'entrée terminée";store.save(p);}continue;}
-            double risk=Math.min(p.allocatedRiskFraction,V4RiskSizer.remainingRisk(account.equity(),store.active()));
+            double risk=effectiveRiskForNewPlan(p.allocatedRiskFraction);
             V4RiskSizer.Result sized=V4RiskSizer.size(p.symbol,account.equity(),p.entry,p.sl,risk,meta);if(!sized.available){V4CreationPolicy.rejectForRiskCap(p,now);store.save(p);continue;}
             p.restoreUncommittedQuantity(sized.quantity);p.status=V4Plan.Status.WAITING;p.statusReason="Métadonnées de marché restaurées";}
         List<V4PlanLifecycle.PricePoint> path=new ArrayList<>();long from=p.lastEvaluatedAt>0?p.lastEvaluatedAt:p.createdAt;
@@ -86,7 +88,7 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
         parent.statusReason="REPLACED_BY_FRESH_SIGNAL";parent.closeReason="REPLACED_BY_FRESH_SIGNAL";store.save(parent);}}
     private void createPending(V4FeatureEngine.Candidate c,String parent){V4MarketDataClient.Quote q=market.quote(c.asset);V4MarketMetadata meta=market.metadata(c.asset);if(q==null)return;
         double desired=c.source==V4Plan.Source.CORE?V4RiskSizer.CORE_RISK:V4RiskSizer.FALLBACK_RISK;
-        desired=Math.min(desired,V4RiskSizer.remainingRisk(account.equity(),store.active()));
+        desired=effectiveRiskForNewPlan(desired);
         double entry=c.side==V4Plan.Side.LONG?q.ask:q.bid,sl=entry+(c.side==V4Plan.Side.LONG?-1:1)*(c.source==V4Plan.Source.CORE?.4:1)*c.atr;
         V4RiskSizer.Result size=V4RiskSizer.size(c.asset,account.equity(),entry,sl,desired,meta);
         long cutoff=snapshots.get(c.asset).cutoff;V4Plan p=engine.create(c,entry,size.available?size.quantity:0,account.equity(),desired,cutoff,parent);
@@ -96,6 +98,21 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
     public synchronized void markOrder(String id){V4Plan p=store.find(id);if(p!=null){V4PlanLifecycle.markOrderPlaced(p,System.currentTimeMillis());store.save(p);publishChanged();}}
     public synchronized void markTaken(String id){V4Plan p=store.find(id);if(p!=null){V4PlanLifecycle.markTaken(p,System.currentTimeMillis());store.save(p);publishChanged();}}
     public synchronized void manualClose(String id,double price){V4Plan p=store.find(id);if(p!=null){V4PlanLifecycle.manualClose(p,System.currentTimeMillis(),price);store.save(p);account.applyClosedPlan(p);publishChanged();}}
+    public boolean simultaneousRiskLimitEnabled(){
+        return context.getSharedPreferences(RISK_PREFS,Context.MODE_PRIVATE)
+                .getBoolean(KEY_SIMULTANEOUS_RISK_LIMIT,true);
+    }
+    public synchronized void setSimultaneousRiskLimitEnabled(boolean enabled){
+        boolean persisted=context.getSharedPreferences(RISK_PREFS,Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_SIMULTANEOUS_RISK_LIMIT,enabled).commit();
+        if(!persisted)throw new IllegalStateException("risk setting persistence");
+        publishChanged();
+    }
+    private double effectiveRiskForNewPlan(double desired){
+        return simultaneousRiskLimitEnabled()
+                ?Math.min(desired,V4RiskSizer.remainingRisk(account.equity(),store.active()))
+                :desired;
+    }
     public V4PlanStore store(){return store;}public V4AccountProfile account(){return account;}
     public JSONObject status(){try{long now=System.currentTimeMillis();boolean network=networkAvailable();V4RuntimeStatusPolicy.State state=V4RuntimeStatusPolicy.evaluate(
             new V4RuntimeStatusPolicy.Input(now,network,market.socketConnected(),transportState,market.lastQuoteAt(),market.dailySyncInProgress(),
