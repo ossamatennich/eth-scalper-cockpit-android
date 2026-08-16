@@ -25,8 +25,10 @@ public class V4RiskLimitToggleContractTest {
         assertTrue(ui.contains("boolean riskLimitEnabled=riskLimit.isChecked()"));
         assertTrue(ui.contains("runtime.setSimultaneousRiskLimitEnabled(riskLimitEnabled)"));
         assertTrue(ui.contains("parseLocalizedNumber"));
-        assertTrue(ui.indexOf("runtime.setSimultaneousRiskLimitEnabled(riskLimitEnabled)")
-                < ui.indexOf("runtime.account().update("));
+        int saveStart=ui.indexOf("boolean riskLimitEnabled=riskLimit.isChecked()");
+        int toggleSave=ui.indexOf("runtime.setSimultaneousRiskLimitEnabled(riskLimitEnabled)",saveStart);
+        int accountSave=ui.indexOf("runtime.account().update(",saveStart);
+        assertTrue(saveStart>=0&&toggleSave>saveStart&&accountSave>toggleSave);
 
         assertEquals(.0225,V4RiskSizer.CORE_RISK,0);
         assertEquals(.0075,V4RiskSizer.FALLBACK_RISK,0);
