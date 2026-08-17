@@ -22,7 +22,20 @@ public class V4ModelParityTest {
         assertFalse(new JSONObject(new String(manifest,java.nio.charset.StandardCharsets.UTF_8)).getBoolean("realTradingAllowed"));}
     @Test public void operationalFixManifestMatchesCanonicalHashes()throws Exception{JSONObject m=new JSONObject(new String(Files.readAllBytes(Path.of("src/main/assets/v4_operational_6_1_manifest.json")),java.nio.charset.StandardCharsets.UTF_8));
         assertEquals("47b62ac8b29ec7a72b7a3e698e14573528dd4c8dbbdd25aa130170992252e7f3",m.getString("parentFrozenManifestCanonicalSha256"));assertFalse(m.getBoolean("realTradingAllowed"));
-        JSONArray files=m.getJSONArray("files");Path root=Path.of("..");for(int i=0;i<files.length();i++){JSONObject f=files.getJSONObject(i);if("app/build.gradle".equals(f.getString("path"))||"app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java".equals(f.getString("path"))||"app/src/main/java/com/ethscalper/cockpit/V4Plan.java".equals(f.getString("path")))continue;byte[] bytes=Files.readAllBytes(root.resolve(f.getString("path")));
+        JSONArray files=m.getJSONArray("files");Path root=Path.of("..");for(int i=0;i<files.length();i++){JSONObject f=files.getJSONObject(i);String path=f.getString("path");
+            /*
+             * Ces fichiers ont été volontairement modifiés par des releases
+             * postérieures à 6.1. Le manifest 6.1 reste historique et immuable.
+             * Leur état courant est désormais gelé par le manifest 6.8.
+             */
+            if("app/build.gradle".equals(path)
+                    ||"app/src/main/java/com/ethscalper/cockpit/V4CreationPolicy.java".equals(path)
+                    ||"app/src/main/java/com/ethscalper/cockpit/V4Engine.java".equals(path)
+                    ||"app/src/main/java/com/ethscalper/cockpit/V4FallbackHistory.java".equals(path)
+                    ||"app/src/main/java/com/ethscalper/cockpit/V4FeatureEngine.java".equals(path)
+                    ||"app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java".equals(path)
+                    ||"app/src/main/java/com/ethscalper/cockpit/V4Plan.java".equals(path))continue;
+            byte[] bytes=Files.readAllBytes(root.resolve(path));
             byte[] canonical=new String(bytes,java.nio.charset.StandardCharsets.UTF_8).replace("\r\n","\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);assertEquals(f.getString("sha256"),sha(canonical));}}
     @Test public void androidLaunchHotfixManifestMatchesCanonicalHashes()throws Exception{JSONObject m=new JSONObject(new String(Files.readAllBytes(Path.of("src/main/assets/v4_launch_6_2_manifest.json")),java.nio.charset.StandardCharsets.UTF_8));
         assertEquals("NMC_PROP_DAILY_HYBRID_V4",m.getString("engineId"));assertFalse(m.getBoolean("realTradingAllowed"));assertEquals("207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",m.getString("modelSha256"));
@@ -113,6 +126,108 @@ public class V4ModelParityTest {
 
         for(int i=0;i<files.length();i++){
             JSONObject f=files.getJSONObject(i);
+            String path=f.getString("path");
+
+            /*
+             * Stable 6.8 modifie volontairement ces quatre fichiers.
+             * Le manifest 6.7 reste la photographie historique de 6.7.
+             * Stable 6.8 possède son propre manifest de hash ci-dessous.
+             */
+            if("app/build.gradle".equals(path)
+                    ||"app/src/main/java/com/ethscalper/cockpit/V4MainActivity.java".equals(path)
+                    ||"app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java".equals(path)
+                    ||".github/workflows/nmc-ci.yml".equals(path)){
+                continue;
+            }
+
+            byte[] bytes=Files.readAllBytes(
+                    root.resolve(path)
+            );
+
+            byte[] canonical=new String(
+                    bytes,
+                    java.nio.charset.StandardCharsets.UTF_8
+            ).replace("\r\n","\n")
+             .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+            assertEquals(f.getString("sha256"),sha(canonical));
+        }
+    }
+
+    @Test public void qualityMultiSignal68ManifestMatchesCanonicalHashesWithoutChangingModel()throws Exception{
+        JSONObject m=new JSONObject(new String(
+                Files.readAllBytes(
+                        Path.of("src/main/assets/v4_quality_multi_signal_6_8_manifest.json")
+                ),
+                java.nio.charset.StandardCharsets.UTF_8
+        ));
+
+        assertEquals("2.34.6.8",m.getString("versionName"));
+        assertEquals(23468,m.getInt("versionCode"));
+        assertEquals("NMC Stable 6.8",m.getString("label"));
+        assertEquals("NMC_PROP_DAILY_HYBRID_V4",m.getString("engineId"));
+        assertEquals(
+                "QUALITY_MULTI_SIGNAL_POLICY_WHEN_SIMULTANEOUS_RISK_LIMIT_OFF",
+                m.getString("scope")
+        );
+
+        assertFalse(m.getBoolean("realTradingAllowed"));
+
+        assertEquals(
+                "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+                m.getString("modelSha256")
+        );
+
+        assertEquals(
+                .675,
+                m.getJSONObject("riskLimitOff").getDouble("qualityScoreQuantile"),
+                0
+        );
+
+        assertEquals(
+                .50,
+                m.getJSONObject("riskLimitOff").getDouble("qualitySpreadQuantile"),
+                0
+        );
+
+        assertEquals(
+                90,
+                m.getJSONObject("riskLimitOff").getInt("calibrationWindowUtcDays")
+        );
+
+        assertEquals(
+                45,
+                m.getJSONObject("riskLimitOff").getInt("minimumPriorObservations")
+        );
+
+        assertTrue(
+                m.getJSONObject("riskLimitOff").isNull("numericSignalLimit")
+        );
+
+        assertTrue(
+                m.getJSONObject("riskLimitOff").isNull("numericActivePlanLimit")
+        );
+
+        byte[] parent=Files.readAllBytes(
+                Path.of("src/main/assets/v4_risk_6_7_manifest.json")
+        );
+
+        byte[] parentCanonical=new String(
+                parent,
+                java.nio.charset.StandardCharsets.UTF_8
+        ).replace("\r\n","\n")
+         .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        assertEquals(
+                m.getString("parentRisk67ManifestCanonicalSha256"),
+                sha(parentCanonical)
+        );
+
+        JSONArray files=m.getJSONArray("files");
+        Path root=Path.of("..");
+
+        for(int i=0;i<files.length();i++){
+            JSONObject f=files.getJSONObject(i);
 
             byte[] bytes=Files.readAllBytes(
                     root.resolve(f.getString("path"))
@@ -124,7 +239,10 @@ public class V4ModelParityTest {
             ).replace("\r\n","\n")
              .getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
-            assertEquals(f.getString("sha256"),sha(canonical));
+            assertEquals(
+                    f.getString("sha256"),
+                    sha(canonical)
+            );
         }
     }
 
