@@ -3,6 +3,8 @@ package com.ethscalper.cockpit;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 public final class V4Engine {
@@ -16,6 +18,36 @@ public final class V4Engine {
         V4FallbackHistory.Gate gate=history.evaluateThenCommit(V4FeatureEngine.sharedCutoff(snapshots),best,spread);if(core!=null)return core;
         return gate.accepted?fallback:null;
     }
+    /**
+     * MODE OFF :
+     * aucun Top-N.
+     *
+     * Chaque FALLBACK éligible est jugé individuellement.
+     * Le nombre final de signaux dépend uniquement de la qualité.
+     */
+    public List<V4FeatureEngine.Candidate> selectQualityFallbacks(
+            Map<String,V4FeatureEngine.Snapshot> snapshots
+    ){
+        long cutoff=V4FeatureEngine.sharedCutoff(snapshots);
+        ArrayList<V4FeatureEngine.Candidate> accepted=new ArrayList<>();
+
+        for(V4FeatureEngine.Candidate c:
+                V4FeatureEngine.selectFallbackCandidates(snapshots,model)){
+
+            double score=Math.max(c.longScore,c.shortScore);
+            double spread=Math.abs(c.longScore-c.shortScore);
+
+            V4FallbackHistory.QualityGate gate=
+                    history.qualityGate(cutoff,score,spread);
+
+            if(gate.accepted){
+                accepted.add(c);
+            }
+        }
+
+        return List.copyOf(accepted);
+    }
+
     public void observePrior(Map<String,V4FeatureEngine.Snapshot> snapshots){V4FeatureEngine.Candidate f=V4FeatureEngine.selectFallback(snapshots,model);if(f!=null){
         history.observe(V4FeatureEngine.sharedCutoff(snapshots),Math.max(f.longScore,f.shortScore),Math.abs(f.longScore-f.shortScore));}}
     public V4Plan create(V4FeatureEngine.Candidate c,double entry,double quantity,double equity,double allocatedRisk,long cutoff,String parent){

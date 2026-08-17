@@ -1,6 +1,6 @@
 # NMC — Native Market Cockpit
 
-La version courante est **NMC Stable 6.6** (`2.34.6.6`, `versionCode 23466`).
+La version courante est **NMC Stable 6.8** (`2.34.6.8`, `versionCode 23468`).
 Le moteur public est désormais `NMC_PROP_DAILY_HYBRID_V4`: un scanner quotidien
 reset-safe des 53 cryptos Kraken Prop, alimenté par des klines USD-M mises en
 cache et un multiplex `bookTicker` léger. L'ancien `NMC_SCALP_CV_CORE_V1` reste
@@ -63,3 +63,13 @@ APK debug : `app/build/outputs/apk/debug/app-debug.apk`.
 Documentation : [architecture](docs/ARCHITECTURE.md), [validation](docs/ENGINE_VALIDATION.md), [diagnostics](docs/DIAGNOSTICS.md) et [rapports v2.34.3.1](docs/releases/v2.34.3.1/).
 
 Les diagnostics servent à améliorer les versions de recherche. Ils ne garantissent aucun résultat financier futur.
+
+
+## Stable 6.8 — mode qualité multi-signaux
+
+Le bouton **Limite de risque simultané** possède désormais deux politiques clairement séparées :
+
+- **ON** : comportement V4 historique inchangé, plafond cumulé 2,40 %, maximum historique de deux plans actifs et sélection FALLBACK historique.
+- **OFF** : le risque cumulé ne bloque plus la publication et aucun nombre maximum de signaux n'est imposé. Chaque candidat FALLBACK des actifs éligibles est accepté uniquement s'il passe le filtre qualité causal : score >= P67,5 et spread LONG/SHORT >= P50 des meilleurs signaux quotidiens des 90 jours UTC précédents, avec au moins 45 observations. Le jour courant est exclu.
+
+Le CORE, le modèle ExtraTrees gelé, les TP/SL, le sizing individuel et `realTradingAllowed=false` restent inchangés.

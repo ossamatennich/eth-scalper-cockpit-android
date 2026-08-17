@@ -1,4 +1,4 @@
-name: NMC v2.34.6.7 Stable CI
+name: NMC v2.34.6.8 Stable CI
 
 on:
   push:
@@ -90,7 +90,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NMC-v2.34.6.7-launch-smoke
+          name: NMC-v2.34.6.8-launch-smoke
           path: |
             ${{ runner.temp }}/nmc-screen.png
             ${{ runner.temp }}/nmc-notification-shade.png
@@ -98,6 +98,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NMC-v2.34.6.7-stable-apk
+          name: NMC-v2.34.6.8-stable-apk
           path: app/build/outputs/apk/stable/app-stable.apk
           if-no-files-found: error

@@ -10,6 +10,10 @@ import java.util.TreeMap;
 
 /** One persisted FALLBACK daily-best observation per completed UTC day. */
 public final class V4FallbackHistory {
+    public static final double QUALITY_SCORE_QUANTILE=.675d;
+    public static final double QUALITY_SPREAD_QUANTILE=.50d;
+    public static final int QUALITY_PRIOR_DAYS=90;
+    public static final int QUALITY_MIN_PRIOR=45;
     public interface Backend {String load();void save(String json);}
     public static final class MemoryBackend implements Backend {
         private String value;
@@ -24,6 +28,21 @@ public final class V4FallbackHistory {
         Gate(int count,double threshold,double minSpread,boolean ready,boolean accepted){priorCount=count;threshold30=threshold;
             minPriorSpread=minSpread;this.ready=ready;this.accepted=accepted;}
     }
+    public static final class QualityGate {
+        public final int priorCount;
+        public final double scoreThreshold,spreadThreshold;
+        public final boolean ready,accepted;
+
+        QualityGate(int priorCount,double scoreThreshold,double spreadThreshold,
+                    boolean ready,boolean accepted){
+            this.priorCount=priorCount;
+            this.scoreThreshold=scoreThreshold;
+            this.spreadThreshold=spreadThreshold;
+            this.ready=ready;
+            this.accepted=accepted;
+        }
+    }
+
     private static final long DAY_MS=86_400_000L;
     private final Backend backend;private final TreeMap<Long,double[]> byDay=new TreeMap<>();
     public V4FallbackHistory(Backend backend){this.backend=backend;loadAndMigrate();}
@@ -34,6 +53,38 @@ public final class V4FallbackHistory {
         if(!byDay.containsKey(day)){byDay.put(day,new double[]{best,spread});persist();}
         return new Gate(prior.size(),threshold,minimum,ready,accepted);
     }
+    /**
+     * Gate du mode OFF.
+     *
+     * Calibration uniquement sur les meilleurs signaux quotidiens
+     * des 90 jours UTC PRECEDENTS.
+     *
+     * Le jour courant n'est jamais inclus.
+     * Cette méthode ne modifie pas l'historique.
+     */
+    public synchronized QualityGate qualityGate(long cutoffUtc,double score,double spread){
+        long day=day(cutoffUtc);
+        List<double[]> prior=prior(day,QUALITY_PRIOR_DAYS);
+
+        double scoreThreshold=percentile(prior,QUALITY_SCORE_QUANTILE,0);
+        double spreadThreshold=percentile(prior,QUALITY_SPREAD_QUANTILE,1);
+
+        boolean ready=prior.size()>=QUALITY_MIN_PRIOR;
+        boolean accepted=ready
+                &&Double.isFinite(score)
+                &&Double.isFinite(spread)
+                &&score>=scoreThreshold
+                &&spread>=spreadThreshold;
+
+        return new QualityGate(
+                prior.size(),
+                scoreThreshold,
+                spreadThreshold,
+                ready,
+                accepted
+        );
+    }
+
     public synchronized void observe(long cutoffUtc,double best,double spread){long day=day(cutoffUtc);if(!byDay.containsKey(day)){
         byDay.put(day,new double[]{best,spread});persist();}}
     public synchronized int size(){return byDay.size();}

@@ -48,9 +48,38 @@ public final class V4FeatureEngine {
     public static Candidate selectCore(Map<String,Snapshot>s){Snapshot best=null;for(String a:V4Universe.CORE_ASSETS){Snapshot x=s.get(a);
         if(x!=null&&Math.abs(x.zRes14)>=.50&&(best==null||Math.abs(x.zRes14)>Math.abs(best.zRes14)))best=x;}
         return best==null?null:new Candidate(V4Plan.Source.CORE,best.asset,best.zRes14>0?V4Plan.Side.LONG:V4Plan.Side.SHORT,best.atr,0,0);}
-    public static Candidate selectFallback(Map<String,Snapshot>s,V4ExtraTreesModel model){Candidate best=null;double score=-Double.MAX_VALUE;
-        for(Snapshot x:s.values()){if(x.qv30Rank<.40)continue;double l=model.predictLong(x.fallbackFeatures),sh=model.predictShort(x.fallbackFeatures),v=Math.max(l,sh);
-            if(v>score){score=v;best=new Candidate(V4Plan.Source.FALLBACK,x.asset,l>=sh?V4Plan.Side.LONG:V4Plan.Side.SHORT,x.atr,l,sh);}}return best;}
+    public static List<Candidate> selectFallbackCandidates(Map<String,Snapshot>s,V4ExtraTreesModel model){
+        ArrayList<Candidate> out=new ArrayList<>();
+
+        for(Snapshot x:s.values()){
+            if(x.qv30Rank<.40)continue;
+
+            double l=model.predictLong(x.fallbackFeatures);
+            double sh=model.predictShort(x.fallbackFeatures);
+
+            out.add(new Candidate(
+                    V4Plan.Source.FALLBACK,
+                    x.asset,
+                    l>=sh?V4Plan.Side.LONG:V4Plan.Side.SHORT,
+                    x.atr,
+                    l,
+                    sh
+            ));
+        }
+
+        out.sort(
+                Comparator.comparingDouble(
+                        (Candidate c)->Math.max(c.longScore,c.shortScore)
+                ).reversed()
+        );
+
+        return List.copyOf(out);
+    }
+
+    public static Candidate selectFallback(Map<String,Snapshot>s,V4ExtraTreesModel model){
+        List<Candidate> candidates=selectFallbackCandidates(s,model);
+        return candidates.isEmpty()?null:candidates.get(0);
+    }
     private static double ret(List<V4DailyBar>b,int n,int k){return b.get(n).close/b.get(n-k).close-1;}
     private static double of(V4DailyBar b){double e=1e-12*Math.max(1,b.quoteVolume),sell=Math.max(0,b.quoteVolume-b.takerBuyQuote);return Math.log(b.takerBuyQuote+e)-Math.log(sell+e);}
     private static double sumOf(List<V4DailyBar>b,int n,int k){double v=0;for(int i=0;i<k;i++)v+=of(b.get(n-i));return v;}

@@ -1,0 +1,75 @@
+{
+  "baseCommit": "32ae662ebfac3029928b2a0b5d9b3b07b8255c9b",
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "engineVersion": "4.0.0",
+  "files": [
+    {
+      "path": "app/build.gradle",
+      "sha256": "d6a9a1c5b177632d1896fea4f9496195f8c4d148cfb272506c49d730008ee7f9"
+    },
+    {
+      "path": ".github/workflows/nmc-ci.yml",
+      "sha256": "4a334ccd804d66415c9e43209781c5705c2bd8678a7d6f78fb6427ea9c842fc9"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4FallbackHistory.java",
+      "sha256": "e343e21334f9191d2b90cb1c4a5da3d550cc7cb5cf15b9f1f9270ecca7083e15"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4FeatureEngine.java",
+      "sha256": "6677e462039b840e0ddb51c1d8855e2a44caf45efed89fafda5a757c91bac0c5"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4Engine.java",
+      "sha256": "f2014557d7a8fccabbbe2917098b305bcde5feced43ff6dd4e6d7e98d697b949"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4CreationPolicy.java",
+      "sha256": "29a94f2fb9a61f8d10f790f880a48f6a5a3a74af6d5e67c805f7bc74fced2497"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4RuntimeCoordinator.java",
+      "sha256": "96540a7abb512c0670ee3624be3e8d8b495cf5ec8badaa81ddb9aa74a7b4e131"
+    },
+    {
+      "path": "app/src/main/java/com/ethscalper/cockpit/V4MainActivity.java",
+      "sha256": "96278b369de9b06d7b65e93f996430056a9535b1782ba9dba5d674b0bb7a8357"
+    }
+  ],
+  "label": "NMC Stable 6.8",
+  "modelSha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+  "parentFrozenManifestCanonicalSha256": "47b62ac8b29ec7a72b7a3e698e14573528dd4c8dbbdd25aa130170992252e7f3",
+  "parentRisk67ManifestCanonicalSha256": "deff0858c6d82214e992958b156a5920d9d5b71452ab09a1513f8f021504969b",
+  "realTradingAllowed": false,
+  "riskLimitOff": {
+    "behavior": "QUALITY_MULTI_SIGNAL",
+    "calibrationWindowUtcDays": 90,
+    "configuredUniverse": 53,
+    "coreFrozen": true,
+    "currentDayExcluded": true,
+    "fallbackModelFrozen": true,
+    "individualSizingFrozen": true,
+    "liquidityFilter": "qv30Rank >= 0.40",
+    "minimumPriorObservations": 45,
+    "numericActivePlanLimit": null,
+    "numericSignalLimit": null,
+    "qualityScoreQuantile": 0.675,
+    "qualitySpreadQuantile": 0.5,
+    "sameSymbolActiveConflictBlocked": true,
+    "sameSymbolSameDecisionDayDuplicateBlocked": true
+  },
+  "riskLimitOn": {
+    "behavior": "ORIGINAL_V4_UNCHANGED",
+    "combinedRiskCap": 0.024,
+    "coreRisk": 0.0225,
+    "fallbackGate": "Q30_SCORE_PLUS_MIN_PRIOR_SPREAD",
+    "fallbackRisk": 0.0075,
+    "fallbackSelector": "TOP_1",
+    "freshParentsPerUtcDecisionDay": 1,
+    "maxActivePlans": 2
+  },
+  "schema": "NMC_V4_QUALITY_MULTI_SIGNAL_OFF_FREEZE_V1",
+  "scope": "QUALITY_MULTI_SIGNAL_POLICY_WHEN_SIMULTANEOUS_RISK_LIMIT_OFF",
+  "versionCode": 23468,
+  "versionName": "2.34.6.8"
+}
