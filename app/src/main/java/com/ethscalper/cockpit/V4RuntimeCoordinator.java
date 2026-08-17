@@ -41,6 +41,7 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
     private final ScheduledExecutorService scheduler=Executors.newSingleThreadScheduledExecutor();private final V4Engine engine;
     private volatile String transportState="SYNCHRO",lastError="";private volatile long lastAnalysisAt,lastErrorAt;private volatile int dataEligible;
     private volatile Map<String,V4FeatureEngine.Snapshot> snapshots=new LinkedHashMap<>();private volatile V4FeatureEngine.Candidate pending;
+    private volatile List<V4FeatureEngine.Candidate> qualityPending=List.of();
     private volatile V4FeatureEngine.Candidate continuation;private volatile String continuationParent;
     private boolean started,historySeeded;private volatile long lastQuoteTickScheduled;
     private V4RuntimeCoordinator(Context c){context=c;store=new V4PlanStore(c);account=new V4AccountProfile(c);V4ExtraTreesModel m;
@@ -59,9 +60,47 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
     @Override public void onQuote(String asset,V4MarketDataClient.Quote quote){long now=System.currentTimeMillis();if(now-lastQuoteTickScheduled>1000){lastQuoteTickScheduled=now;scheduler.execute(this::tick);}}
     @Override public void onState(String state){transportState=state;publishChanged();}
     @Override public void onDailyReady(Map<String,List<V4DailyBar>> panel){scheduler.execute(()->analyse(panel));}
-    private void analyse(Map<String,List<V4DailyBar>> panel){try{long cutoff=V4FeatureEngine.latestCutoff(panel);if(!historySeeded){seedHistory(panel,cutoff);historySeeded=true;}
-        snapshots=V4FeatureEngine.computeAt(panel,cutoff);dataEligible=snapshots.size();
-        pending=engine.select(snapshots);lastAnalysisAt=System.currentTimeMillis();lastError="";lastErrorAt=0;tick();}catch(Exception e){lastError=e.getClass().getSimpleName();lastErrorAt=System.currentTimeMillis();publishChanged();}}
+    private void analyse(Map<String,List<V4DailyBar>> panel){try{
+        long cutoff=V4FeatureEngine.latestCutoff(panel);
+
+        if(!historySeeded){
+            seedHistory(panel,cutoff);
+            historySeeded=true;
+        }
+
+        snapshots=V4FeatureEngine.computeAt(panel,cutoff);
+        dataEligible=snapshots.size();
+
+        /*
+         * On exécute toujours le sélecteur historique une fois.
+         * Il maintient ainsi exactement l'historique daily-best
+         * utilisé par le V4 original.
+         */
+        V4FeatureEngine.Candidate original=engine.select(snapshots);
+
+        if(simultaneousRiskLimitEnabled()){
+            /* ON = V4 original strict */
+            pending=original;
+            qualityPending=List.of();
+        }else{
+            /*
+             * OFF :
+             * CORE gelé inchangé +
+             * tous les FALLBACK qui passent le filtre qualité.
+             */
+            pending=V4FeatureEngine.selectCore(snapshots);
+            qualityPending=engine.selectQualityFallbacks(snapshots);
+        }
+
+        lastAnalysisAt=System.currentTimeMillis();
+        lastError="";
+        lastErrorAt=0;
+        tick();
+    }catch(Exception e){
+        lastError=e.getClass().getSimpleName();
+        lastErrorAt=System.currentTimeMillis();
+        publishChanged();
+    }}
     private void seedHistory(Map<String,List<V4DailyBar>> panel,long currentCutoff){for(int back=90;back>=1;back--){long day=currentCutoff-back*86_400_000L;
         try{engine.observePrior(V4FeatureEngine.computeAt(panel,day));}catch(Exception ignored){}}}
     private synchronized void tick(){long now=System.currentTimeMillis();for(V4Plan p:store.active()){V4MarketDataClient.Quote q=market.quote(p.symbol);if(q==null)continue;
@@ -77,13 +116,94 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
             if(V4ContinuationPolicy.mayCreateSecondSegment(p)){V4FeatureEngine.Snapshot s=snapshots.get(p.symbol);if(s!=null){continuation=new V4FeatureEngine.Candidate(V4Plan.Source.CORE,p.symbol,p.side,s.atr,0,0);continuationParent=p.planId;}}}
         store.save(p);if(p.status!=before){if(p.status==V4Plan.Status.CLOSED_TP||p.status==V4Plan.Status.CLOSED_SL||p.status==V4Plan.Status.CLOSED_OTHER)account.applyClosedPlan(p);notifyTransition(p,before);}
         else notifyUndeliveredActiveState(p);}for(V4Plan p:store.all())notifyUndeliveredTerminalState(p);
-        if(V4Engine.afterActivation(now)){if(V4ContinuationPolicy.freshWins(pending,continuation)){replaceContinuationParent();continuation=null;continuationParent=null;}
-            if(pending!=null&&canCreateFresh(pending)){createPending(pending,null);pending=null;}
-            if(continuation!=null&&canCreateContinuation(continuation)){createPending(continuation,continuationParent);continuation=null;continuationParent=null;}}publishChanged();}
-    private boolean canCreateFresh(V4FeatureEngine.Candidate c){V4FeatureEngine.Snapshot s=snapshots.get(c.asset);return market.quote(c.asset)!=null&&s!=null
-            &&V4CreationPolicy.mayCreateFresh(c,s.cutoff,store.active(),store.all());}
-    private boolean canCreateContinuation(V4FeatureEngine.Candidate c){V4Plan parent=store.find(continuationParent);return market.quote(c.asset)!=null
-            &&V4CreationPolicy.mayCreateContinuation(c,parent,store.active(),store.all(),pending);}
+        if(V4Engine.afterActivation(now)){
+            if(V4ContinuationPolicy.freshWins(pending,continuation)){
+                replaceContinuationParent();
+                continuation=null;
+                continuationParent=null;
+            }
+
+            /*
+             * CORE / sélecteur V4 original prioritaire.
+             */
+            if(pending!=null&&canCreateFresh(pending)){
+                createPending(pending,null);
+                pending=null;
+            }
+
+            if(continuation!=null&&canCreateContinuation(continuation)){
+                createPending(continuation,continuationParent);
+                continuation=null;
+                continuationParent=null;
+            }
+
+            /*
+             * MODE OFF :
+             * aucun Top-2 / Top-3 / Top-N.
+             *
+             * Tous les candidats qui ont déjà passé le filtre
+             * qualité sont publiables.
+             */
+            if(!simultaneousRiskLimitEnabled()&&!qualityPending.isEmpty()){
+                ArrayList<V4FeatureEngine.Candidate> remaining=new ArrayList<>();
+
+                for(V4FeatureEngine.Candidate c:qualityPending){
+                    V4FeatureEngine.Snapshot s=snapshots.get(c.asset);
+
+                    if(s==null)continue;
+
+                    /*
+                     * Empêche une republication causée par les ticks
+                     * répétés du runtime.
+                     */
+                    if(V4CreationPolicy.hasFreshForSymbolDay(
+                            c.asset,
+                            s.cutoff,
+                            store.all()
+                    )){
+                        continue;
+                    }
+
+                    if(canCreateFresh(c)){
+                        createPending(c,null);
+                    }else{
+                        /*
+                         * Peut être momentanément indisponible
+                         * (quote non reçue / même symbole encore actif).
+                         */
+                        remaining.add(c);
+                    }
+                }
+
+                qualityPending=List.copyOf(remaining);
+            }
+        }
+
+        publishChanged();
+    }
+    private boolean canCreateFresh(V4FeatureEngine.Candidate c){
+        V4FeatureEngine.Snapshot s=snapshots.get(c.asset);
+
+        if(market.quote(c.asset)==null||s==null)return false;
+
+        return simultaneousRiskLimitEnabled()
+                ?V4CreationPolicy.mayCreateFresh(
+                        c,s.cutoff,store.active(),store.all())
+                :V4CreationPolicy.mayCreateFreshUncapped(
+                        c,s.cutoff,store.active(),store.all());
+    }
+
+    private boolean canCreateContinuation(V4FeatureEngine.Candidate c){
+        V4Plan parent=store.find(continuationParent);
+
+        if(market.quote(c.asset)==null)return false;
+
+        return simultaneousRiskLimitEnabled()
+                ?V4CreationPolicy.mayCreateContinuation(
+                        c,parent,store.active(),store.all(),pending)
+                :V4CreationPolicy.mayCreateContinuationUncapped(
+                        c,parent,store.active(),store.all(),pending);
+    }
     private void replaceContinuationParent(){V4Plan parent=store.find(continuationParent);if(parent!=null){parent.status=V4Plan.Status.CLOSED_OTHER;
         parent.statusReason="REPLACED_BY_FRESH_SIGNAL";parent.closeReason="REPLACED_BY_FRESH_SIGNAL";store.save(parent);}}
     private void createPending(V4FeatureEngine.Candidate c,String parent){V4MarketDataClient.Quote q=market.quote(c.asset);V4MarketMetadata meta=market.metadata(c.asset);if(q==null)return;
@@ -105,7 +225,27 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
     public synchronized void setSimultaneousRiskLimitEnabled(boolean enabled){
         boolean persisted=context.getSharedPreferences(RISK_PREFS,Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_SIMULTANEOUS_RISK_LIMIT,enabled).commit();
+
         if(!persisted)throw new IllegalStateException("risk setting persistence");
+
+        /*
+         * Applique immédiatement le nouveau mode sans attendre
+         * la prochaine synchronisation 6h.
+         */
+        if(!snapshots.isEmpty()){
+            V4FeatureEngine.Candidate original=engine.select(snapshots);
+
+            if(enabled){
+                qualityPending=List.of();
+                pending=original;
+            }else{
+                pending=V4FeatureEngine.selectCore(snapshots);
+                qualityPending=engine.selectQualityFallbacks(snapshots);
+            }
+        }else if(enabled){
+            qualityPending=List.of();
+        }
+
         publishChanged();
     }
     private double effectiveRiskForNewPlan(double desired){
@@ -120,6 +260,9 @@ public final class V4RuntimeCoordinator implements V4MarketDataClient.Listener {
         o.put("networkAvailable",network);o.put("priceSocketConnected",market.socketConnected());o.put("lastBookTickerAt",market.lastQuoteAt());
         o.put("lastBookTickerAgeMs",V4RuntimeStatusPolicy.quoteAgeMs(now,market.lastQuoteAt()));o.put("dailySyncInProgress",market.dailySyncInProgress());
         o.put("analysisHealthy",lastAnalysisAt>0&&lastError.isEmpty()&&dataEligible>0);o.put("lastAnalysisAt",lastAnalysisAt);o.put("marketsConfigured",53);o.put("dataEligibleAssets",dataEligible);
+        o.put("simultaneousRiskLimitEnabled",simultaneousRiskLimitEnabled());
+        o.put("qualityMultiSignalMode",!simultaneousRiskLimitEnabled());
+        o.put("qualityPendingCandidates",qualityPending.size());
         o.put("lastError",lastError);o.put("lastErrorAt",lastErrorAt);o.put("lastSocketFailureAt",market.lastSocketFailureAt());o.put("realTradingAllowed",false);
         JSONArray active=new JSONArray(),history=new JSONArray();for(V4Plan p:store.all()){if(p.terminal())history.put(p.toJson());else active.put(p.toJson());}o.put("activePlans",active);o.put("history",history);
         o.put("accountMode",account.mode().name());o.put("trackedEquity",account.equity());o.put("evaluationTarget",account.target());return o;}catch(Exception e){throw new IllegalStateException("V4 status",e);}}

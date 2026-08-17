@@ -1,0 +1,38 @@
+{
+  "baseCommit": "32ae662ebfac3029928b2a0b5d9b3b07b8255c9b",
+  "engineId": "NMC_PROP_DAILY_HYBRID_V4",
+  "engineVersion": "4.0.0",
+  "label": "NMC Stable 6.8",
+  "modelSha256": "207913d0fc553c6907e93b66b6787b4e3f4f2020dd14dccce654fcc72adbb680",
+  "realTradingAllowed": false,
+  "riskLimitOff": {
+    "behavior": "QUALITY_MULTI_SIGNAL",
+    "calibrationWindowUtcDays": 90,
+    "configuredUniverse": 53,
+    "coreFrozen": true,
+    "currentDayExcluded": true,
+    "fallbackModelFrozen": true,
+    "individualSizingFrozen": true,
+    "liquidityFilter": "qv30Rank >= 0.40",
+    "minimumPriorObservations": 45,
+    "numericActivePlanLimit": null,
+    "numericSignalLimit": null,
+    "qualityScoreQuantile": 0.675,
+    "qualitySpreadQuantile": 0.5,
+    "sameSymbolActiveConflictBlocked": true,
+    "sameSymbolSameDecisionDayDuplicateBlocked": true
+  },
+  "riskLimitOn": {
+    "behavior": "ORIGINAL_V4_UNCHANGED",
+    "combinedRiskCap": 0.024,
+    "coreRisk": 0.0225,
+    "fallbackGate": "Q30_SCORE_PLUS_MIN_PRIOR_SPREAD",
+    "fallbackRisk": 0.0075,
+    "fallbackSelector": "TOP_1",
+    "freshParentsPerUtcDecisionDay": 1,
+    "maxActivePlans": 2
+  },
+  "schema": "NMC_V4_QUALITY_MULTI_SIGNAL_OFF_V1",
+  "versionCode": 23468,
+  "versionName": "2.34.6.8"
+}

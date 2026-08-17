@@ -552,7 +552,7 @@ public final class V4MainActivity extends Activity {
         riskLimit.setPadding(0,dp(8),0,dp(2));
         view.addView(riskLimit);
         view.addView(text(
-                "ON · plafond cumulé 2,40 %\nOFF · les autres positions ne bloquent pas un nouveau plan",
+                "ON · V4 original · plafond cumulé 2,40 %\nOFF · mode qualité multi-signaux · aucun plafond numérique de signaux",
                 12,MUTED,false));
         Button reset=button("Réinitialiser à 5 000",true);
         reset.setOnClickListener(button->new AlertDialog.Builder(this).setTitle("Réinitialiser l'équité ?").setMessage("Le profil local reviendra à 5 000 USD.")
@@ -578,7 +578,7 @@ public final class V4MainActivity extends Activity {
 
     private void addRiskLimitNotice(LinearLayout body,V4RuntimeCoordinator runtime){
         if(runtime.simultaneousRiskLimitEnabled())return;
-        TextView notice=text("Limite de risque désactivée",12,AMBER,true);
+        TextView notice=text("Limite de risque désactivée · mode qualité multi-signaux",12,AMBER,true);
         notice.setBackground(roundStroke(Color.rgb(48,39,22),12,Color.rgb(104,78,37),1));
         notice.setPadding(dp(11),dp(7),dp(11),dp(7));
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(
